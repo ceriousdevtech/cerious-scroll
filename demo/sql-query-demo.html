@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CeriousScroll - SQL Query Results Viewer</title>
+    <script>
+        // Mobile detection for performance optimization
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+    </script>
     <style>
         * {
             margin: 0;
@@ -433,6 +438,19 @@
                 // Parse query to determine type and row count
                 const limitMatch = query.match(/LIMIT\s+(\d+)/i);
                 const rowCount = limitMatch ? parseInt(limitMatch[1]) : 10000;
+                
+                // Warn on mobile for large datasets
+                if (isMobile && rowCount > 50000) {
+                    overlay.classList.remove('active');
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = 'Execute Query';
+                    if (!confirm(`⚠️ Query returns ${rowCount.toLocaleString()} rows. This may cause performance issues on mobile. Continue?`)) {
+                        return;
+                    }
+                    executeBtn.disabled = true;
+                    executeBtn.textContent = 'Executing...';
+                    overlay.classList.add('active');
+                }
                 
                 loadingText.textContent = `Generating ${rowCount.toLocaleString()} rows...`;
                 await new Promise(resolve => setTimeout(resolve, 100));

@@ -65,6 +65,10 @@ export class TouchController {
     let velocityY = 0;
     let momentumAnimationId: number | null = null;
     let activeTouchId: number | null = null;
+    
+    // Velocity tracking for better momentum calculation
+    const velocityHistory: Array<{ velocity: number; time: number }> = [];
+    const VELOCITY_SAMPLE_MS = 100; // Track last 100ms of movement
 
     const getViewportHeight = () => container.clientHeight || container.offsetHeight;
 
@@ -89,6 +93,7 @@ export class TouchController {
         lastTouchY = touch.clientY;
         lastTouchTime = Date.now();
         velocityY = 0;
+        velocityHistory.length = 0; // Clear velocity history
       }
     };
 
@@ -120,7 +125,29 @@ export class TouchController {
       const deltaTime = currentTime - lastTouchTime;
 
       if (deltaTime > 0) {
-        velocityY = deltaY / deltaTime;
+        const instantVelocity = deltaY / deltaTime;
+        
+        // Track velocity over time for better momentum calculation
+        velocityHistory.push({ velocity: instantVelocity, time: currentTime });
+        
+        // Remove old velocity samples outside the time window
+        while (velocityHistory.length > 0 && currentTime - velocityHistory[0].time > VELOCITY_SAMPLE_MS) {
+          velocityHistory.shift();
+        }
+        
+        // Calculate weighted average velocity (more recent = higher weight)
+        if (velocityHistory.length > 0) {
+          let totalWeight = 0;
+          let weightedSum = 0;
+          
+          velocityHistory.forEach((sample, idx) => {
+            const weight = idx + 1; // Linear weight: newer samples have higher weight
+            weightedSum += sample.velocity * weight;
+            totalWeight += weight;
+          });
+          
+          velocityY = weightedSum / totalWeight;
+        }
       }
 
       if (Math.abs(deltaY) > 0) {
@@ -175,16 +202,36 @@ export class TouchController {
       onScroll?.({ element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() });
 
       if (opts.enableMomentum && Math.abs(velocityY) >= (opts.momentumThreshold ?? 0)) {
-        let currentVelocity = velocityY;
+        // iOS-style momentum: use exponential decay with cubic-bezier easing
+        const initialVelocity = velocityY;
+        const startTime = performance.now();
+        
+        // Momentum duration scales with initial velocity (faster swipe = longer momentum)
+        const maxDuration = 2000; // Maximum 2 seconds of momentum
+        const minDuration = 300;  // Minimum 300ms
+        const duration = Math.min(maxDuration, minDuration + Math.abs(initialVelocity) * 200);
 
         const applyMomentum = () => {
-          currentVelocity *= opts.momentumFriction ?? 0.95;
+          const elapsed = performance.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Cubic-bezier easing out (0.25, 0.46, 0.45, 0.94) - iOS-like deceleration
+          const easeOutCubic = (t: number): number => {
+            const t1 = t - 1;
+            return t1 * t1 * t1 + 1;
+          };
+          
+          // Apply easing - velocity decreases smoothly following the curve
+          const easedProgress = easeOutCubic(progress);
+          const remainingVelocity = 1 - easedProgress;
+          const currentVelocity = initialVelocity * remainingVelocity;
 
-          if (Math.abs(currentVelocity) < 0.01) {
+          if (progress >= 1 || Math.abs(currentVelocity) < 0.01) {
             momentumAnimationId = null;
             return;
           }
 
+          // Apply velocity-based scrolling (16ms frame time approximation)
           const deltaY = currentVelocity * 16;
           const result = this.deps.scroll(deltaY, getViewportHeight());
 

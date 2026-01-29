@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Grid - CeriousScroll Demo</title>
+    <script>
+        // Mobile detection for performance optimization
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+    </script>
     <link rel="stylesheet" href="shared-styles.css">
     <style>
         html, body {
@@ -318,8 +323,8 @@
         // Handle bundle export format
         const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
 
-        // Data generation
-        const TOTAL_ROWS = 250000;
+        // Data generation - reduce on mobile to prevent crashes
+        const TOTAL_ROWS = isMobile ? 10000 : 250000;
 
         const departments = ['Engineering', 'Sales', 'Marketing', 'Support', 'Finance', 'HR', 'Operations', 'Product'];
         const statuses = ['Active', 'Pending', 'Inactive'];

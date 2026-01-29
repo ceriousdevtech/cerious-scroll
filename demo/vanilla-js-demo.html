@@ -243,8 +243,13 @@
                 this.viewportHeight = 600;
                 this.lastMeasuredViewport = null; // Store the most recent measured viewport data
                 
+                // Detect mobile/tablet for safe defaults
+                this.isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                                (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+                
                 this.initializeElements();
                 this.bindEvents();
+                this.setMobileFriendlyDefaults();
                 this.generateInitialData();
             }
 
@@ -323,6 +328,13 @@
             generateData() {
                 const size = parseInt(this.datasetSizeSelect.value);
                 const variation = this.heightVariationSelect.value;
+
+                // Warn on mobile for large datasets
+                if (this.isMobile && size > 10000) {
+                    if (!confirm(`⚠️ Generating ${size.toLocaleString()} rows on mobile may cause performance issues or crashes.\n\nRecommended maximum: 10,000 rows\n\nContinue anyway?`)) {
+                        return;
+                    }
+                }
 
                 this.generateDataBtn.textContent = 'Generating...';
                 this.generateDataBtn.disabled = true;
@@ -457,7 +469,9 @@
             }
 
             generateInitialData() {
-                this.data = DataGenerator.generateDataset(100, 'mixed');
+                // Use smaller dataset for mobile devices to prevent crashes
+                const initialSize = this.isMobile ? 50 : 100;
+                this.data = DataGenerator.generateDataset(initialSize, 'mixed');
                 
                 if (this.data._dataSizeMB) {
                     this.performanceMonitor.setDataMemory(this.data._dataSizeMB, this.data._dataSizeFormatted);
@@ -465,6 +479,33 @@
                 
                 this.initializeScroller();
                 this.updateDisplay();
+            }
+
+            setMobileFriendlyDefaults() {
+                if (this.isMobile) {
+                    // Set safer defaults for mobile/tablet devices
+                    this.datasetSizeSelect.value = '100';
+                    // Remove very large dataset options on mobile
+                    const options = this.datasetSizeSelect.options;
+                    for (let i = options.length - 1; i >= 0; i--) {
+                        const value = parseInt(options[i].value);
+                        if (value > 100000) {
+                            options[i].disabled = true;
+                            options[i].text = options[i].text + ' (Desktop only)';
+                        }
+                    }
+                    
+                    // Add mobile indicator
+                    const header = document.querySelector('.header');
+                    if (header) {
+                        const notice = document.createElement('p');
+                        notice.className = 'subtitle';
+                        notice.style.fontSize = '0.9em';
+                        notice.style.color = '#ffa500';
+                        notice.textContent = '📱 Mobile-optimized settings applied for best performance';
+                        header.appendChild(notice);
+                    }
+                }
             }
 
             async updateData(newData) {                

@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CeriousScroll - Financial Trading Platform Demo</title>
+    <script>
+        // Mobile detection for performance optimization
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+    </script>
     <style>
         * {
             margin: 0;
@@ -382,6 +387,13 @@
             async loadData() {
                 const size = parseInt(document.getElementById('datasetSize').value);
                 const loadBtn = document.getElementById('loadBtn');
+                
+                // Warn on mobile for large datasets
+                if (isMobile && size > 50000) {
+                    if (!confirm(`⚠️ Loading ${size.toLocaleString()} orders on mobile may cause performance issues. Continue?`)) {
+                        return;
+                    }
+                }
                 
                 loadBtn.disabled = true;
                 loadBtn.textContent = 'Loading...';

@@ -281,6 +281,10 @@
     <script>
         const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
         
+        // Detect mobile/tablet for safe defaults
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+        
         class CodeViewerDemo {
             constructor() {
                 this.lines = [];
@@ -374,6 +378,13 @@
                 const overlay = document.getElementById('loadingOverlay');
                 const loadingText = document.getElementById('loadingText');
                 const size = parseInt(document.getElementById('fileSize').value);
+                
+                // Warn on mobile for large files
+                if (isMobile && size > 10000) {
+                    if (!confirm(`⚠️ Loading ${size.toLocaleString()} lines on mobile may cause performance issues.\n\nRecommended maximum: 10,000 lines\n\nContinue anyway?`)) {
+                        return;
+                    }
+                }
                 
                 loadBtn.disabled = true;
                 loadBtn.textContent = 'Loading...';

@@ -423,8 +423,12 @@
             };
         }
 
-        // State
-        const TOTAL_MESSAGES = 100000;
+        // Detect mobile/tablet for safe defaults
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+
+        // State - reduce for mobile to prevent crashes
+        const TOTAL_MESSAGES = isMobile ? 5000 : 100000;
         let currentFilter = 'all';
         let searchQuery = '';
 

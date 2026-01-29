@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Git Commit History - CeriousScroll Demo</title>
+    <script>
+        // Mobile detection for performance optimization
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+    </script>
     <link rel="stylesheet" href="shared-styles.css">
     <style>
         html, body {
@@ -420,8 +425,8 @@
         // Handle bundle export format
         const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
 
-        // Commit data generation
-        const TOTAL_COMMITS = 50000;
+        // Commit data generation - reduce on mobile to prevent crashes
+        const TOTAL_COMMITS = isMobile ? 5000 : 50000;
 
         const authors = [
             { name: 'Sarah Chen', initial: 'SC', color: '#58a6ff' },
