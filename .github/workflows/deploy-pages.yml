@@ -149,8 +149,8 @@ jobs:
           
           # Copy license files
           cp LICENSE _site/
-          cp LICENSE-COMMERCIAL.md _site/
-          cp LICENSE-GPL-3.0.md _site/
+          cp LICENSE-COMMERCIAL _site/
+          cp LICENSE-GPL-3.0 _site/
           
           # Copy README
           cp README.md _site/
