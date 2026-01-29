@@ -44,19 +44,25 @@ It is designed for data grids, chat applications, log viewers, financial dashboa
 
 ## 📦 Installation
 
-### NPM
+> **Note:** NPM package coming soon! For now, you can use the library directly from the repository.
+
+### From Source
 ```bash
-npm install cerious-scroll
+# Clone the repository
+git clone https://github.com/ceriousdevtech/cerious-scroll.git
+cd cerious-scroll
+
+# Install dependencies and build
+npm install
+npm run build
+
+# Use the built files from dist/
 ```
 
-### Yarn
-```bash
-yarn add cerious-scroll
-```
-
-### CDN
+### Direct Download
+Download the latest release from [GitHub Releases](https://github.com/ceriousdevtech/cerious-scroll/releases) and include:
 ```html
-<script src="https://unpkg.com/cerious-scroll/dist/cerious-scroll.min.js"></script>
+<script src="path/to/cerious-scroll.bundle.js"></script>
 ```
 
 ---
