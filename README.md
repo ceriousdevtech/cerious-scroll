@@ -10,6 +10,8 @@ Cerious Scroll™ is an enterprise-grade virtual scrolling engine that enables s
 
 It is designed for data grids, chat applications, log viewers, financial dashboards, analytics platforms, and any application that must efficiently render massive datasets without performance degradation.
 
+🌐 **[View Live Demos](https://ceriousdevtech.github.io/cerious-scroll/)** | 📚 **[Read Documentation](https://ceriousdevtech.github.io/cerious-scroll/docs/IMPLEMENTATION_GUIDE.html)**
+
 ---
 
 ## 🚀 Key Features
