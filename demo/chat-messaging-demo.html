@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow: hidden; height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Messaging App - CeriousScroll Demo</title>
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            background: #f0f2f5;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+            padding: 1.5rem 2rem;
+            color: white;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .chat-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chat-subtitle {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .chat-controls {
+            background: white;
+            padding: 1rem 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-shrink: 0;
+            border-bottom: 1px solid #e4e6eb;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 0.5rem 1rem;
+            border: 2px solid #e4e6eb;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #00b09b;
+        }
+
+        .filter-badges {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .filter-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: 2px solid #e4e6eb;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        .filter-badge:hover {
+            border-color: #00b09b;
+        }
+
+        .filter-badge.active {
+            background: #00b09b;
+            color: white;
+            border-color: #00b09b;
+        }
+
+        .stats-bar {
+            font-size: 0.85rem;
+            color: #65676b;
+        }
+
+        #chatViewport {
+            flex: 1;
+            overflow: hidden;
+            background: #fff;
+            position: relative;
+            margin: 0;
+            min-height: 0;
+        }
+
+        #scrollContent {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        #scrollContent > * {
+            pointer-events: auto;
+        }
+
+        .message-wrapper {
+            padding: 0.25rem 2rem;
+            pointer-events: auto;
+        }
+
+        .message-group {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .message-group.sent {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .message-content {
+            max-width: 60%;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .message-group.sent .message-content {
+            align-items: flex-end;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #65676b;
+            padding: 0 0.5rem;
+        }
+
+        .sender-name {
+            font-weight: 600;
+            color: #050505;
+        }
+
+        .message-bubble {
+            background: #f0f2f5;
+            padding: 0.75rem 1rem;
+            border-radius: 18px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message-group.sent .message-bubble {
+            background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+            color: white;
+        }
+
+        .message-time {
+            font-size: 0.75rem;
+            color: #65676b;
+            padding: 0 0.5rem;
+        }
+
+        .message-reactions {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .reaction {
+            padding: 0.15rem 0.5rem;
+            background: white;
+            border: 1px solid #e4e6eb;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .date-separator {
+            text-align: center;
+            padding: 1rem 0;
+            font-size: 0.85rem;
+            color: #65676b;
+            font-weight: 600;
+        }
+
+        .date-badge {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            background: #e4e6eb;
+            border-radius: 16px;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
+            align-items: center;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 0.3rem;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #65676b;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+            30% { opacity: 1; transform: translateY(-4px); }
+        }
+
+        .chat-input-area {
+            padding: 1rem 2rem;
+            background: white;
+            border-top: 1px solid #e4e6eb;
+            flex-shrink: 0;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e4e6eb;
+            border-radius: 20px;
+            font-size: 0.95rem;
+            resize: none;
+            font-family: inherit;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #00b09b;
+        }
+
+        .send-button {
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .send-button:hover {
+            transform: scale(1.05);
+        }
+
+        .send-button:active {
+            transform: scale(0.95);
+        }
+
+        @media (max-width: 768px) {
+            .message-content {
+                max-width: 75%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-header">
+        <div class="chat-title">
+            💬 Team Chat
+            <span style="font-size: 0.7rem; opacity: 0.8;">● 127 online</span>
+        </div>
+        <div class="chat-subtitle">Smooth scrolling through 100,000+ messages with CeriousScroll</div>
+    </div>
+
+    <div class="chat-controls">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search messages...">
+        <div class="filter-badges">
+            <div class="filter-badge active" data-filter="all">All</div>
+            <div class="filter-badge" data-filter="mentions">@Mentions</div>
+            <div class="filter-badge" data-filter="starred">⭐ Starred</div>
+        </div>
+        <div class="stats-bar">
+            📊 <strong id="messageCount">100,000</strong> messages
+        </div>
+    </div>
+
+    <div id="chatViewport"></div>
+
+    <div class="chat-input-area">
+        <textarea class="message-input" id="messageInput" placeholder="Type a message..." rows="1"></textarea>
+        <button class="send-button" id="sendButton">Send</button>
+    </div>
+
+    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script>
+        // Handle bundle export format
+        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
+
+        // Message data generator
+        const userPool = [
+            { name: 'Alice Chen', emoji: '👩‍💻', color: '#667eea' },
+            { name: 'Bob Smith', emoji: '👨‍💼', color: '#f093fb' },
+            { name: 'Carol Davis', emoji: '👩‍🔬', color: '#4facfe' },
+            { name: 'David Kim', emoji: '👨‍🎨', color: '#43e97b' },
+            { name: 'Emma Wilson', emoji: '👩‍🏫', color: '#fa709a' },
+            { name: 'Frank Brown', emoji: '👨‍🚀', color: '#30cfd0' },
+            { name: 'Grace Lee', emoji: '👩‍⚕️', color: '#a8edea' },
+            { name: 'Henry Zhang', emoji: '👨‍🔧', color: '#fed6e3' },
+            { name: 'You', emoji: '😊', color: '#00b09b' }
+        ];
+
+        const messageTemplates = [
+            "Hey team! {topic}",
+            "I just finished {task}. Ready for review!",
+            "Can someone help me with {problem}?",
+            "Great job on {achievement}! 🎉",
+            "Quick question about {topic} - anyone available?",
+            "Thanks for the feedback on {task}!",
+            "I'll take care of {task} by EOD",
+            "Meeting starting in 10 minutes about {topic}",
+            "Just pushed the latest changes for {task}",
+            "Found a bug in {problem}, investigating now",
+            "Coffee break? ☕",
+            "Who's up for lunch?",
+            "👍",
+            "Agreed!",
+            "Let's discuss this in the standup",
+            "I've updated the docs for {topic}",
+            "Can we schedule a call about {problem}?",
+            "This is looking great! Keep it up!",
+            "I'm blocked on {task}, need some help",
+            "Running tests now...",
+            "All green! ✅",
+            "Deployed to staging",
+            "Code review complete - looks good!",
+            "Added my comments to the PR"
+        ];
+
+        const topics = ['the new feature', 'authentication', 'database optimization', 'UI redesign', 'API endpoints', 'deployment', 'testing', 'documentation'];
+        const tasks = ['the login flow', 'user dashboard', 'payment integration', 'email notifications', 'search functionality', 'admin panel'];
+        const problems = ['the caching layer', 'rate limiting', 'memory usage', 'slow queries', 'build errors', 'test failures'];
+        const achievements = ['hitting our KPIs', 'the successful launch', 'fixing the critical bug', 'improving performance'];
+
+        const reactions = ['❤️', '👍', '😂', '🎉', '🚀'];
+
+        function generateMessage(index) {
+            const user = userPool[index % userPool.length];
+            const template = messageTemplates[index % messageTemplates.length];
+            
+            let text = template
+                .replace('{topic}', topics[index % topics.length])
+                .replace('{task}', tasks[index % tasks.length])
+                .replace('{problem}', problems[index % problems.length])
+                .replace('{achievement}', achievements[index % achievements.length]);
+            
+            // Variable length messages - some have more detail
+            const lengthVariant = index % 5;
+            if (lengthVariant === 3) {
+                text += " I've been working on this for a while and think we're making good progress. Let me know if you have any questions or concerns!";
+            } else if (lengthVariant === 4) {
+                text += " Here's a quick update: everything is on track and the initial feedback has been really positive. Should be done by end of week.";
+            }
+            
+            const hasReactions = index % 7 === 0;
+            const reactionsList = hasReactions ? [
+                { emoji: reactions[index % reactions.length], count: Math.floor(Math.random() * 5) + 1 }
+            ] : [];
+            
+            const timestamp = new Date(Date.now() - (100000 - index) * 60000); // 1 minute apart
+            const hours = timestamp.getHours().toString().padStart(2, '0');
+            const minutes = timestamp.getMinutes().toString().padStart(2, '0');
+            
+            return {
+                id: index,
+                user,
+                text,
+                timestamp: `${hours}:${minutes}`,
+                fullDate: timestamp.toLocaleDateString(),
+                reactions: reactionsList,
+                isSent: user.name === 'You'
+            };
+        }
+
+        // State
+        const TOTAL_MESSAGES = 100000;
+        let currentFilter = 'all';
+        let searchQuery = '';
+
+        function matchesFilter(index) {
+            const msg = generateMessage(index);
+            
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                return msg.text.toLowerCase().includes(query) || 
+                       msg.user.name.toLowerCase().includes(query);
+            }
+            
+            if (currentFilter === 'mentions') {
+                return msg.text.includes('@');
+            } else if (currentFilter === 'starred') {
+                return index % 23 === 0; // Some starred messages
+            }
+            
+            return true;
+        }
+
+        function getFilteredIndices() {
+            const indices = [];
+            for (let i = 0; i < TOTAL_MESSAGES; i++) {
+                if (matchesFilter(i)) {
+                    indices.push(i);
+                }
+            }
+            return indices;
+        }
+
+        let filteredIndices = getFilteredIndices();
+
+        // Render function
+        function renderMessage(filteredIndex, element) {
+            const actualIndex = filteredIndices[filteredIndex];
+            const msg = generateMessage(actualIndex);
+            const prevMsg = actualIndex > 0 ? generateMessage(actualIndex - 1) : null;
+            
+            // Show date separator if day changed
+            let dateSeparator = '';
+            if (!prevMsg || prevMsg.fullDate !== msg.fullDate) {
+                dateSeparator = `
+                    <div class="date-separator">
+                        <span class="date-badge">${msg.fullDate}</span>
+                    </div>
+                `;
+            }
+            
+            // Group consecutive messages from same user
+            const showAvatar = !prevMsg || prevMsg.user.name !== msg.user.name;
+            
+            const reactionsHtml = msg.reactions.length > 0 ? `
+                <div class="message-reactions">
+                    ${msg.reactions.map(r => `<span class="reaction">${r.emoji} ${r.count}</span>`).join('')}
+                </div>
+            ` : '';
+            
+            element.innerHTML = `
+                ${dateSeparator}
+                <div class="message-wrapper">
+                    <div class="message-group ${msg.isSent ? 'sent' : ''}">
+                        ${showAvatar ? `<div class="avatar" style="background: ${msg.user.color}">${msg.user.emoji}</div>` : '<div style="width: 40px"></div>'}
+                        <div class="message-content">
+                            ${showAvatar ? `<div class="message-header"><span class="sender-name">${msg.user.name}</span></div>` : ''}
+                            <div class="message-bubble">${msg.text}</div>
+                            <div class="message-time">${msg.timestamp}</div>
+                            ${reactionsHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Setup viewport
+        const viewport = document.getElementById('chatViewport');
+        viewport.innerHTML = '';
+        const scrollContent = document.createElement('div');
+        scrollContent.id = 'scrollContent';
+        viewport.appendChild(scrollContent);
+
+        // Initialize CeriousScroll
+        const scroller = new CeriousScrollClass(
+            viewport,
+            filteredIndices.length,
+            {
+                onScroll: () => {
+                    scroller.renderViewport(
+                        viewport.clientHeight,
+                        scrollContent,
+                        renderMessage
+                    );
+                }
+            }
+        );
+
+        // Initial render - start at bottom (most recent messages)
+        scroller.jumpToElement(filteredIndices.length - 50);
+        scroller.renderViewport(viewport.clientHeight, scrollContent, renderMessage);
+
+        // Search functionality
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchQuery = e.target.value;
+                filteredIndices = getFilteredIndices();
+                scroller.updateDataset(filteredIndices.length);
+                scroller.jumpToElement(Math.max(0, filteredIndices.length - 50));
+                scrollContent.innerHTML = '';
+                scroller.renderViewport(viewport.clientHeight, scrollContent, renderMessage);
+                document.getElementById('messageCount').textContent = filteredIndices.length.toLocaleString();
+            }, 300);
+        });
+
+        // Filter badges
+        document.querySelectorAll('.filter-badge').forEach(badge => {
+            badge.addEventListener('click', () => {
+                document.querySelectorAll('.filter-badge').forEach(b => b.classList.remove('active'));
+                badge.classList.add('active');
+                currentFilter = badge.dataset.filter;
+                filteredIndices = getFilteredIndices();
+                scroller.updateDataset(filteredIndices.length);
+                scroller.jumpToElement(Math.max(0, filteredIndices.length - 50));
+                scrollContent.innerHTML = '';
+                scroller.renderViewport(viewport.clientHeight, scrollContent, renderMessage);
+                document.getElementById('messageCount').textContent = filteredIndices.length.toLocaleString();
+            });
+        });
+
+        // Send message (mock)
+        document.getElementById('sendButton').addEventListener('click', () => {
+            const input = document.getElementById('messageInput');
+            if (input.value.trim()) {
+                // In a real app, would send to server
+                input.value = '';
+                // Could add the message to the list here
+            }
+        });
+
+        // Auto-resize textarea
+        const messageInput = document.getElementById('messageInput');
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Enter to send
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('sendButton').click();
+            }
+        });
+
+        console.log('Chat Demo initialized with', TOTAL_MESSAGES.toLocaleString(), 'messages');
+        console.log('Press Enter to send, Shift+Enter for new line');
+    </script>
+</body>
+</html>

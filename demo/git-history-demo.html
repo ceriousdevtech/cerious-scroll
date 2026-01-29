@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow: hidden; height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Commit History - CeriousScroll Demo</title>
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            background: #0d1117;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            color: #c9d1d9;
+        }
+
+        .git-header {
+            background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+            padding: 1.5rem 2rem;
+            flex-shrink: 0;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .repo-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .repo-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+
+        .branch-selector {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.8rem;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .branch-selector:hover {
+            background: #30363d;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+            color: #8b949e;
+        }
+
+        .commit-toolbar {
+            background: #161b22;
+            padding: 1rem 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-shrink: 0;
+            border-bottom: 1px solid #30363d;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 0.5rem 1rem;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 0.9rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            background: #30363d;
+        }
+
+        .filter-btn.active {
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: white;
+        }
+
+        #commitViewport {
+            flex: 1;
+            overflow: hidden;
+            background: #0d1117;
+            position: relative;
+            margin: 0;
+            min-height: 0;
+        }
+
+        #scrollContent {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        #scrollContent > * {
+            pointer-events: auto;
+        }
+
+        .commit-wrapper {
+            padding: 0.75rem 2rem;
+            pointer-events: auto;
+        }
+
+        .commit-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .commit-card:hover {
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 1px #58a6ff;
+        }
+
+        .commit-header {
+            padding: 1rem 1.25rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .commit-graph {
+            width: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .commit-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #58a6ff;
+            border: 2px solid #0d1117;
+            flex-shrink: 0;
+        }
+
+        .commit-line {
+            width: 2px;
+            height: 100%;
+            background: #30363d;
+        }
+
+        .commit-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .commit-message {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #c9d1d9;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .commit-description {
+            font-size: 0.9rem;
+            color: #8b949e;
+            margin-bottom: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .commit-meta {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: #8b949e;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .commit-author {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .author-avatar {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #58a6ff, #8957e5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+        }
+
+        .commit-sha {
+            font-family: 'Courier New', monospace;
+            background: #21262d;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            color: #58a6ff;
+            cursor: pointer;
+        }
+
+        .commit-sha:hover {
+            background: #30363d;
+        }
+
+        .commit-files {
+            border-top: 1px solid #30363d;
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+        }
+
+        .file-change {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            background: #0d1117;
+            border-radius: 4px;
+        }
+
+        .file-icon {
+            color: #8b949e;
+        }
+
+        .file-name {
+            color: #c9d1d9;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+        }
+
+        .file-stats {
+            display: flex;
+            gap: 0.5rem;
+            margin-left: 0.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+        }
+
+        .additions {
+            color: #3fb950;
+        }
+
+        .deletions {
+            color: #f85149;
+        }
+
+        .commit-diff {
+            border-top: 1px solid #30363d;
+            padding: 0.75rem 1.25rem;
+        }
+
+        .diff-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #8b949e;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+
+        .diff-header:hover {
+            color: #c9d1d9;
+        }
+
+        .diff-content {
+            background: #0d1117;
+            border-radius: 4px;
+            padding: 0.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+
+        .diff-line {
+            padding: 0.1rem 0.5rem;
+        }
+
+        .diff-add {
+            background: #1a2b1a;
+            color: #3fb950;
+        }
+
+        .diff-remove {
+            background: #2b1a1a;
+            color: #f85149;
+        }
+
+        .branch-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.6rem;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            color: #58a6ff;
+        }
+
+        .tag-badge {
+            background: #1a472a;
+            border-color: #3fb950;
+            color: #3fb950;
+        }
+
+        .footer-info {
+            background: #161b22;
+            padding: 0.75rem 2rem;
+            border-top: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            font-size: 0.85rem;
+            color: #8b949e;
+        }
+
+        @media (max-width: 1024px) {
+            .commit-wrapper {
+                padding: 0.5rem 1rem;
+            }
+
+            .commit-header {
+                padding: 0.75rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="git-header">
+        <div class="repo-info">
+            <span class="repo-name">🚀 enterprise-platform</span>
+            <div class="branch-selector">
+                <span>⎇ main</span>
+                <span style="font-size: 0.7rem">▼</span>
+            </div>
+        </div>
+        <div class="header-stats">
+            <span>⭐ 1,234 stars</span>
+            <span>🍴 567 forks</span>
+            <span>📊 <strong id="commitCount">50,000</strong> commits</span>
+        </div>
+    </div>
+
+    <div class="commit-toolbar">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search commits by message, author, or SHA...">
+        
+        <div class="filter-group">
+            <button class="filter-btn active" data-filter="all">All Commits</button>
+            <button class="filter-btn" data-filter="merges">Merges</button>
+            <button class="filter-btn" data-filter="tags">Tags</button>
+        </div>
+
+        <div style="color: #8b949e; font-size: 0.85rem;">
+            Showing <strong id="visibleCount">50,000</strong> commits
+        </div>
+    </div>
+
+    <div id="commitViewport"></div>
+
+    <div class="footer-info">
+        <div>Scroll through commit history • Click SHA to copy</div>
+        <div>Powered by CeriousScroll</div>
+    </div>
+
+    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script>
+        // Handle bundle export format
+        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
+
+        // Commit data generation
+        const TOTAL_COMMITS = 50000;
+
+        const authors = [
+            { name: 'Sarah Chen', initial: 'SC', color: '#58a6ff' },
+            { name: 'Mike Johnson', initial: 'MJ', color: '#8957e5' },
+            { name: 'Alex Kumar', initial: 'AK', color: '#ea6045' },
+            { name: 'Emma Davis', initial: 'ED', color: '#3fb950' },
+            { name: 'James Wilson', initial: 'JW', color: '#f0883e' },
+            { name: 'Lisa Park', initial: 'LP', color: '#d73a49' },
+            { name: 'Tom Brown', initial: 'TB', color: '#0366d6' },
+            { name: 'Nina Garcia', initial: 'NG', color: '#6f42c1' }
+        ];
+
+        const commitTypes = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'build', 'ci'];
+        const scopes = ['api', 'ui', 'auth', 'db', 'cache', 'core', 'config', 'deps', 'security'];
+        const actions = [
+            'add support for', 'fix issue with', 'update', 'remove deprecated', 'improve', 
+            'optimize', 'refactor', 'implement', 'enhance', 'resolve'
+        ];
+        const features = [
+            'user authentication', 'database queries', 'API endpoints', 'error handling',
+            'caching layer', 'file uploads', 'search functionality', 'notification system',
+            'payment processing', 'data validation', 'logging', 'monitoring'
+        ];
+
+        const files = [
+            'src/api/users.ts', 'src/components/Header.tsx', 'src/utils/auth.ts',
+            'src/db/models/User.ts', 'src/services/email.ts', 'tests/api.test.ts',
+            'package.json', 'README.md', 'docs/API.md', '.github/workflows/ci.yml',
+            'src/styles/globals.css', 'src/hooks/useAuth.ts', 'src/lib/redis.ts'
+        ];
+
+        function generateCommit(index) {
+            const author = authors[index % authors.length];
+            const type = commitTypes[index % commitTypes.length];
+            const scope = scopes[index % scopes.length];
+            const action = actions[index % actions.length];
+            const feature = features[index % features.length];
+            
+            const message = `${type}(${scope}): ${action} ${feature}`;
+            
+            // Variable descriptions - some commits have them
+            let description = '';
+            const hasDescription = index % 5 === 0;
+            if (hasDescription) {
+                description = `This commit includes important changes to improve the ${feature}. ` +
+                             `Additional testing and documentation updates are included.`;
+            }
+            
+            // Generate SHA
+            const sha = Math.random().toString(36).substring(2, 9);
+            
+            // Time calculation
+            const hoursAgo = Math.floor((TOTAL_COMMITS - index) / 10);
+            const date = new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+            const timeAgo = hoursAgo < 24 ? `${hoursAgo}h ago` : 
+                           hoursAgo < 168 ? `${Math.floor(hoursAgo / 24)}d ago` :
+                           `${Math.floor(hoursAgo / 168)}w ago`;
+            
+            // File changes
+            const numFiles = Math.floor(Math.random() * 5) + 1;
+            const changedFiles = [];
+            for (let i = 0; i < numFiles; i++) {
+                const file = files[(index + i) % files.length];
+                const additions = Math.floor(Math.random() * 100) + 1;
+                const deletions = Math.floor(Math.random() * 50);
+                changedFiles.push({ file, additions, deletions });
+            }
+            
+            // Merge commits and tags
+            const isMerge = index % 20 === 0;
+            const hasTag = index % 100 === 0;
+            const tagName = hasTag ? `v${Math.floor(index / 100)}.${(index % 100) / 10}.0` : null;
+            
+            // Diff sample
+            const hasDiff = index % 10 === 0;
+            const diff = hasDiff ? [
+                { type: 'remove', text: `-  const oldValue = getData();` },
+                { type: 'add', text: `+  const newValue = getOptimizedData();` },
+                { type: 'add', text: `+  console.log('Optimized:', newValue);` }
+            ] : null;
+            
+            return {
+                sha,
+                message,
+                description,
+                author,
+                timeAgo,
+                date,
+                files: changedFiles,
+                isMerge,
+                hasTag,
+                tagName,
+                diff
+            };
+        }
+
+        // State
+        let currentFilter = 'all';
+        let searchQuery = '';
+
+        function matchesFilter(index) {
+            const commit = generateCommit(index);
+            
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                return commit.message.toLowerCase().includes(query) ||
+                       commit.author.name.toLowerCase().includes(query) ||
+                       commit.sha.includes(query);
+            }
+            
+            if (currentFilter === 'merges') {
+                return commit.isMerge;
+            } else if (currentFilter === 'tags') {
+                return commit.hasTag;
+            }
+            
+            return true;
+        }
+
+        function getFilteredIndices() {
+            const indices = [];
+            for (let i = 0; i < TOTAL_COMMITS; i++) {
+                if (matchesFilter(i)) {
+                    indices.push(i);
+                }
+            }
+            return indices;
+        }
+
+        let filteredIndices = getFilteredIndices();
+
+        // Render function
+        function renderCommit(filteredIndex, element) {
+            const actualIndex = filteredIndices[filteredIndex];
+            const commit = generateCommit(actualIndex);
+            
+            const filesHtml = commit.files.map(f => `
+                <div class="file-change">
+                    <span class="file-icon">📄</span>
+                    <span class="file-name">${f.file}</span>
+                    <div class="file-stats">
+                        <span class="additions">+${f.additions}</span>
+                        <span class="deletions">-${f.deletions}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            const diffHtml = commit.diff ? `
+                <div class="commit-diff">
+                    <div class="diff-header">
+                        <span>📋</span>
+                        <span>View changes</span>
+                    </div>
+                    <div class="diff-content">
+                        ${commit.diff.map(line => `
+                            <div class="diff-line ${line.type === 'add' ? 'diff-add' : line.type === 'remove' ? 'diff-remove' : ''}">${line.text}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : '';
+            
+            const badges = [];
+            if (commit.isMerge) {
+                badges.push('<span class="branch-badge">⎇ merge</span>');
+            }
+            if (commit.hasTag) {
+                badges.push(`<span class="branch-badge tag-badge">🏷️ ${commit.tagName}</span>`);
+            }
+            
+            element.innerHTML = `
+                <div class="commit-wrapper">
+                    <div class="commit-card">
+                        <div class="commit-header">
+                            <div class="commit-graph">
+                                <div class="commit-dot" style="background: ${commit.author.color}"></div>
+                            </div>
+                            <div class="commit-main">
+                                <div class="commit-message">${commit.message}</div>
+                                ${commit.description ? `<div class="commit-description">${commit.description}</div>` : ''}
+                                <div class="commit-meta">
+                                    <div class="commit-author">
+                                        <div class="author-avatar" style="background: ${commit.author.color}">${commit.author.initial}</div>
+                                        <span>${commit.author.name}</span>
+                                    </div>
+                                    <div class="meta-item">
+                                        <span>🕒</span>
+                                        <span>${commit.timeAgo}</span>
+                                    </div>
+                                    <div class="meta-item">
+                                        <span class="commit-sha" title="Click to copy">${commit.sha}</span>
+                                    </div>
+                                    ${badges.join('')}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="commit-files">
+                            ${filesHtml}
+                        </div>
+                        ${diffHtml}
+                    </div>
+                </div>
+            `;
+            
+            // SHA copy handler
+            element.querySelector('.commit-sha')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(commit.sha);
+                const sha = e.target;
+                const originalText = sha.textContent;
+                sha.textContent = 'Copied!';
+                setTimeout(() => sha.textContent = originalText, 1000);
+            });
+        }
+
+        // Setup viewport
+        const viewport = document.getElementById('commitViewport');
+        viewport.innerHTML = '';
+        const scrollContent = document.createElement('div');
+        scrollContent.id = 'scrollContent';
+        viewport.appendChild(scrollContent);
+
+        // Initialize CeriousScroll
+        const scroller = new CeriousScrollClass(
+            viewport,
+            filteredIndices.length,
+            {
+                onScroll: () => {
+                    scroller.renderViewport(
+                        viewport.clientHeight,
+                        scrollContent,
+                        renderCommit
+                    );
+                }
+            }
+        );
+
+        // Initial render
+        scroller.jumpToElement(0);
+        scroller.renderViewport(viewport.clientHeight, scrollContent, renderCommit);
+
+        // Search functionality
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchQuery = e.target.value;
+                filteredIndices = getFilteredIndices();
+                scroller.updateDataset(filteredIndices.length);
+                scroller.jumpToElement(0);
+                scrollContent.innerHTML = '';
+                scroller.renderViewport(viewport.clientHeight, scrollContent, renderCommit);
+                document.getElementById('visibleCount').textContent = filteredIndices.length.toLocaleString();
+            }, 300);
+        });
+
+        // Filter buttons
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                filteredIndices = getFilteredIndices();
+                scroller.updateDataset(filteredIndices.length);
+                scroller.jumpToElement(0);
+                scrollContent.innerHTML = '';
+                scroller.renderViewport(viewport.clientHeight, scrollContent, renderCommit);
+                document.getElementById('visibleCount').textContent = filteredIndices.length.toLocaleString();
+            });
+        });
+
+        console.log('Git Commit History initialized with', TOTAL_COMMITS.toLocaleString(), 'commits');
+        console.log('Search by message, author, or SHA • Click SHA to copy');
+    </script>
+</body>
+</html>

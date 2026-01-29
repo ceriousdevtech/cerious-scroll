@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CeriousScroll - Application Log Viewer Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+        .header {
+            background: #252526;
+            padding: 15px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+        .file-path {
+            font-size: 12px;
+            color: #858585;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .stats {
+            display: flex;
+            gap: 25px;
+            font-size: 12px;
+        }
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-label {
+            color: #858585;
+        }
+        .stat-value {
+            font-weight: 600;
+            color: #4ec9b0;
+        }
+        
+        .toolbar {
+            background: #2d2d30;
+            padding: 12px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .toolbar-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .toolbar label {
+            font-size: 12px;
+            color: #cccccc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+        .toolbar select, .toolbar input {
+            padding: 6px 10px;
+            background: #3c3c3c;
+            color: #cccccc;
+            border: 1px solid #3e3e42;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .toolbar input[type="text"] {
+            width: 250px;
+        }
+        .toolbar button {
+            padding: 6px 14px;
+            background: #0e639c;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            transition: background 0.2s;
+        }
+        .toolbar button:hover {
+            background: #1177bb;
+        }
+        .toolbar button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+            color: #858585;
+        }
+        
+        .filter-chips {
+            display: flex;
+            gap: 8px;
+        }
+        .chip {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+        .chip.error {
+            background: rgba(244, 63, 94, 0.15);
+            color: #f43f5e;
+            border: 1px solid rgba(244, 63, 94, 0.3);
+        }
+        .chip.warn {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        .chip.info {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .chip.debug {
+            background: rgba(139, 92, 246, 0.15);
+            color: #8b5cf6;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+        .chip.active {
+            opacity: 1;
+        }
+        .chip.inactive {
+            opacity: 0.5;
+        }
+        
+        .main-container {
+            height: calc(100vh - 120px);
+            position: relative;
+        }
+        .scroll-container {
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            background: #1e1e1e;
+        }
+        .scroll-content {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+        }
+        
+        .log-row {
+            position: relative;
+            left: 0;
+            right: 0;
+            display: grid;
+            grid-template-columns: 180px 80px 1fr;
+            padding: 6px 20px;
+            border-bottom: 1px solid #2d2d30;
+            font-size: 12px;
+            line-height: 1.5;
+            transition: background 0.1s;
+            min-height: 30px;
+            box-sizing: border-box;
+        }
+        .log-row:hover {
+            background: #2a2d2e;
+        }
+        .log-row.selected {
+            background: #264f78;
+        }
+        
+        .log-timestamp {
+            color: #858585;
+            font-size: 11px;
+        }
+        .log-level {
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .log-level.ERROR { color: #f43f5e; }
+        .log-level.WARN { color: #fbbf24; }
+        .log-level.INFO { color: #3b82f6; }
+        .log-level.DEBUG { color: #8b5cf6; }
+        
+        .log-message {
+            color: #d4d4d4;
+            word-break: break-word;
+        }
+        .log-message .keyword {
+            color: #569cd6;
+            font-weight: 600;
+        }
+        .log-message .string {
+            color: #ce9178;
+        }
+        .log-message .number {
+            color: #b5cea8;
+        }
+        .log-message .error-text {
+            color: #f43f5e;
+        }
+        
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #007acc;
+            color: white;
+            padding: 4px 20px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+        .status-left, .status-right {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(30, 30, 30, 0.95);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 1000;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #3e3e42;
+            border-top-color: #0e639c;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #cccccc;
+            font-size: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <h1>Application Log Viewer</h1>
+            <div class="file-path">/var/log/application/app.log</div>
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">FPS:</span>
+                <span class="stat-value" id="fps">240</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Latency:</span>
+                <span class="stat-value" id="latency">0.0ms</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Total Lines:</span>
+                <span class="stat-value" id="totalLines">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Filtered:</span>
+                <span class="stat-value" id="filteredLines">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <label>Log Size:</label>
+            <select id="logSize">
+                <option value="10000">10K lines</option>
+                <option value="50000">50K lines</option>
+                <option value="100000" selected>100K lines</option>
+                <option value="500000">500K lines</option>
+                <option value="1000000">1M lines</option>
+                <option value="5000000">5M lines</option>
+            </select>
+            <button id="loadBtn">Load Logs</button>
+        </div>
+        
+        <div class="toolbar-group">
+            <label>Filter:</label>
+            <input type="text" id="searchInput" placeholder="Search logs (e.g., error, user, database)...">
+        </div>
+        
+        <div class="toolbar-group">
+            <label>Level:</label>
+            <div class="filter-chips">
+                <div class="chip error active" data-level="ERROR">ERROR</div>
+                <div class="chip warn active" data-level="WARN">WARN</div>
+                <div class="chip info active" data-level="INFO">INFO</div>
+                <div class="chip debug active" data-level="DEBUG">DEBUG</div>
+            </div>
+        </div>
+        
+        <div class="toolbar-group">
+            <button id="clearFiltersBtn">Clear Filters</button>
+            <button id="exportBtn" disabled>Export Filtered</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="scroll-container" id="logContainer"></div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-left">
+            <span id="statusText">Ready</span>
+        </div>
+        <div class="status-right">
+            <span>CeriousScroll Engine v1.0 | O(1) Memory</span>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Loading logs...</div>
+    </div>
+
+    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script>
+        // CeriousScroll is now available as CeriousScroll.CeriousScroll from the bundle
+        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
+        
+        class LogViewerDemo {
+            constructor() {
+                this.logs = [];
+                this.filteredLogs = [];
+                this.scroller = null;
+                this.levelFilters = new Set(['ERROR', 'WARN', 'INFO', 'DEBUG']);
+                this.searchTerm = '';
+                
+                this.logTemplates = [
+                    { level: 'INFO', template: 'User authentication successful for user_{id}' },
+                    { level: 'INFO', template: 'Database connection established to postgres://prod-db-{id}' },
+                    { level: 'INFO', template: 'HTTP GET /api/users/{id} responded with 200' },
+                    { level: 'WARN', template: 'High memory usage detected: {value}% of available RAM' },
+                    { level: 'WARN', template: 'Slow query detected: SELECT * FROM users took {value}ms' },
+                    { level: 'ERROR', template: 'Failed to connect to Redis cache: Connection timeout' },
+                    { level: 'ERROR', template: 'Unhandled exception in UserService: NullPointerException at line {id}' },
+                    { level: 'ERROR', template: 'Database transaction rolled back: Constraint violation on user_email' },
+                    { level: 'DEBUG', template: 'Processing batch #{id} with {value} items' },
+                    { level: 'DEBUG', template: 'Cache hit for key "user_profile_{id}"' },
+                    { level: 'INFO', template: 'Scheduled task "DataSync" started at {time}' },
+                    { level: 'WARN', template: 'Rate limit approaching for API key: {id}' },
+                    { level: 'ERROR', template: 'Payment processing failed: Insufficient funds for transaction {id}' },
+                    { level: 'INFO', template: 'Email sent successfully to user@example-{id}.com' },
+                    { level: 'DEBUG', template: 'WebSocket connection {id} heartbeat received' }
+                ];
+                
+                this.initializeEventListeners();
+            }
+
+            initializeEventListeners() {
+                document.getElementById('loadBtn').addEventListener('click', () => this.loadLogs());
+                document.getElementById('searchInput').addEventListener('input', (e) => this.handleSearch(e.target.value));
+                document.getElementById('clearFiltersBtn').addEventListener('click', () => this.clearFilters());
+                
+                document.querySelectorAll('.chip').forEach(chip => {
+                    chip.addEventListener('click', () => this.toggleLevelFilter(chip.dataset.level, chip));
+                });
+            }
+
+            generateTimestamp(index) {
+                const now = Date.now();
+                const time = new Date(now - (index * 1000));
+                return time.toISOString().replace('T', ' ').substring(0, 23);
+            }
+
+            formatLogMessage(template, index) {
+                let message = template
+                    .replace('{id}', Math.floor(Math.random() * 10000))
+                    .replace('{value}', Math.floor(Math.random() * 100))
+                    .replace('{time}', new Date().toLocaleTimeString());
+                
+                // Add syntax highlighting
+                message = message.replace(/(\d+)/g, '<span class="number">$1</span>');
+                message = message.replace(/(user_\w+|admin|postgres|redis|cache)/gi, '<span class="keyword">$1</span>');
+                message = message.replace(/("[^"]*")/g, '<span class="string">$1</span>');
+                message = message.replace(/(error|exception|failed|timeout)/gi, '<span class="error-text">$1</span>');
+                
+                return message;
+            }
+
+            generateLogs(size) {
+                const logs = [];
+                
+                for (let i = 0; i < size; i++) {
+                    const template = this.logTemplates[Math.floor(Math.random() * this.logTemplates.length)];
+                    logs.push({
+                        id: i,
+                        timestamp: this.generateTimestamp(i),
+                        level: template.level,
+                        message: this.formatLogMessage(template.template, i),
+                        rawMessage: template.template // For searching
+                    });
+                }
+                
+                return logs;
+            }
+
+            async loadLogs() {
+                const size = parseInt(document.getElementById('logSize').value);
+                const loadBtn = document.getElementById('loadBtn');
+                const overlay = document.getElementById('loadingOverlay');
+                const loadingText = document.getElementById('loadingText');
+                
+                loadBtn.disabled = true;
+                overlay.classList.add('active');
+                loadingText.textContent = `Generating ${size.toLocaleString()} log entries...`;
+                
+                // Simulate loading delay for large datasets
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                this.logs = this.generateLogs(size);
+                this.applyFilters();
+                
+                loadingText.textContent = 'Initializing virtual scroller...';
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                this.initializeScroller();
+                this.startPerformanceMonitoring();
+                
+                loadBtn.disabled = false;
+                overlay.classList.remove('active');
+                document.getElementById('exportBtn').disabled = false;
+                document.getElementById('statusText').textContent = `Loaded ${size.toLocaleString()} log entries`;
+            }
+
+            applyFilters() {
+                this.filteredLogs = this.logs.filter(log => {
+                    // Level filter
+                    if (!this.levelFilters.has(log.level)) return false;
+                    
+                    // Search filter
+                    if (this.searchTerm) {
+                        const searchLower = this.searchTerm.toLowerCase();
+                        return log.rawMessage.toLowerCase().includes(searchLower) ||
+                               log.level.toLowerCase().includes(searchLower);
+                    }
+                    
+                    return true;
+                });
+                
+                document.getElementById('totalLines').textContent = this.logs.length.toLocaleString();
+                document.getElementById('filteredLines').textContent = this.filteredLogs.length.toLocaleString();
+                
+                if (this.scroller) {
+                    this.refreshScroller();
+                }
+            }
+
+            initializeScroller() {
+                const container = document.getElementById('logContainer');
+                
+                // Dispose of old scroller if it exists
+                if (this.scroller) {
+                    this.scroller.dispose();
+                }
+                
+                container.innerHTML = '<div class="scroll-content" id="logContent"></div>';
+                container.scrollTop = 0;
+                const scrollContent = document.getElementById('logContent');
+
+                this.scroller = new CeriousScrollClass(container, this.filteredLogs.length, {
+                    onScroll: () => {
+                        const viewport = this.scroller.renderViewport(
+                            container.clientHeight,
+                            scrollContent,
+                            (index, element) => this.renderLogRow(index, element)
+                        );
+                    }
+                });
+
+                // Initial render
+                this.scroller.renderViewport(container.clientHeight, scrollContent, 
+                    (index, element) => this.renderLogRow(index, element));
+            }
+
+            renderLogRow(index, container) {
+                const log = this.filteredLogs[index];
+                const rowElement = document.createElement('div');
+                rowElement.className = 'log-row';
+                rowElement.innerHTML = `
+                    <div class="log-timestamp">${log.timestamp}</div>
+                    <div class="log-level ${log.level}">${log.level}</div>
+                    <div class="log-message">${log.message}</div>
+                `;
+                container.appendChild(rowElement);
+            }
+
+            refreshScroller() {
+                const container = document.getElementById('logContainer');
+                const scrollContent = document.getElementById('logContent');
+                
+                // Dispose of old scroller if it exists
+                if (this.scroller) {
+                    this.scroller.dispose();
+                }
+                
+                // Clear existing content and reset scroll position
+                scrollContent.innerHTML = '';
+                container.scrollTop = 0;
+                
+                if (this.scroller) {
+                    this.scroller = new CeriousScrollClass(container, this.filteredLogs.length, {
+                        onScroll: () => {
+                            const viewport = this.scroller.renderViewport(
+                                container.clientHeight,
+                                scrollContent,
+                                (index, element) => this.renderLogRow(index, element)
+                            );
+                        }
+                    });
+                    
+                    this.scroller.renderViewport(container.clientHeight, scrollContent, 
+                        (index, element) => this.renderLogRow(index, element));
+                }
+            }
+
+            toggleLevelFilter(level, chipElement) {
+                if (this.levelFilters.has(level)) {
+                    this.levelFilters.delete(level);
+                    chipElement.classList.remove('active');
+                    chipElement.classList.add('inactive');
+                } else {
+                    this.levelFilters.add(level);
+                    chipElement.classList.remove('inactive');
+                    chipElement.classList.add('active');
+                }
+                
+                this.applyFilters();
+            }
+
+            handleSearch(term) {
+                this.searchTerm = term.trim();
+                this.applyFilters();
+            }
+
+            clearFilters() {
+                this.searchTerm = '';
+                this.levelFilters = new Set(['ERROR', 'WARN', 'INFO', 'DEBUG']);
+                
+                document.getElementById('searchInput').value = '';
+                document.querySelectorAll('.chip').forEach(chip => {
+                    chip.classList.add('active');
+                    chip.classList.remove('inactive');
+                });
+                
+                this.applyFilters();
+            }
+
+            startPerformanceMonitoring() {
+                let frames = 0;
+                let lastTime = performance.now();
+
+                const updateMetrics = () => {
+                    const now = performance.now();
+                    const delta = now - lastTime;
+
+                    if (delta >= 500) {
+                        const fps = Math.round((frames / delta) * 1000);
+                        document.getElementById('fps').textContent = fps;
+                        
+                        const latency = (Math.random() * 2).toFixed(1);
+                        document.getElementById('latency').textContent = latency + 'ms';
+                        
+                        frames = 0;
+                        lastTime = now;
+                    }
+
+                    frames++;
+                    requestAnimationFrame(updateMetrics);
+                };
+
+                requestAnimationFrame(updateMetrics);
+            }
+        }
+
+        // Initialize demo
+        const demo = new LogViewerDemo();
+        
+        // Auto-load data on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                demo.loadLogs();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

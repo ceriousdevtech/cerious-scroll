@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CeriousScroll - Financial Trading Platform Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #0a0e27;
+            color: #e1e8ed;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e2139 0%, #0a0e27 100%);
+            padding: 20px 30px;
+            border-bottom: 1px solid #2d3350;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 30px;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .header .subtitle {
+            font-size: 14px;
+            color: #8b93a7;
+            margin-top: 4px;
+        }
+        .stats {
+            display: flex;
+            gap: 30px;
+        }
+        .stat {
+            text-align: right;
+        }
+        .stat-label {
+            font-size: 11px;
+            color: #8b93a7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        .stat-value.green { color: #00d4aa; }
+        .stat-value.red { color: #ff4757; }
+        .stat-value.blue { color: #5b8def; }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 100px);
+            gap: 1px;
+            background: #2d3350;
+        }
+        .panel {
+            flex: 1;
+            background: #12162b;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-header {
+            padding: 15px 20px;
+            background: #1a1f3a;
+            border-bottom: 1px solid #2d3350;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .panel-info {
+            font-size: 12px;
+            color: #8b93a7;
+        }
+        .scroll-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        .scroll-content {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+        }
+        
+        /* Order Book Styles */
+        .order-header {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            padding: 12px 20px;
+            background: #1a1f3a;
+            border-bottom: 1px solid #2d3350;
+            font-size: 11px;
+            font-weight: 600;
+            color: #8b93a7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .trade-header {
+            display: grid;
+            grid-template-columns: 100px 1fr 1fr 1fr;
+            padding: 12px 20px;
+            background: #1a1f3a;
+            border-bottom: 1px solid #2d3350;
+            font-size: 11px;
+            font-weight: 600;
+            color: #8b93a7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .order-row {
+            position: relative;
+            left: 0;
+            right: 0;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            padding: 10px 20px;
+            border-bottom: 1px solid #1a1f3a;
+            font-size: 13px;
+            transition: background 0.15s;
+            font-family: 'Monaco', 'Menlo', monospace;
+            min-height: 43px;
+            box-sizing: border-box;
+        }
+        .order-row:hover {
+            background: rgba(91, 141, 239, 0.1);
+        }
+        .order-row.bid {
+            background: linear-gradient(90deg, rgba(0, 212, 170, 0.05) 0%, transparent 100%);
+        }
+        .order-row.ask {
+            background: linear-gradient(90deg, rgba(255, 71, 87, 0.05) 0%, transparent 100%);
+        }
+        .price {
+            font-weight: 600;
+        }
+        .price.bid { color: #00d4aa; }
+        .price.ask { color: #ff4757; }
+        .amount { color: #e1e8ed; }
+        .total { color: #8b93a7; }
+        
+        /* Trade History Styles */
+        .trade-row {
+            position: relative;
+            left: 0;
+            right: 0;
+            display: grid;
+            grid-template-columns: 100px 1fr 1fr 1fr;
+            padding: 10px 20px;
+            border-bottom: 1px solid #1a1f3a;
+            font-size: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            min-height: 41px;
+            box-sizing: border-box;
+        }
+        .trade-row:hover {
+            background: rgba(91, 141, 239, 0.08);
+        }
+        .trade-time { color: #8b93a7; }
+        .trade-price { font-weight: 600; }
+        .trade-price.buy { color: #00d4aa; }
+        .trade-price.sell { color: #ff4757; }
+        .trade-amount { color: #e1e8ed; }
+        .trade-total { color: #8b93a7; }
+        
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex: 1;
+            justify-content: center;
+        }
+        .controls button {
+            padding: 8px 16px;
+            background: #5b8def;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .controls button:hover {
+            background: #4a7cde;
+        }
+        .controls button:disabled {
+            background: #2d3350;
+            cursor: not-allowed;
+            color: #8b93a7;
+        }
+        .controls select {
+            padding: 8px 12px;
+            background: #12162b;
+            color: #e1e8ed;
+            border: 1px solid #2d3350;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .controls label {
+            font-size: 12px;
+            color: #8b93a7;
+            font-weight: 500;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: rgba(0, 212, 170, 0.15);
+            color: #00d4aa;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-badge.streaming {
+            background: rgba(91, 141, 239, 0.15);
+            color: #5b8def;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Financial Trading Platform</h1>
+            <div class="subtitle">Real-time order book powered by CeriousScroll</div>
+        </div>
+        <div class="controls">
+            <label>Dataset Size:</label>
+            <select id="datasetSize">
+                <option value="10000">10K orders</option>
+                <option value="50000">50K orders</option>
+                <option value="100000" selected>100K orders</option>
+                <option value="500000">500K orders</option>
+                <option value="1000000">1M orders</option>
+            </select>
+            <button id="loadBtn">Load Data</button>
+            <button id="streamBtn">Start Streaming</button>
+        </div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">FPS</div>
+                <div class="stat-value blue" id="fps">240</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Latency</div>
+                <div class="stat-value green" id="latency">0.8ms</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Total Orders</div>
+                <div class="stat-value" id="totalOrders">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Order Book Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Order Book (BTC/USD)</div>
+                <span class="status-badge" id="orderBookStatus">READY</span>
+            </div>
+            <div class="order-header">
+                <div>PRICE (USD)</div>
+                <div>AMOUNT (BTC)</div>
+                <div>TOTAL (USD)</div>
+            </div>
+            <div class="scroll-container" id="orderBookContainer"></div>
+        </div>
+
+        <!-- Trade History Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Trade History</div>
+                <span class="status-badge" id="tradeHistoryStatus">READY</span>
+            </div>
+            <div class="trade-header">
+                <div>TIME</div>
+                <div>PRICE (USD)</div>
+                <div>AMOUNT (BTC)</div>
+                <div>TOTAL (USD)</div>
+            </div>
+            <div class="scroll-container" id="tradeHistoryContainer"></div>
+        </div>
+    </div>
+
+    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script>
+        // CeriousScroll is now available as CeriousScroll.CeriousScroll from the bundle
+        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
+        
+        class TradingPlatformDemo {
+            constructor() {
+                this.orderBookData = [];
+                this.tradeHistoryData = [];
+                this.orderBookScroller = null;
+                this.tradeHistoryScroller = null;
+                this.streaming = false;
+                this.basePrice = 45000;
+                this.initializeEventListeners();
+            }
+
+            initializeEventListeners() {
+                document.getElementById('loadBtn').addEventListener('click', () => this.loadData());
+                document.getElementById('streamBtn').addEventListener('click', () => this.toggleStreaming());
+            }
+
+            generateOrderBookData(size) {
+                const orders = [];
+                const midPrice = this.basePrice;
+                
+                for (let i = 0; i < size; i++) {
+                    const isBid = i % 2 === 0;
+                    const priceOffset = (Math.random() * 1000) - 500;
+                    const price = midPrice + priceOffset;
+                    const amount = (Math.random() * 10).toFixed(4);
+                    const total = (price * amount).toFixed(2);
+                    
+                    orders.push({
+                        id: i,
+                        type: isBid ? 'bid' : 'ask',
+                        price: price.toFixed(2),
+                        amount: amount,
+                        total: total,
+                        timestamp: Date.now() - (i * 1000)
+                    });
+                }
+                
+                return orders.sort((a, b) => b.price - a.price);
+            }
+
+            generateTradeHistory(size) {
+                const trades = [];
+                const now = Date.now();
+                
+                for (let i = 0; i < size; i++) {
+                    const isBuy = Math.random() > 0.5;
+                    const price = this.basePrice + (Math.random() * 1000 - 500);
+                    const amount = (Math.random() * 5).toFixed(4);
+                    const total = (price * amount).toFixed(2);
+                    const timestamp = now - (i * 1000);
+                    
+                    trades.push({
+                        id: i,
+                        type: isBuy ? 'buy' : 'sell',
+                        price: price.toFixed(2),
+                        amount: amount,
+                        total: total,
+                        timestamp: timestamp,
+                        time: new Date(timestamp).toLocaleTimeString()
+                    });
+                }
+                
+                return trades;
+            }
+
+            async loadData() {
+                const size = parseInt(document.getElementById('datasetSize').value);
+                const loadBtn = document.getElementById('loadBtn');
+                
+                loadBtn.disabled = true;
+                loadBtn.textContent = 'Loading...';
+                document.getElementById('orderBookStatus').textContent = 'LOADING';
+                document.getElementById('tradeHistoryStatus').textContent = 'LOADING';
+                
+                // Simulate loading delay
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                this.orderBookData = this.generateOrderBookData(size);
+                this.tradeHistoryData = this.generateTradeHistory(size);
+                
+                this.initializeOrderBook();
+                this.initializeTradeHistory();
+                this.startPerformanceMonitoring();
+                
+                loadBtn.disabled = false;
+                loadBtn.textContent = 'Load Data';
+                document.getElementById('orderBookStatus').textContent = 'LIVE';
+                document.getElementById('orderBookStatus').classList.add('streaming');
+                document.getElementById('tradeHistoryStatus').textContent = 'LIVE';
+                document.getElementById('tradeHistoryStatus').classList.add('streaming');
+                document.getElementById('totalOrders').textContent = size.toLocaleString();
+            }
+
+            initializeOrderBook() {
+                const container = document.getElementById('orderBookContainer');
+                
+                // Dispose of old scroller if it exists
+                if (this.orderBookScroller) {
+                    this.orderBookScroller.dispose();
+                }
+                
+                container.innerHTML = '<div class="scroll-content" id="orderBookContent"></div>';
+                const scrollContent = document.getElementById('orderBookContent');
+
+                this.orderBookScroller = new CeriousScrollClass(container, this.orderBookData.length, {
+                    onScroll: () => {
+                        const viewport = this.orderBookScroller.renderViewport(
+                            container.clientHeight,
+                            scrollContent,
+                            (index, container) => {
+                                const order = this.orderBookData[index];
+                                if (!order) return;
+                                const rowElement = document.createElement('div');
+                                rowElement.className = `order-row ${order.type}`;
+                                rowElement.innerHTML = `
+                                    <div class="price ${order.type}">${order.price}</div>
+                                    <div class="amount">${order.amount}</div>
+                                    <div class="total">${order.total}</div>
+                                `;
+                                container.appendChild(rowElement);
+                            }
+                        );
+                    }
+                });
+
+                // Initial render
+                this.orderBookScroller.renderViewport(container.clientHeight, scrollContent, (index, container) => {
+                    const order = this.orderBookData[index];
+                    if (!order) return;
+                    const rowElement = document.createElement('div');
+                    rowElement.className = `order-row ${order.type}`;
+                    rowElement.innerHTML = `
+                        <div class="price ${order.type}">${order.price}</div>
+                        <div class="amount">${order.amount}</div>
+                        <div class="total">${order.total}</div>
+                    `;
+                    container.appendChild(rowElement);
+                });
+            }
+
+            initializeTradeHistory() {
+                const container = document.getElementById('tradeHistoryContainer');
+                
+                // Dispose of old scroller if it exists
+                if (this.tradeHistoryScroller) {
+                    this.tradeHistoryScroller.dispose();
+                }
+                
+                container.innerHTML = '<div class="scroll-content" id="tradeHistoryContent"></div>';
+                const scrollContent = document.getElementById('tradeHistoryContent');
+
+                this.tradeHistoryScroller = new CeriousScrollClass(container, this.tradeHistoryData.length, {
+                    onScroll: () => {
+                        const viewport = this.tradeHistoryScroller.renderViewport(
+                            container.clientHeight,
+                            scrollContent,
+                            (index, container) => {
+                                const trade = this.tradeHistoryData[index];
+                                if (!trade) return;
+                                const rowElement = document.createElement('div');
+                                rowElement.className = 'trade-row';
+                                rowElement.innerHTML = `
+                                    <div class="trade-time">${trade.time}</div>
+                                    <div class="trade-price ${trade.type}">${trade.price}</div>
+                                    <div class="trade-amount">${trade.amount}</div>
+                                    <div class="trade-total">${trade.total}</div>
+                                `;
+                                container.appendChild(rowElement);
+                            }
+                        );
+                    }
+                });
+
+                // Initial render
+                this.tradeHistoryScroller.renderViewport(container.clientHeight, scrollContent, (index, container) => {
+                    const trade = this.tradeHistoryData[index];
+                    if (!trade) return;
+                    const rowElement = document.createElement('div');
+                    rowElement.className = 'trade-row';
+                    rowElement.innerHTML = `
+                        <div class="trade-time">${trade.time}</div>
+                        <div class="trade-price ${trade.type}">${trade.price}</div>
+                        <div class="trade-amount">${trade.amount}</div>
+                        <div class="trade-total">${trade.total}</div>
+                    `;
+                    container.appendChild(rowElement);
+                });
+            }
+
+            toggleStreaming() {
+                const btn = document.getElementById('streamBtn');
+                this.streaming = !this.streaming;
+                
+                if (this.streaming) {
+                    btn.textContent = 'Stop Streaming';
+                    this.startDataStream();
+                } else {
+                    btn.textContent = 'Start Streaming';
+                }
+            }
+
+            startDataStream() {
+                if (!this.streaming) return;
+                
+                // Simulate real-time price updates
+                const updateInterval = setInterval(() => {
+                    if (!this.streaming) {
+                        clearInterval(updateInterval);
+                        return;
+                    }
+                    
+                    // Realistic scenario: Mix of visible "hot" updates + background updates
+                    // 1. Always update all visible rows (high-activity instruments)
+                    // 2. Plus random updates across the full dataset
+                    
+                    const updatedIndices = new Set();
+                    
+                    // Update all currently visible rows (hot instruments)
+                    if (this.orderBookScroller) {
+                        const renderedIndices = this.orderBookScroller.getRenderedIndices();
+                        renderedIndices.forEach(index => updatedIndices.add(index));
+                        
+                        // Plus ~5% of the dataset as random background updates
+                        const backgroundUpdates = Math.floor(this.orderBookData.length * 0.05);
+                        for (let i = 0; i < backgroundUpdates; i++) {
+                            updatedIndices.add(Math.floor(Math.random() * this.orderBookData.length));
+                        }
+                    }
+                    
+                    // Apply data updates
+                    updatedIndices.forEach(index => {
+                        const order = this.orderBookData[index];
+                        order.price = (parseFloat(order.price) + (Math.random() * 10 - 5)).toFixed(2);
+                        order.total = (order.price * order.amount).toFixed(2);
+                    });
+                    
+                    // Update DOM only for currently rendered elements
+                    if (this.orderBookScroller) {
+                        const renderedIndices = this.orderBookScroller.getRenderedIndices();
+                        renderedIndices.forEach(index => {
+                            const container = this.orderBookScroller.getRenderedElement(index);
+                            const order = this.orderBookData[index];
+                            if (container && order) {
+                                const rowElement = container.querySelector('.order-row');
+                                if (rowElement) {
+                                    rowElement.innerHTML = `
+                                        <div class="price ${order.type}">${order.price}</div>
+                                        <div class="amount">${order.amount}</div>
+                                        <div class="total">${order.total}</div>
+                                    `;
+                                }
+                            }
+                        });
+                    }
+                }, 100);
+            }
+
+            startPerformanceMonitoring() {
+                let frames = 0;
+                let lastTime = performance.now();
+
+                const updateMetrics = () => {
+                    const now = performance.now();
+                    const delta = now - lastTime;
+
+                    if (delta >= 500) {
+                        const fps = Math.round((frames / delta) * 1000);
+                        document.getElementById('fps').textContent = fps;
+                        
+                        // Simulate latency
+                        const latency = (Math.random() * 2).toFixed(1);
+                        document.getElementById('latency').textContent = latency + 'ms';
+                        
+                        frames = 0;
+                        lastTime = now;
+                    }
+
+                    frames++;
+                    requestAnimationFrame(updateMetrics);
+                };
+
+                requestAnimationFrame(updateMetrics);
+            }
+        }
+
+        // Initialize demo
+        const demo = new TradingPlatformDemo();
+        
+        // Auto-load data on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                demo.loadData();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

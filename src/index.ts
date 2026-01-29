@@ -1,0 +1,25 @@
+/**
+ * @fileoverview CeriousScroll Main Export
+ * 
+ * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
+ * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
+ */
+
+// Export the main CeriousScroll class
+export { CeriousScroll } from './cerious-scroll.js';
+
+// Export all types for consumers
+export * from './types/index.js';
+
+// Export individual modules for advanced usage
+export { PerformanceCache } from './core/performance-cache.js';
+export { ViewportStateCalculator } from './core/viewport-state.js';
+export { NativeScrollbar } from './features/native-scrollbar.js';
+export { ViewportRenderer } from './features/viewport-renderer.js';
+export { NavigationEngine } from './engine/navigation-engine.js';
+export { BoundaryGuardian } from './engine/boundary-guardian.js';
+export { KeyboardController } from './controllers/keyboard-controller.js';
+export { ResizeController } from './controllers/resize-controller.js';
+export { WheelController } from './controllers/wheel-controller.js';
+export { TouchController } from './controllers/touch-controller.js';
+export { ContentObserverManager } from './observers/content-observer.js';
