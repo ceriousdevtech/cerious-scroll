@@ -6,7 +6,7 @@
 
 **High-Performance Virtual Scrolling for Web Applications**
 
-Cerious Scroll™ is an enterprise-grade virtual scrolling engine that enables smooth scrolling through **millions to hundreds of millions of elements** at a consistent **60 FPS**, while maintaining **O(1) constant memory usage**.
+Cerious Scroll™ is an enterprise-grade virtual scrolling engine that enables smooth scrolling through **millions to hundreds of millions of elements** at a consistent **60 FPS+**, while maintaining **O(1) constant memory usage**.
 
 It is designed for data grids, chat applications, log viewers, financial dashboards, analytics platforms, and any application that must efficiently render massive datasets without performance degradation.
 
@@ -19,7 +19,7 @@ It is designed for data grids, chat applications, log viewers, financial dashboa
 - **True O(1) Memory Usage**  
   Constant memory regardless of dataset size (tested with 100M+ elements)
 
-- **Consistent 60 FPS Performance**  
+- **Consistent 60 FPS+ Performance**  
   Sub-millisecond scroll calculations under real-world load
 
 - **Native Variable Height Support**  

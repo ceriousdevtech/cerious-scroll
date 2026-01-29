@@ -32,7 +32,7 @@
     "react",
     "variable-height",
     "o1-memory",
-    "60fps"
+    "60fps+"
   ],
   "files": [
     "dist",

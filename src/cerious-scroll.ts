@@ -33,7 +33,7 @@ import { ResizeController } from './controllers/resize-controller.js';
  *
  * A framework-agnostic virtual scrolling solution optimized for large datasets with variable element heights.
  * This class provides precise scroll calculations, viewport management, and efficient rendering strategies
- * for lists containing thousands of elements while maintaining smooth 60fps performance.
+ * for lists containing thousands of elements while maintaining smooth 60fps+ performance.
  * 
  * @example
  * ```typescript

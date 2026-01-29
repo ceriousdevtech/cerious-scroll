@@ -42,7 +42,7 @@ First public release of CeriousScroll - high-performance virtual scrolling libra
 
 #### Performance
 - O(1) constant memory usage regardless of dataset size
-- Consistent 60fps scrolling performance
+- Consistent 60fps+ scrolling performance
 - Sub-millisecond scroll latency
 - Tested with 100M+ elements
 - Memory efficient caching with automatic cleanup
