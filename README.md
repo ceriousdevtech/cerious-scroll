@@ -1,7 +1,7 @@
 # Cerious Scroll™
 
-[![License](https://img.shields.io/badge/license-GPL%203.0%20%7C%20Commercial-blue.svg)](LICENSE)
-[![npm version](https://img.shields.io/npm/v/cerious-scroll.svg)](https://www.npmjs.com/package/cerious-scroll)
+[![License](https://img.shields.io/badge/license-MIT%20%7C%20Commercial-blue.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
 [![Patent Pending](https://img.shields.io/badge/patent-pending-orange.svg)](LICENSE)
 
 **High-Performance Virtual Scrolling for Web Applications**
@@ -44,7 +44,10 @@ It is designed for data grids, chat applications, log viewers, financial dashboa
 
 ## 📦 Installation
 
-> **Note:** NPM package coming soon! For now, you can use the library directly from the repository.
+### npm
+```bash
+npm install @ceriousdevtech/cerious-scroll
+```
 
 ### From Source
 ```bash
@@ -65,12 +68,17 @@ Download the latest release from [GitHub Releases](https://github.com/ceriousdev
 <script src="path/to/cerious-scroll.bundle.js"></script>
 ```
 
+Or via CDN:
+```html
+<script src="https://unpkg.com/@ceriousdevtech/cerious-scroll@latest/dist/cerious-scroll.min.js"></script>
+```
+
 ---
 
 ## 🎯 Quick Start
 
 ```javascript
-import { CeriousScroll } from 'cerious-scroll';
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 const data = Array.from({ length: 10000 }, (_, i) => ({
   id: i,
@@ -106,10 +114,13 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 Cerious Scroll™ is **dual-licensed** by **Cerious DevTech LLC**.
 
 ### Open-Source License
-- **GNU General Public License v3.0 (GPL-3.0 only)**
+- **MIT License** (see LICENSE or LICENSE-MIT)
 
 ### Commercial License
-Required for proprietary, closed-source, OEM, or enterprise use.
+Available for organizations that prefer a separately executed commercial agreement
+(for example: explicit patent rights, priority support, or custom terms).
+
+See LICENSE-COMMERCIAL for details.
 
 📧 **info@ceriousdevtech.com**
 

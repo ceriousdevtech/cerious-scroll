@@ -1,171 +1,71 @@
-CERIOUSSCROLL COMMERCIAL LICENSE AGREEMENT
+Cerious Scroll™ Commercial License
 
-Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
-PATENT PENDING
+Copyright © 2024–2026 Cerious DevTech LLC.
+All rights reserved.
 
-IMPORTANT PATENT NOTICE:
-Certain features and implementations in CeriousScroll are the subject of
-pending patent applications filed by Jared Kirchgatter in October 2025.
-This Commercial License grants patent rights only as expressly provided in
-Section 7 below.
+This Commercial License governs use of Cerious Scroll™ only when you have
+entered into a separately executed commercial agreement with Cerious DevTech LLC.
 
-This Commercial License Agreement ("Agreement") governs commercial use of the
-CeriousScroll software, including the source code and all associated files
-("Software").
+If you do not have such an agreement, you may use this software under the
+MIT license (see LICENSE).
 
-Important: CeriousScroll is offered under a dual-license model:
-- Open-source license: GNU General Public License v3.0 or later (see LICENSE-GPL-3.0.md)
-- Commercial license: this Agreement (see this file)
+A commercial agreement is commonly used when Cerious Scroll™ is:
 
-If you want to use CeriousScroll in a manner that is not compatible with the GPL
-(e.g., in closed-source/proprietary products), you must obtain a commercial
-license.
+- Redistributed as part of a commercial product
+- Bundled with a proprietary SDK, framework, or component library
+- Integrated into a low-code / no-code platform
+- Used in OEM, white-label, or downstream resale offerings
+- Included in internal frameworks or platforms sold or licensed to third parties
 
-This file is intended to be a ready-to-use commercial license text for a paid
-license grant. You should review it with counsel before relying on it.
+This license grants the Licensee a non-exclusive, non-transferable,
+non-sublicensable right to use, modify, and distribute Cerious Scroll™
+solely under the terms of that commercial agreement.
 
-1. Parties
+### Restrictions
 
-"Licensor": Cerious DevTech LLC ("Licensor").
-"Licensee": The individual or entity that has purchased or otherwise obtained a
-valid commercial license from Licensor.
+Except as explicitly permitted in a written commercial agreement, the Licensee
+may not:
 
-2. License Grant
+- Redistribute Cerious Scroll™ as a standalone product
+- Offer Cerious Scroll™ as part of a competing scrolling, virtualization,
+  or UI infrastructure library
+- Remove or obscure copyright, trademark, or patent notices
+- Grant sublicenses or derivative commercial licenses
 
-Subject to Licensee's continuous compliance with this Agreement and payment of
-all applicable fees, Licensor grants Licensee a non-exclusive, worldwide license
-to:
-- use, reproduce, and run the Software for internal business purposes;
-- incorporate the Software into Licensee products and services;
-- modify the Software and create derivative works for Licensee products and
-  services; and
-- distribute the Software (including modified versions) solely as incorporated
-  into Licensee products and services.
+### Ownership
 
-3. Restrictions
+Cerious Scroll™ and all associated intellectual property rights, including
+but not limited to copyrights, patents, and trademarks, remain the exclusive
+property of Cerious DevTech LLC.
 
-Except as expressly permitted in Section 2, Licensee may not:
-- remove or alter copyright, attribution, or proprietary notices;
-- sublicense, sell, lease, or provide the Software on a stand-alone basis;
-- use Licensor trademarks, service marks, or branding without written
-  permission.
+No rights are granted except those expressly stated in this license.
 
-4. Source Code Disclosure
+### Patent Rights
 
-Under this Commercial License, Licensee is not required to disclose, license, or
-publish Licensee source code, modifications, or derivative works.
+Cerious Scroll™ includes technology covered by one or more pending patent
+applications owned by Cerious DevTech LLC.
 
-5. Fees and Term
+This license grants only those patent rights explicitly provided in a
+commercial agreement. No implied patent licenses are granted.
 
-Fees, term length (perpetual or subscription), support levels, and any usage
-limits (e.g., number of developers, seats, or deployments) are as specified in
-the order form, invoice, or other written terms provided by Licensor.
+### Termination
 
-If no separate written commercial terms exist, then no commercial license is
-granted.
+Any violation of this license immediately terminates the rights granted herein
+without notice.
 
-6. Ownership
+Upon termination, the Licensee must cease all use and distribution of
+Cerious Scroll™.
 
-The Software is licensed, not sold. Licensor retains all right, title, and
-interest in and to the Software, including all intellectual property rights.
+### Warranty Disclaimer
 
-7. Patents and Patent Pending Rights
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
 
-PATENT PENDING NOTICE: Certain features and implementations in the Software are
-the subject of pending patent applications filed by Jared Kirchgatter in
-October 2025 and owned by or licensed to Licensor.
+### Limitation of Liability
 
-7.1 Limited Patent License
+IN NO EVENT SHALL CERIOUS DEVTECH LLC BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
 
-To the extent Licensor has the right to do so, and subject to Licensee's
-continuous payment of all applicable fees and compliance with this Agreement,
-Licensor grants Licensee a non-exclusive, non-transferable, non-sublicensable,
-worldwide patent license under:
-
-(a) any Licensor patents that issue from pending patent applications and are
-    necessarily infringed by Licensee's authorized use of the unmodified
-    Software as provided by Licensor; and
-
-(b) any Licensor patents currently granted that are necessarily infringed by
-    Licensee's authorized use of the unmodified Software as provided by
-    Licensor.
-
-7.2 Scope Limitations
-
-This patent license is strictly limited to:
-- Using the Software solely as incorporated into Licensee's products/services
-  for Licensee's customers;
-- The Software in the form provided by Licensor, without modification to the
-  patented features;
-- Internal business use and distribution only as part of a larger product or
-  service that adds substantial additional functionality.
-
-7.3 Prohibited Uses
-
-Licensee expressly agrees NOT to:
-- Use knowledge of the patented technology to create competing products or
-  services;
-- Reverse engineer, extract, or reimplement the patented features separately
-  from the Software;
-- Grant sublicenses or rights to the patented technology to any third party;
-- Use, make, sell, or offer for sale any products that embody the patented
-  technology outside of the Software as provided;
-- Challenge, contest, or assist others in challenging the validity or
-  enforceability of Licensor's patents or patent applications.
-
-7.4 Patent Enforcement
-
-Licensee acknowledges and agrees that:
-- Licensor retains all rights to enforce its patents against third parties;
-- This license terminates immediately upon breach of Section 7.3 or upon
-  termination of this Agreement for any reason;
-- Upon termination, Licensee must immediately cease all use of the patented
-  technology and may not continue using knowledge derived from the Software
-  to compete with Licensor.
-
-7.5 No Implied Rights
-
-Nothing in this Agreement grants any patent rights by implication, estoppel,
-or otherwise except as expressly stated in Section 7.1. All other patent
-rights are expressly reserved by Licensor.
-
-8. Support and Updates
-
-Support, maintenance, and updates are provided only if purchased and only as
-described in the applicable commercial terms.
-
-9. Termination
-
-This Agreement terminates automatically if Licensee breaches its terms and fails
-to cure the breach within 30 days of written notice.
-
-Upon termination, Licensee must cease further use and distribution of the
-Software under this Commercial License. Licensee may continue to use the
-Software only if Licensee has another valid license (e.g., GPL) and is in
-compliance with that license.
-
-10. Disclaimer of Warranty
-
-THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
-KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
-
-11. Limitation of Liability
-
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL LICENSOR BE LIABLE
-FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR
-ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO
-THIS AGREEMENT OR THE SOFTWARE.
-
-12. Governing Law
-
-This Agreement is governed by the laws of the jurisdiction where Licensor
-resides, excluding its conflict of laws rules.
-
-13. Contact
-
-Commercial licensing inquiries:
-- Email: info@ceriousdevtech.com
-- Subject: CeriousScroll Commercial License Inquiry
-
-Last Updated: January 28, 2026
+For commercial licensing inquiries, contact:
+info@ceriousdevtech.com

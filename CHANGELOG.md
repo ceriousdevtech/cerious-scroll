@@ -55,7 +55,7 @@ First public release of CeriousScroll - high-performance virtual scrolling libra
 - GitHub Pages setup for live demos
 
 ### Legal
-- Dual-license model (GPL-3.0 + Commercial License)
+- Dual-license model (MIT + Commercial License)
 - Patent Pending protection (filed October 2025)
 - Commercial license terms and contact information
 

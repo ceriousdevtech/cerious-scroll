@@ -28,7 +28,7 @@
 Here's the minimal code to get CeriousScroll running:
 
 ```typescript
-import { CeriousScroll } from 'cerious-scroll';
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 // Your data
 const data = Array.from({ length: 10000 }, (_, i) => ({
@@ -82,7 +82,7 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 
 ### NPM/Yarn (Recommended)
 ```bash
-npm install cerious-scroll
+npm install @ceriousdevtech/cerious-scroll
 # or
 yarn add cerious-scroll
 ```
@@ -113,7 +113,7 @@ import { CeriousScroll } from './cerious-scroll/index.js';
 ### Step 2: Initialize CeriousScroll
 
 ```typescript
-import { CeriousScroll } from 'cerious-scroll';
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 const container = document.getElementById('scroll-container')!;
 const totalItems = 10000;
@@ -738,7 +738,7 @@ CeriousScroll integrates seamlessly with Vue 3 using Composition API or Options 
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
-import { CeriousScroll } from 'cerious-scroll';
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 interface Item {
   id: number;
@@ -847,7 +847,7 @@ defineExpose({
 
 <script lang="ts">
 import { defineComponent } from 'vue';
-import { CeriousScroll } from 'cerious-scroll';
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 export default defineComponent({
   name: 'CeriousScroll',
@@ -921,7 +921,7 @@ Create a reusable composable for CeriousScroll:
 ```typescript
 // composables/useCeriousScroll.ts
 import { ref, onMounted, onBeforeUnmount, Ref } from 'vue';
-import { CeriousScroll, CeriousScrollOptions } from 'cerious-scroll';
+import { CeriousScroll, CeriousScrollOptions } from '@ceriousdevtech/cerious-scroll';
 
 export function useCeriousScroll<T>(
   items: Ref<T[]>,
@@ -1027,7 +1027,7 @@ import {
   Output, 
   EventEmitter 
 } from '@angular/core';
-import { CeriousScroll, CeriousScrollOptions } from 'cerious-scroll';
+import { CeriousScroll, CeriousScrollOptions } from '@ceriousdevtech/cerious-scroll';
 
 export interface VirtualScrollItem {
   id: number;
@@ -1236,7 +1236,7 @@ Create a service to manage CeriousScroll instances:
 ```typescript
 // virtual-scroll.service.ts
 import { Injectable } from '@angular/core';
-import { CeriousScroll, CeriousScrollOptions } from 'cerious-scroll';
+import { CeriousScroll, CeriousScrollOptions } from '@ceriousdevtech/cerious-scroll';
 
 @Injectable({
   providedIn: 'root'
@@ -1288,7 +1288,7 @@ import {
   Output,
   EventEmitter
 } from '@angular/core';
-import { CeriousScroll, CeriousScrollOptions } from 'cerious-scroll';
+import { CeriousScroll, CeriousScrollOptions } from '@ceriousdevtech/cerious-scroll';
 
 @Directive({
   selector: '[appVirtualScroll]'
@@ -1429,11 +1429,11 @@ if (saved) {
 
 ## License and Support
 
-**License:** Dual-licensed under GPL v3.0 or Commercial License  
+**License:** Dual-licensed under MIT or Commercial License  
 **Patent:** Patent Pending (Filed October 2025 by Jared Kirchgatter)  
 **Support:** info@ceriousdevtech.com
 
-For commercial licensing inquiries, see [LICENSE-COMMERCIAL.md](../LICENSE-COMMERCIAL.md).
+For commercial licensing inquiries, see [LICENSE-COMMERCIAL](../LICENSE-COMMERCIAL).
 
 ---
 

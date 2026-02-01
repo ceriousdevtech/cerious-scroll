@@ -147,5 +147,5 @@ For issues with GitHub Pages setup, contact: info@ceriousdevtech.com
 ## License
 
 All documentation and demo files are subject to the same dual-license model as CeriousScroll:
-- GPL v3.0 for open-source use
-- Commercial license for proprietary applications
+- MIT for open-source use
+- Commercial license available via a separately executed agreement

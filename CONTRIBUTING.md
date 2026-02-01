@@ -165,9 +165,9 @@ cerious-scroll/
 ├── CHANGELOG.md             # Version history
 ├── CONTRIBUTING.md          # This file
 ├── SECURITY.md              # Security policy
-├── LICENSE                  # Dual-license notice
-├── LICENSE-GPL-3.0.md       # GPL license text
-├── LICENSE-COMMERCIAL.md    # Commercial license terms
+├── LICENSE                  # MIT license text
+├── LICENSE-MIT              # MIT license text (duplicate for convenience)
+├── LICENSE-COMMERCIAL       # Commercial license terms
 ├── package.json             # NPM configuration
 └── vitest.config.ts         # Test configuration
 ```
@@ -198,8 +198,8 @@ npm run test:coverage
 ### License
 Cerious Scroll™ is dual-licensed:
 
-- **GNU GPL v3.0** for open-source use
-- **Commercial License** for proprietary or closed-source use
+- **MIT License** for open-source use
+- **Commercial License** for a separately executed commercial agreement (optional)
 
 All contributions must be compatible with this dual-license model.
 
@@ -214,7 +214,7 @@ By submitting a pull request, issue, or other contribution, you acknowledge and 
 - You grant **Cerious DevTech LLC** a perpetual, worldwide, irrevocable,
   royalty-free right to use, modify, sublicense, and redistribute your
   contribution as part of Cerious Scroll™ under:
-  - the GNU GPL v3.0 license, and/or
+  - the MIT license, and/or
   - a commercial proprietary license
 
 This agreement applies automatically upon submission.

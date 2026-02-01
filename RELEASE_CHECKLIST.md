@@ -74,7 +74,7 @@ Use this checklist before releasing a new version of CeriousScroll.
 
 ### 6. Legal & Licensing ✓
 
-- [ ] License files up to date (LICENSE, LICENSE-GPL-3.0.md, LICENSE-COMMERCIAL.md)
+- [ ] License files up to date (LICENSE, LICENSE-MIT, LICENSE-COMMERCIAL)
 - [ ] Copyright year current in all files
 - [ ] Patent pending notice present
 - [ ] No license violations in dependencies: `npm audit`
@@ -205,7 +205,7 @@ npm publish --tag beta
 mkdir test-install
 cd test-install
 npm init -y
-npm install cerious-scroll
+npm install @ceriousdevtech/cerious-scroll
 
 # Verify files are correct
 ls node_modules/cerious-scroll/

@@ -1,13 +1,14 @@
 {
-  "name": "cerious-scroll",
+  "name": "@ceriousdevtech/cerious-scroll",
   "version": "1.0.0",
   "description": "High-performance virtual scrolling library with O(1) memory usage, supporting millions of elements",
-  "main": "dist/cerious-scroll.js",
-  "module": "dist/cerious-scroll.js",
-  "types": "dist/cerious-scroll.d.ts",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
   "unpkg": "dist/cerious-scroll.min.js",
   "jsdelivr": "dist/cerious-scroll.min.js",
-  "license": "(GPL-3.0-or-later OR LicenseRef-CeriousScroll-Commercial)",
+  "license": "(MIT OR LicenseRef-CeriousScroll-Commercial)",
   "author": "Cerious DevTech LLC <info@ceriousdevtech.com>",
   "homepage": "https://github.com/ceriousdevtech/cerious-scroll#readme",
   "repository": {
@@ -17,6 +18,16 @@
   "bugs": {
     "url": "https://github.com/ceriousdevtech/cerious-scroll/issues",
     "email": "info@ceriousdevtech.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "virtual-scroll",
@@ -36,10 +47,9 @@
   ],
   "files": [
     "dist",
-    "cerious-scroll",
     "LICENSE",
-    "LICENSE-GPL-3.0.md",
-    "LICENSE-COMMERCIAL.md",
+    "LICENSE-MIT",
+    "LICENSE-COMMERCIAL",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -47,7 +57,7 @@
     "build": "npm run compile && npm run bundle && npm run minify && npm run obfuscate",
     "build:fast": "npm run compile && npm run bundle && npm run minify && npm run obfuscate:light",
     "build:angular": "npm run compile && npm run bundle:umd && npm run minify:angular && npm run obfuscate:angular",
-    "compile": "tsc ./src/cerious-scroll.ts --target es2017 --module es2015 --lib es2017,dom --outDir dist --declaration --sourceMap",
+    "compile": "tsc ./src/index.ts --target es2017 --module es2015 --lib es2017,dom --outDir dist --declaration --sourceMap",
     "bundle": "rollup dist/cerious-scroll.js --file dist/cerious-scroll.bundle.js --format iife --name CeriousScroll",
     "bundle:umd": "rollup dist/cerious-scroll.js --file dist/cerious-scroll.umd.js --format umd --name CeriousScroll",
     "minify": "terser dist/cerious-scroll.bundle.js -o dist/cerious-scroll.min.js --compress --mangle",
@@ -55,6 +65,7 @@
     "obfuscate": "javascript-obfuscator dist/cerious-scroll.min.js --output dist/cerious-scroll.obfuscated.js --compact true --control-flow-flattening true --control-flow-flattening-threshold 0.75 --dead-code-injection true --dead-code-injection-threshold 0.4 --debug-protection false --disable-console-output false --identifier-names-generator hexadecimal --log false --rename-globals false --self-defending true --string-array true --string-array-threshold 0.75 --string-array-encoding base64 --string-array-rotate true --string-array-shuffle true --transform-object-keys true --unicode-escape-sequence false",
     "obfuscate:light": "javascript-obfuscator dist/cerious-scroll.min.js --output dist/cerious-scroll.obfuscated.js --compact true --control-flow-flattening false --dead-code-injection false --identifier-names-generator hexadecimal --string-array true --string-array-threshold 0.5 --string-array-encoding base64 --string-array-rotate true --string-array-shuffle true --transform-object-keys false --rename-globals false --self-defending false",
     "obfuscate:angular": "javascript-obfuscator dist/cerious-scroll.angular.min.js --output dist/cerious-scroll.angular.obfuscated.js --compact true --control-flow-flattening false --dead-code-injection false --identifier-names-generator hexadecimal --string-array true --string-array-threshold 0.5 --string-array-encoding base64 --string-array-rotate true --string-array-shuffle true --transform-object-keys false --rename-globals false --self-defending false",
+    "prepack": "npm run build && npm test",
     "test": "vitest run"
   },
   "devDependencies": {
