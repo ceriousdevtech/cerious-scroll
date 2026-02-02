@@ -42,8 +42,7 @@ const container = document.getElementById('scroll-container')!;
 // Create the scroller
 const scroller = new CeriousScroll(
   container,           // Container element
-  data.length,         // Total number of items
-  40                   // Default height per item (optional, default: 40)
+  data.length          // Total number of items
 );
 
 // Render on scroll

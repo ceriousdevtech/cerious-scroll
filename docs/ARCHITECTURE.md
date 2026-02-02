@@ -81,19 +81,21 @@ The viewport consists of:
 └─────────────────────────────┘
 ```
 
-### 3. Just-In-Time Height Measurement
+### 3. Measurement-Driven Incremental Rendering
 
-Heights are measured lazily as elements enter the viewport:
+Heights are measured immediately as elements are rendered through an incremental approach:
 
-1. **Unmeasured element** → Returns default height (40px)
-2. **Element rendered** → DOM measurement via `offsetHeight`
-3. **Height cached** → Used for future calculations
-4. **Cache pruned** → Keeps only ~200 measurements near current position
+1. **Render overscan buffer above** → Measure each element before startElement
+2. **Render visible elements one-by-one** → Add to DOM → measure → accumulate height
+3. **Stop when viewport filled** → Based on actual accumulated height
+4. **Render overscan buffer below** → Measure each element after viewport
+5. **Height cached** → Used for future positioning calculations
 
 **Why this works:**
-- Only measures visible elements (O(1) per frame)
+- Only measures visible elements (O(k) where k = visible count, typically 10-30)
+- No estimated heights needed - all positioning from actual measurements
 - Cache pruning prevents unbounded memory growth
-- Default heights provide reasonable estimates until measured
+- Incremental rendering prevents layout thrashing
 
 ### 4. Sliding Window Caching
 
@@ -211,37 +213,41 @@ for (const [index, height] of measuredHeights) {
 **Responsibilities:**
 - DOM element creation and removal
 - Element positioning (absolute positioning)
-- Height measurement after rendering
-- Incremental DOM updates
-- Position recalculation when estimates were used
+- Incremental measurement-based rendering
+- Element pooling for reuse
 
 **Rendering Algorithm:**
 
 ```typescript
-1. Calculate visible range:
-   - Start at currentElement with -scrollOffset
-   - Add elements until viewport height is filled
-   - Add overscan buffer (5 above, 5 below)
+1. Render overscan buffer ABOVE viewport:
+   - Render elements [startElement - 5] to [startElement - 1]
+   - Measure each element immediately after rendering
+   - Calculate their total height to position startElement correctly
 
-2. Determine which elements to render:
-   - Create Set of indices that should be visible
-   - Compare with currently rendered elements
-   - Remove elements not in the set
+2. Render visible elements incrementally:
+   - Start at startElement with -scrollOffset position
+   - FOR EACH element until viewport filled:
+     * Create/reuse element
+     * Position at cumulative top
+     * Add to DOM
+     * Render content
+     * Measure actual height (offsetHeight)
+     * Add to accumulated height
+     * STOP if accumulated height >= viewport height
+   - No pre-calculation - measurements drive rendering
 
-3. Position calculation:
-   - Calculate startElement's top position
-   - Work backwards for buffer elements above
-   - Work forwards accumulating heights
+3. Render overscan buffer BELOW viewport:
+   - Render next 5 elements after viewport
+   - Measure each for future use
 
-4. Render/Update elements:
-   - Reuse existing DOM elements (update position only)
-   - Create new elements for unmeasured indices
-   - Measure new elements via offsetHeight
-   
-5. Position recalculation (if needed):
-   - If estimates were used AND new elements were created
-   - Recalculate all positions with actual measurements
-   - Update DOM to prevent visual jumps
+4. Render bottom boundary elements:
+   - Render up to 50 elements from dataset end
+   - Enables accurate end-of-scroll detection
+   - Limited count prevents initial load lockup
+
+5. Remove out-of-range elements:
+   - Elements outside visible + overscan range
+   - Return to pool for reuse
 ```
 
 **Incremental DOM Strategy:**
@@ -264,30 +270,7 @@ CeriousScroll never repositions existing elements. When scrolling:
 - Minimal DOM manipulation (only edges)
 - No layout thrashing from repositioning
 - Smooth 60fps scrolling
-
-**Position Recalculation Fix:**
-
-When scrolling up from large elements to smaller unmeasured elements:
-
-```typescript
-// Problem: Initial positioning uses estimates
-let startTop = -offset;
-for (let i = startElement - 1; i >= bufferStart; i--) {
-  const height = hasMeasured(i) ? getMeasured(i) : 50; // Estimate!
-  startTop -= height;
-}
-
-// Solution: Recalculate after measurement
-if (usedEstimatedHeights && createdNewElements) {
-  let correctedTop = -offset;
-  for (let i = startElement - 1; i >= bufferStart; i--) {
-    const height = getMeasured(i); // Now measured!
-    correctedTop -= height;
-  }
-  // Update all element positions
-  repositionAllElements(correctedTop);
-}
-```
+- No estimated heights or correction passes needed
 
 ### 4. NavigationEngine
 
@@ -605,17 +588,11 @@ Here's a complete trace of what happens when the user scrolls:
       - Update positions: 96-119
    
    e. Measure new elements:
-      - If 120 wasn't measured:
-        * Render element 120
-        * measure = element.offsetHeight
-        * cache(120, measure)
+      - Render element 120 to DOM
+      - Immediately measure: element.offsetHeight
+      - Cache measurement: cache(120, measuredHeight)
    
-   f. Position recalculation (if needed):
-      - If estimates were used for buffer elements
-      - AND new elements were created
-      - Recalculate all positions with measured heights
-   
-   g. Return viewport info:
+   f. Return viewport info:
       {
         startElement: 101,
         endElement: 115,
@@ -1167,12 +1144,14 @@ scroller.handleScrollPercentage(50);  // Jump to 50%
 getElementHeight(index: number): number
 ```
 
-Get the height of an element (measured or estimated).
+Get the measured height of an element.
 
 **Parameters:**
 - `index`: Element index
 
-**Returns:** Height in pixels (measured if available, otherwise 40px default)
+**Returns:** Height in pixels (from measured cache)
+
+**Note:** Elements must have been rendered at least once to have a measured height. Returns the cached measurement from when the element was last rendered in the viewport.
 
 #### getElementViewportPosition()
 
@@ -1240,36 +1219,9 @@ scroller.destroy();
 
 ## Advanced Features
 
-### 1. Custom Height Estimation
+### 1. Variable Height Content
 
-Override the default 40px height estimate:
-
-```typescript
-// In cerious-scroll.ts, modify DEFAULT_ELEMENT_HEIGHT
-private static readonly DEFAULT_ELEMENT_HEIGHT = 60;
-```
-
-Or implement smart estimation based on element type:
-
-```typescript
-this.getElementHeight = (index: number) => {
-  const measuredHeight = this.performanceCache.getMeasuredHeight(index);
-  if (measuredHeight !== undefined) {
-    return measuredHeight;
-  }
-  
-  // Smart estimation based on element type
-  const itemType = getItemType(index);
-  const estimate = itemType === 'large' ? 100 : 40;
-  
-  this.performanceCache.setMeasuredHeight(index, estimate);
-  return estimate;
-};
-```
-
-### 2. Variable Height Content
-
-CeriousScroll handles variable heights automatically:
+CeriousScroll handles variable heights automatically through measurement-based rendering:
 
 ```typescript
 scroller.renderViewport(600, container, (index, element) => {
@@ -1585,14 +1537,18 @@ scroller.renderViewport(600, container, (index, element) => {
 
 **Cause:** Position recalculation not working correctly
 
-**Solution:** Ensure the fix is applied in `viewport-renderer.ts`:
+### Issue: Elements Misaligned After Scrolling
+
+**Cause:** Elements not being measured before positioning
+
+**Solution:** Ensure `renderViewport()` uses incremental measurement:
 
 ```typescript
-// After rendering, recalculate if estimates were used
-if (usedEstimatedHeights && createdNewElements) {
-  // Recalculate with actual measurements
-  // ... repositioning code ...
-}
+// Elements must be rendered and measured before next element is positioned
+container.appendChild(element);
+renderElement(index, element);
+const height = element.offsetHeight; // Measure immediately
+// Use height for positioning next element
 ```
 
 ### Issue: Memory Growing Over Time
