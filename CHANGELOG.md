@@ -5,6 +5,36 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-02-02
+
+### Changed
+
+#### Core Rendering
+- **Breaking architectural improvement**: Refactored viewport rendering to use pure measurement-driven incremental approach
+- Elements are now rendered one-by-one and measured immediately (add → measure → check → repeat)
+- Eliminated all estimated heights and default height constants
+- Removed position correction passes (no longer needed with accurate measurements)
+
+#### Performance
+- Reduced complexity: Rendering now stops exactly when viewport is filled based on actual measurements
+- Eliminated correction pass overhead
+- More predictable rendering behavior with pixel-perfect positioning from first render
+
+#### Documentation
+- Updated ARCHITECTURE.md to reflect measurement-first rendering approach
+- Updated IMPLEMENTATION_GUIDE.md to remove default height parameter references
+- Clarified that all positioning is based on actual DOM measurements
+
+### Fixed
+- Potential lockup on initial load with large datasets (added safety limit for bottom boundary elements)
+- Position calculation now uses actual measurements instead of estimates
+
+### Technical Details
+- Removed `DEFAULT_ESTIMATED_HEIGHT` constant (no longer needed)
+- `renderViewport()` now uses 5-step incremental process: overscan above → incremental visible → overscan below → bottom boundary → cleanup
+- Bottom boundary elements limited to 50 maximum to prevent initial load issues
+- `computeTrueBottomPosition()` returns null when measurements unavailable (initial state)
+
 ## [1.0.0] - 2026-01-28
 
 ### 🎉 Initial Release
