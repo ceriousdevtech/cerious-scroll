@@ -74,6 +74,32 @@ export interface ElementMeasuredEvent {
 export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   private listeners: Map<keyof TEventMap, Set<EventListener<any>>> = new Map();
   private onceListeners: Map<keyof TEventMap, Set<EventListener<any>>> = new Map();
+  // Optional sink for listener errors. When unset (default), errors are
+  // logged via console.error. Consumers integrating with structured logging
+  // (Sentry, Datadog, etc.) can register a hook to capture them instead.
+  private _onError: ((error: unknown, eventName: string | symbol) => void) | null = null;
+
+  /**
+   * Register a global error handler for listener exceptions. Replaces the
+   * default console.error logging. Pass `null` to restore default behavior.
+   */
+  setErrorHandler(
+    handler: ((error: unknown, eventName: string | symbol) => void) | null
+  ): void {
+    this._onError = handler;
+  }
+
+  private _reportError(error: unknown, eventName: keyof TEventMap, kind: 'listener' | 'once-listener'): void {
+    if (this._onError) {
+      try {
+        this._onError(error, eventName as string | symbol);
+      } catch {
+        // Never let an error handler bring down the emitter.
+      }
+    } else {
+      console.error(`Error in ${kind} for '${String(eventName)}':`, error);
+    }
+  }
 
   /**
    * Subscribe to an event
@@ -162,7 +188,7 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
         try {
           listener(data);
         } catch (error) {
-          console.error(`Error in event listener for '${String(eventName)}':`, error);
+          this._reportError(error, eventName, 'listener');
         }
       });
     }
@@ -174,7 +200,7 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
         try {
           listener(data);
         } catch (error) {
-          console.error(`Error in once-event listener for '${String(eventName)}':`, error);
+          this._reportError(error, eventName, 'once-listener');
         }
       });
       // Clear once listeners after calling

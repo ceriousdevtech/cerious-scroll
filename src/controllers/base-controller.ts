@@ -104,12 +104,24 @@ export abstract class BaseController<TOptions = any> implements ControllerLifecy
       return;
     }
     
-    // Call lifecycle hook
-    this.onDetach?.();
+    // Call lifecycle hook (do not let a buggy hook prevent cleanup below)
+    try {
+      this.onDetach?.();
+    } catch (error) {
+      console.error(`${this.constructor.name}.onDetach threw:`, error);
+    }
     
-    // Execute all cleanup functions
-    this.cleanupFunctions.forEach(cleanup => cleanup());
+    // Execute every cleanup function even if one throws.
+    // Skipping subsequent cleanups would leak listeners/observers/RAFs.
+    const cleanups = this.cleanupFunctions;
     this.cleanupFunctions = [];
+    for (let i = 0; i < cleanups.length; i++) {
+      try {
+        cleanups[i]();
+      } catch (error) {
+        console.error(`${this.constructor.name}: cleanup[${i}] threw:`, error);
+      }
+    }
     
     this.container = undefined;
     this.options = undefined;

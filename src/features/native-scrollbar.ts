@@ -28,17 +28,27 @@ export class NativeScrollbar {
   private _scrollbarContainer: HTMLElement | null = null;
   private _syncingScrollbar = false;
   private _lastProgrammaticUpdate = 0;
+  // Counter of pending programmatic scrollTop assignments. Each programmatic
+  // assignment is expected to produce one scroll event; the listener
+  // decrements and ignores. This handles the race deterministically without
+  // relying solely on a wall-clock window. The time grace below is kept as a
+  // safety net for browsers that may coalesce multiple assignments into a
+  // single scroll event (or fire none at all).
+  private _pendingProgrammaticEvents = 0;
   private _cachedScrollbarWidth: number | undefined = undefined;
   private _lastScrollTop: number = 0;
   private _lastRenderedElement: number = -1;
   private _lastRenderedOffset: number = -1;
+  // Track scroll-event listeners so we can remove them on detach to prevent
+  // listener leaks when the scrollbar is recreated.
+  private _scrollListener: ((e: Event) => void) | null = null;
 
   constructor(
     private totalElements: number,
     private getScrollPercentage: () => number,
     private getElementHeight: (index: number) => number,
     private onScrollPositionChange: (element: number, offset: number) => void,
-    private scrollHandlers: NavigationEngine,
+    private scrollHandlers: NavigationEngine | null,
     private getViewportHeight: () => number,
     private getCurrentElement: () => number,
     private getScrollOffset: () => number,
@@ -46,6 +56,16 @@ export class NativeScrollbar {
     private virtualTrackHeight: number = 10000000,
     private onRender?: (result: any) => void
   ) {}
+
+  /**
+   * Inject the navigation engine after construction. NativeScrollbar is
+   * created before the engine exists in CeriousScroll's bootstrap order, so
+   * a deferred setter avoids the previous `null as any` cast and the
+   * accompanying NPE risk if a scroll event fires before assignment.
+   */
+  setScrollHandlers(handlers: NavigationEngine): void {
+    this.scrollHandlers = handlers;
+  }
 
   /**
    * Get the scrollbar container element
@@ -236,11 +256,23 @@ export class NativeScrollbar {
     container.appendChild(scrollbarContainer);
 
     // Bind scroll events - map scrollbar position directly to element index
-    scrollbarContainer.addEventListener('scroll', (e) => {
+    const scrollListener = (e: Event) => {
       // Prevent infinite loop by checking if we're currently syncing
       if (this._syncingScrollbar) return;
-      
-      // Ignore scroll events that happen shortly after programmatic updates
+      // Bail out gracefully if the engine hasn't been wired up yet (this can
+      // happen if a scroll event fires between scrollbar creation and the
+      // CeriousScroll constructor finishing).
+      if (!this.scrollHandlers) return;
+
+      // Drain one pending programmatic event if any. This handles the common
+      // synchronous-dispatch case deterministically.
+      if (this._pendingProgrammaticEvents > 0) {
+        this._pendingProgrammaticEvents--;
+        return;
+      }
+
+      // Time grace as a safety net for browsers that don't fire a scroll
+      // event for every programmatic assignment.
       const timeSinceUpdate = Date.now() - this._lastProgrammaticUpdate;
       if (timeSinceUpdate < NativeScrollbar.PROGRAMMATIC_UPDATE_GRACE_PERIOD_MS) return;
       
@@ -319,7 +351,16 @@ export class NativeScrollbar {
       
       // Clear flag after handling
       this._syncingScrollbar = false;
-    }); // End scroll event listener
+    }; // End scroll event listener
+
+    // Remove any previous listener (we recreate the scrollbar on resize)
+    if (this._scrollListener && this._scrollbarContainer) {
+      try {
+        this._scrollbarContainer.removeEventListener('scroll', this._scrollListener);
+      } catch { /* noop */ }
+    }
+    this._scrollListener = scrollListener;
+    scrollbarContainer.addEventListener('scroll', scrollListener);
 
     this._scrollbarContainer = scrollbarContainer;
     return scrollbarContainer;
@@ -335,12 +376,16 @@ export class NativeScrollbar {
     if (!container || this._syncingScrollbar) return;
 
     const percentage = this.getScrollPercentage();
+    if (!Number.isFinite(percentage)) return;
     const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0) return;
     const targetScrollTop = (percentage / NativeScrollbar.PERCENTAGE_MAX) * maxScroll;
 
     // Prevent infinite loop by checking if we need to update
     if (Math.abs(container.scrollTop - targetScrollTop) > 1) {
       this._syncingScrollbar = true;
+      this._lastProgrammaticUpdate = Date.now();
+      this._pendingProgrammaticEvents++;
       container.scrollTop = targetScrollTop;
       // Update lastScrollTop to match the new position
       this._lastScrollTop = targetScrollTop;
@@ -378,7 +423,14 @@ export class NativeScrollbar {
     if (this._scrollbarContainer) {
       // Find the parent container to restore padding
       const parentContainer = this._scrollbarContainer.parentElement;
-      
+
+      if (this._scrollListener) {
+        try {
+          this._scrollbarContainer.removeEventListener('scroll', this._scrollListener);
+        } catch { /* noop */ }
+        this._scrollListener = null;
+      }
+
       this._scrollbarContainer.remove();
       this._scrollbarContainer = null;
       

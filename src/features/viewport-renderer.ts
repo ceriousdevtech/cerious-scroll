@@ -238,9 +238,14 @@ export class ViewportRenderer {
       let measuredHeight: number;
       
       if (this.currentlyRendered.has(i)) {
-        // Element already rendered - reuse it
+        // Element already rendered - reuse it. Prefer the cached measurement
+        // over a fresh offsetHeight read to avoid forcing a synchronous
+        // layout on every scroll. The cache is invalidated by the content
+        // observer when DOM mutations resize an element, so this is safe.
         elementToRender = this.currentlyRendered.get(i)!;
-        measuredHeight = elementToRender.offsetHeight;
+        measuredHeight = this.hasMeasuredHeight(i)
+          ? this.getMeasuredHeight(i)
+          : elementToRender.offsetHeight;
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -285,8 +290,12 @@ export class ViewportRenderer {
       this._topStyleBuffer = cumulativeTop + 'px';
       element.style.top = this._topStyleBuffer;
       element.style.position = this._styleCache.position;
-      
-      const height = element.offsetHeight;
+
+      // Use cached measurement; offsetHeight read here would force a layout
+      // for every buffer element on every scroll frame.
+      const height = this.hasMeasuredHeight(i)
+        ? this.getMeasuredHeight(i)
+        : element.offsetHeight;
       cumulativeTop += height;
     }
     
@@ -304,13 +313,16 @@ export class ViewportRenderer {
       let measuredHeight: number;
       
       if (this.currentlyRendered.has(elementIndex)) {
-        // Element already rendered - reuse it
+        // Element already rendered - reuse it. See note above on cached
+        // offsetHeight reads.
         elementToRender = this.currentlyRendered.get(elementIndex)!;
         elementToRender.style.position = this._styleCache.position;
         this._topStyleBuffer = cumulativeTop + 'px';
         elementToRender.style.top = this._topStyleBuffer;
-        
-        measuredHeight = elementToRender.offsetHeight;
+
+        measuredHeight = this.hasMeasuredHeight(elementIndex)
+          ? this.getMeasuredHeight(elementIndex)
+          : elementToRender.offsetHeight;
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -373,13 +385,16 @@ export class ViewportRenderer {
       let measuredHeight: number;
       
       if (this.currentlyRendered.has(i)) {
-        // Element already rendered - reuse it
+        // Element already rendered - reuse it. See note above on cached
+        // offsetHeight reads.
         elementToRender = this.currentlyRendered.get(i)!;
         elementToRender.style.position = this._styleCache.position;
         this._topStyleBuffer = cumulativeTop + 'px';
         elementToRender.style.top = this._topStyleBuffer;
-        
-        measuredHeight = elementToRender.offsetHeight;
+
+        measuredHeight = this.hasMeasuredHeight(i)
+          ? this.getMeasuredHeight(i)
+          : elementToRender.offsetHeight;
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -488,12 +503,15 @@ export class ViewportRenderer {
         let bottomHeight: number;
         
         if (this.currentlyRendered.has(elemIndex)) {
-          // Already rendered (shouldn't happen, but handle it)
+          // Already rendered (shouldn't happen, but handle it). See note
+          // above on cached offsetHeight reads.
           bottomElement = this.currentlyRendered.get(elemIndex)!;
           bottomElement.style.position = this._styleCache.position;
           this._topStyleBuffer = cumulativeTop + 'px';
           bottomElement.style.top = this._topStyleBuffer;
-          bottomHeight = bottomElement.offsetHeight;
+          bottomHeight = this.hasMeasuredHeight(elemIndex)
+            ? this.getMeasuredHeight(elemIndex)
+            : bottomElement.offsetHeight;
         } else {
           // Create or reuse from pool
           const pooled = this.recycledElements.pop();

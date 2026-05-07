@@ -65,10 +65,27 @@ export class TouchController {
     let velocityY = 0;
     let momentumAnimationId: number | null = null;
     let activeTouchId: number | null = null;
-    
-    // Velocity tracking for better momentum calculation
-    const velocityHistory: Array<{ velocity: number; time: number }> = [];
+
+    // Velocity tracking via fixed-size ring buffer to avoid Array.shift() in
+    // the hot touchmove path (O(n) per move) and unbounded growth on slow
+    // devices.
     const VELOCITY_SAMPLE_MS = 100; // Track last 100ms of movement
+    const VELOCITY_RING_SIZE = 16;  // Plenty for 100ms even at 240Hz
+    const velocityRingValues = new Float64Array(VELOCITY_RING_SIZE);
+    const velocityRingTimes = new Float64Array(VELOCITY_RING_SIZE);
+    let velocityRingHead = 0;       // Next write position
+    let velocityRingCount = 0;      // Number of valid samples (<= ring size)
+
+    const resetVelocityHistory = () => {
+      velocityRingHead = 0;
+      velocityRingCount = 0;
+    };
+    const recordVelocitySample = (velocity: number, time: number) => {
+      velocityRingValues[velocityRingHead] = velocity;
+      velocityRingTimes[velocityRingHead] = time;
+      velocityRingHead = (velocityRingHead + 1) % VELOCITY_RING_SIZE;
+      if (velocityRingCount < VELOCITY_RING_SIZE) velocityRingCount++;
+    };
 
     const getViewportHeight = () => container.clientHeight || container.offsetHeight;
 
@@ -93,7 +110,7 @@ export class TouchController {
         lastTouchY = touch.clientY;
         lastTouchTime = Date.now();
         velocityY = 0;
-        velocityHistory.length = 0; // Clear velocity history
+        resetVelocityHistory();
       }
     };
 
@@ -126,28 +143,25 @@ export class TouchController {
 
       if (deltaTime > 0) {
         const instantVelocity = deltaY / deltaTime;
-        
-        // Track velocity over time for better momentum calculation
-        velocityHistory.push({ velocity: instantVelocity, time: currentTime });
-        
-        // Remove old velocity samples outside the time window
-        while (velocityHistory.length > 0 && currentTime - velocityHistory[0].time > VELOCITY_SAMPLE_MS) {
-          velocityHistory.shift();
+
+        // Record into ring buffer (O(1)).
+        recordVelocitySample(instantVelocity, currentTime);
+
+        // Compute time-weighted average over the trailing window. We iterate
+        // newest-to-oldest (so we can early-exit when samples fall outside
+        // the window) and weight by recency.
+        let totalWeight = 0;
+        let weightedSum = 0;
+        let weight = velocityRingCount; // newest gets highest weight
+        for (let i = 0; i < velocityRingCount; i++) {
+          const idx = (velocityRingHead - 1 - i + VELOCITY_RING_SIZE) % VELOCITY_RING_SIZE;
+          const sampleTime = velocityRingTimes[idx];
+          if (currentTime - sampleTime > VELOCITY_SAMPLE_MS) break;
+          weightedSum += velocityRingValues[idx] * weight;
+          totalWeight += weight;
+          weight--;
         }
-        
-        // Calculate weighted average velocity (more recent = higher weight)
-        if (velocityHistory.length > 0) {
-          let totalWeight = 0;
-          let weightedSum = 0;
-          
-          velocityHistory.forEach((sample, idx) => {
-            const weight = idx + 1; // Linear weight: newer samples have higher weight
-            weightedSum += sample.velocity * weight;
-            totalWeight += weight;
-          });
-          
-          velocityY = weightedSum / totalWeight;
-        }
+        velocityY = totalWeight > 0 ? weightedSum / totalWeight : 0;
       }
 
       if (Math.abs(deltaY) > 0) {
@@ -205,6 +219,7 @@ export class TouchController {
         // iOS-style momentum: use exponential decay with cubic-bezier easing
         const initialVelocity = velocityY;
         const startTime = performance.now();
+        let lastFrameTime = startTime;
         
         // Momentum duration scales with initial velocity (faster swipe = longer momentum)
         const maxDuration = 2000; // Maximum 2 seconds of momentum
@@ -212,7 +227,8 @@ export class TouchController {
         const duration = Math.min(maxDuration, minDuration + Math.abs(initialVelocity) * 200);
 
         const applyMomentum = () => {
-          const elapsed = performance.now() - startTime;
+          const now = performance.now();
+          const elapsed = now - startTime;
           const progress = Math.min(elapsed / duration, 1);
           
           // Cubic-bezier easing out (0.25, 0.46, 0.45, 0.94) - iOS-like deceleration
@@ -231,8 +247,15 @@ export class TouchController {
             return;
           }
 
-          // Apply velocity-based scrolling (16ms frame time approximation)
-          const deltaY = currentVelocity * 16;
+          // Use the actual time since the last frame so momentum stays
+          // visually consistent across 60Hz / 120Hz / 240Hz displays and
+          // under main-thread contention. Clamp to a sane range to avoid
+          // huge first-frame deltas after long pauses.
+          const rawFrameTime = now - lastFrameTime;
+          const frameTime = rawFrameTime > 0 && rawFrameTime < 100 ? rawFrameTime : 16;
+          lastFrameTime = now;
+
+          const deltaY = currentVelocity * frameTime;
           const result = this.deps.scroll(deltaY, getViewportHeight());
 
           // GC optimization: Reuse event detail object instead of creating new one
