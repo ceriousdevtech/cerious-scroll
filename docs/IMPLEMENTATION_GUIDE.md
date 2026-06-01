@@ -1,7 +1,6 @@
 # CeriousScroll Implementation Guide
 
-**Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.**  
-**PATENT PENDING - Patent Filed by Jared Kirchgatter, October 2025**
+**Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.**
 
 ---
 
@@ -1428,11 +1427,8 @@ if (saved) {
 
 ## License and Support
 
-**License:** Dual-licensed under MIT or Commercial License  
-**Patent:** Patent Pending (Filed October 2025 by Jared Kirchgatter)  
+**License:** MIT  
 **Support:** info@ceriousdevtech.com
-
-For commercial licensing inquiries, see [LICENSE-COMMERCIAL](../LICENSE-COMMERCIAL).
 
 ---
 

@@ -74,11 +74,9 @@ Use this checklist before releasing a new version of CeriousScroll.
 
 ### 6. Legal & Licensing ✓
 
-- [ ] License files up to date (LICENSE, LICENSE-MIT, LICENSE-COMMERCIAL)
+- [ ] License files up to date (LICENSE, LICENSE-MIT)
 - [ ] Copyright year current in all files
-- [ ] Patent pending notice present
 - [ ] No license violations in dependencies: `npm audit`
-- [ ] Commercial license terms reviewed (if changed)
 
 ### 7. Dependencies ✓
 
@@ -225,7 +223,6 @@ git push origin main
 
 - [ ] Tweet announcement (if applicable)
 - [ ] Post on relevant forums/communities
-- [ ] Email commercial license holders
 - [ ] Update company website
 - [ ] LinkedIn post (if applicable)
 
@@ -245,7 +242,6 @@ git push origin main
 - [ ] Check download stats on npm
 - [ ] Monitor GitHub issues for problems
 - [ ] Update internal documentation
-- [ ] Notify commercial license holders of update
 
 ### Within 1 Week
 

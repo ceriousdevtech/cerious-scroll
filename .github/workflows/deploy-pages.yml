@@ -150,7 +150,6 @@ jobs:
           # Copy license files
           cp LICENSE _site/
           cp LICENSE-MIT _site/
-          cp LICENSE-COMMERCIAL _site/
           
           # Copy README
           cp README.md _site/

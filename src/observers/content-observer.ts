@@ -9,6 +9,12 @@ interface ContentObserverDeps {
   getMeasuredHeight: (index: number) => number | undefined;
   setMeasuredHeight: (index: number, height: number) => void;
   invalidateCache: () => void;
+  /**
+   * Called (once per observer callback) after one or more rendered rows changed
+   * height in place, so the engine can reflow: reposition rows, refresh the
+   * total content height / scroll percentage / scrollbar, and re-render.
+   */
+  onResize?: () => void;
 }
 
 export class ContentObserverManager {
@@ -74,6 +80,8 @@ export class ContentObserverManager {
 
       if (needsInvalidation) {
         this.deps.invalidateCache();
+        // Reposition + re-render now that a row's measured height changed.
+        this.deps.onResize?.();
       }
     });
 

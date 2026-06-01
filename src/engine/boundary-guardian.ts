@@ -31,7 +31,18 @@ export class BoundaryGuardian {
     return total <= this.smallDatasetThreshold || element >= Math.max(0, total - this.nearBottomThreshold);
   }
 
-  correctBottomOvershoot(element: number, offset: number): { element: number; offset: number } | null {
+  /**
+   * If the last element's bottom sits above the viewport bottom (i.e. there is
+   * empty space below the content), pull the scroll position back up to close
+   * the gap. `damping` controls how much of the gap is closed in one call
+   * (default {@link dampingFactor} for smooth wheel/touch correction; pass `1`
+   * for a full re-anchor, e.g. after a container resize that revealed space).
+   */
+  correctBottomOvershoot(
+    element: number,
+    offset: number,
+    damping: number = this.dampingFactor
+  ): { element: number; offset: number } | null {
     const total = this.deps.getTotalElements();
     if (total <= 0) {
       return null;
@@ -45,7 +56,7 @@ export class BoundaryGuardian {
       return null;
     }
 
-    let remainingGap = overshootAmount * this.dampingFactor;
+    let remainingGap = overshootAmount * damping;
     let correctedElement = element;
     let correctedOffset = offset;
 

@@ -1,7 +1,6 @@
 # CeriousScroll Architecture Documentation
 
-**Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.**  
-**PATENT PENDING - U.S. Provisional Patent Application Filed October 2025**
+**Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.**
 
 ## Table of Contents
 
@@ -1717,7 +1716,5 @@ CeriousScroll achieves high-performance virtual scrolling through:
 The result is a virtual scrolling library that can handle datasets of any size with consistent 60fps performance and constant memory usage.
 
 ---
-
-**Patent Notice:** The algorithms and techniques described in this document are patent-pending. Commercial use requires licensing.
 
 **Questions or Issues?** Contact: jared@kirchgatter.com

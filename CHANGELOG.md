@@ -5,6 +5,52 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-06-01
+
+### Changed
+
+#### Hardening & Input Validation
+- `totalElements` now validated with `Number.isFinite` and floored via `Math.floor()` — fractional or non-finite values are rejected with a clear error message
+- `container` validated as an HTMLElement (must have `appendChild`) on `renderViewport()` calls
+- `renderElement` validated as a function on `renderViewport()` calls
+- Constructor options are now deep-cloned and frozen (`Object.freeze`) on construction — mutating the caller's config object after construction no longer affects library behavior
+
+#### Performance Cache
+- New `setTotalElements()` method bounds all linear walks (e.g. `findRowFromScrollPosition`) by dataset size, preventing runaway loops on malformed scroll positions
+- Defensive validation rejects NaN, Infinity, and negative heights — uses a 1px placeholder rather than poisoning the cache
+- Cumulative height cache is invalidated correctly when an in-window measurement is updated
+
+#### Navigation Engine
+- `scrollByDelta` now guards against non-finite `deltaY` or zero/negative `viewportHeight`
+- `scrollToElement` clamps index to valid range `[0, totalElements-1]` and emits a console warning when clamping occurs
+- `jumpToPercentage` and `jumpToElement` guard against non-finite inputs with safe fallback to current position
+- Scroll offset clamped to `[0, elementHeight - 1]` to prevent scroll position escaping element bounds
+- Object reuse for `_scrollResult` eliminates per-scroll allocations on the hot path
+
+#### Native Scrollbar
+- Replaced `null as any` initialization cast with a proper typed `setScrollHandlers(engine)` setter
+- Programmatic scroll events tracked via `_pendingProgrammaticEvents` counter to prevent event feedback loops
+- Scroll listener stored as typed field (`_scrollListener`) for reliable removal
+
+#### Resize Controller
+- Added `ResizeObserver` integration alongside the existing `window.resize` listener
+- Skips the first `ResizeObserver` callback to avoid spurious reflows on initial attach
+- Only triggers viewport recalculation when width or height actually changes
+- Multiple cleanup handlers composed into a single returned cleanup function
+
+#### Touch Controller
+- Replaced unbounded velocity array with a fixed-size ring buffer (`Float64Array`, 16 slots) for O(1) velocity sampling regardless of gesture length
+- More accurate momentum calculation under high frame rates (240Hz+)
+
+#### Event Emitter
+- New `setErrorHandler(handler)` method — errors thrown by event listeners are routed to the handler instead of being silently swallowed or crashing the emitter
+- Falls back to `console.error` when no error handler is set
+
+#### Content Observer
+- Reference-counted observation via `WeakMap` — the same container element can be observed multiple times safely; the underlying observer is only disconnected when all callers release it
+- Guards against non-finite or negative heights from `ResizeObserver` entries
+- Defensive try/catch around individual `observe`/`unobserve` calls for detached nodes
+
 ## [1.0.1] - 2026-02-02
 
 ### Changed
@@ -85,9 +131,7 @@ First public release of CeriousScroll - high-performance virtual scrolling libra
 - GitHub Pages setup for live demos
 
 ### Legal
-- Dual-license model (MIT + Commercial License)
-- Patent Pending protection (filed October 2025)
-- Commercial license terms and contact information
+- MIT License
 
 ---
 

@@ -2,7 +2,6 @@
  * @fileoverview Performance Cache Module for CeriousScroll
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This module handles height caching and optimization for virtual scrolling.
  * Provides O(1) memory usage regardless of dataset size through sliding window caching.

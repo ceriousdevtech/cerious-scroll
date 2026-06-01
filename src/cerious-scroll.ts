@@ -2,7 +2,6 @@
  * @fileoverview CeriousScroll - Refactored Main Class
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This is the main entry point for CeriousScroll, now refactored into modular components
  * for better maintainability, testing, and code organization.
@@ -140,17 +139,15 @@ export class CeriousScroll {
 
     // Create measurement-only height calculator - uses just-in-time measurement
     this.getElementHeight = (index: number) => {
-      // Use measured height if available
+      // Use the measured height if available, otherwise fall back to the default
+      // estimate. Do NOT write the default into the cache: that would make
+      // `hasMeasuredHeight(index)` report true for a row that was never actually
+      // measured, so the renderer would trust the fake default instead of reading
+      // the row's real `offsetHeight` (e.g. after a reflow that touched far-away
+      // indices and pruned the real measurements). Estimating without caching
+      // keeps "measured" meaning measured.
       const measuredHeight = this.performanceCache.getMeasuredHeight(index);
-      if (measuredHeight !== undefined) {
-        return measuredHeight;
-      }
-      
-      // For unmeasured elements, return default height
-      // Store it temporarily to maintain consistency during scroll calculations
-      this.performanceCache.setMeasuredHeight(index, CeriousScroll.DEFAULT_ELEMENT_HEIGHT);
-      
-      return CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
+      return measuredHeight !== undefined ? measuredHeight : CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
     };
     
     // Initialize performance cache
@@ -261,7 +258,12 @@ export class CeriousScroll {
     this.contentObserverManager = new ContentObserverManager({
       getMeasuredHeight: (index: number) => this.performanceCache.getMeasuredHeight(index),
       setMeasuredHeight: (index: number, height: number) => this.performanceCache.setMeasuredHeight(index, height),
-      invalidateCache: () => this.invalidateCache()
+      invalidateCache: () => this.invalidateCache(),
+      // A rendered row changed height in place (e.g. expand/collapse, density
+      // switch). Reflow so positions, total height, scroll percentage and the
+      // scrollbar update — and the consumer re-renders — without anyone having
+      // to call recalculate(). Identical behavior across all frameworks.
+      onResize: () => this.reflow()
     });
     
     // Now set scrollHandlers on nativeScrollbar via the typed setter
@@ -531,7 +533,14 @@ export class CeriousScroll {
     if (typeof renderElement !== 'function') {
       throw new Error('CeriousScroll.renderViewport: renderElement must be a function');
     }
-    return this.viewportRenderer.renderViewport(windowHeight, container, renderElement);
+    const range = this.viewportRenderer.renderViewport(windowHeight, container, renderElement);
+    // Refresh derived display state (scroll percentage, visible range) so it
+    // reflects the heights just measured this pass. This keeps the percentage in
+    // sync after a row's height changes in place and is re-measured (e.g. an
+    // expand/collapse followed by a re-render), without waiting for the next
+    // scroll event.
+    this.updateDisplay();
+    return range;
   }
 
   /**
@@ -645,12 +654,47 @@ export class CeriousScroll {
     // Update viewport height from container
     this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
     this.windowHeight = this.viewportHeight;
-    
+
     // Update modules with new viewport height
     this.navigationEngine.updateConfig(this.totalElements, this.viewportHeight);
-    
-    // Handle scrollbar viewport change
+
+    // Handle scrollbar viewport change (this re-attaches the native scrollbar,
+    // which creates a fresh element whose scrollTop is 0).
     this.nativeScrollbar.handleViewportChange(container, this.viewportHeight);
+
+    // Re-anchor, re-sync the scrollbar thumb, refresh display state, and ask the
+    // consumer to re-render — see reflow().
+    this.reflow();
+  }
+
+  /**
+   * Reflow after the content/viewport changed without an explicit scroll: a
+   * container resize, or a rendered row changing height in place (expand/
+   * collapse, density switch — detected by the content observer). Centralised in
+   * the engine so every consumer/framework behaves identically.
+   *
+   * 1. Re-anchor to the bottom if there is now empty space below the last
+   *    element ("at the bottom stays at the bottom"; no-op otherwise).
+   * 2. Re-sync the native scrollbar thumb to the current position (the
+   *    programmatic-update marker makes the resulting scroll event a no-op, so
+   *    the position is preserved rather than reset to the top).
+   * 3. Refresh derived display state (percentage, visible range).
+   * 4. Ask the consumer to re-render via the same `onScroll` hook used for
+   *    wheel/touch/scrollbar navigation (the engine doesn't own the row-render
+   *    callback). This keeps resize/height-change handling inside the engine —
+   *    consumers and the framework wrappers don't need their own observers or
+   *    manual `recalculate()` calls.
+   */
+  private reflow(): void {
+    this.navigationEngine.reanchorBottom(this.viewportHeight);
+
+    if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
+      this.nativeScrollbar.updateLastProgrammaticUpdate();
+      this.nativeScrollbar.syncNativeScrollbar();
+    }
+
+    this.updateDisplay();
+    this.options.onScroll?.();
   }
 
   /**

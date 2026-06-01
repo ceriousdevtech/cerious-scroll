@@ -2,7 +2,6 @@
  * @fileoverview Native Scrollbar Integration Module for CeriousScroll
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This module handles native browser scrollbar integration for virtual scrolling.
  * Provides smooth synchronization between virtual scroll position and native scrollbar.
@@ -130,11 +129,22 @@ export class NativeScrollbar {
   handleViewportChange(container: HTMLElement, viewportHeight: number): void {
     // Clear scrollbar width cache to force re-detection
     this.clearScrollbarWidthCache();
-    
-    // Re-attach scrollbar with new dimensions if one exists
-    if (this._scrollbarContainer) {
-      this.attachNativeScrollbar(container);
-    }
+
+    // IMPORTANT: do NOT recreate the scrollbar element here. It already uses
+    // `height: 100%`, so it tracks the container's new size automatically, and
+    // its scrollable content height is element-count based (a viewport resize
+    // doesn't change it). Recreating would reset `scrollTop` to 0 and force a
+    // re-sync — that transient 0 can be read by a stray scroll event (the
+    // viewport jumps to the top), and the recreated element strands the
+    // programmatic-scroll accounting on the discarded node (so the user's next
+    // real scroll gets swallowed — a "dead zone" before scrolling registers).
+    //
+    // The caller's reflow() re-syncs the thumb to the preserved logical position
+    // via syncNativeScrollbar() (the container's clientHeight changed, so the
+    // pixel scrollTop for the same percentage changes). Reset the programmatic
+    // accounting so a resize can never eat the next genuine scroll.
+    this._syncingScrollbar = false;
+    this._pendingProgrammaticEvents = 0;
   }
 
   /**
@@ -361,6 +371,12 @@ export class NativeScrollbar {
     }
     this._scrollListener = scrollListener;
     scrollbarContainer.addEventListener('scroll', scrollListener);
+
+    // A brand-new element starts at scrollTop 0 with no in-flight programmatic
+    // assignments; clear any accounting tied to the element we just replaced so
+    // its stale pending count can't swallow real scrolls on this new one.
+    this._syncingScrollbar = false;
+    this._pendingProgrammaticEvents = 0;
 
     this._scrollbarContainer = scrollbarContainer;
     return scrollbarContainer;

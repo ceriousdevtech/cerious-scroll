@@ -167,7 +167,6 @@ cerious-scroll/
 ├── SECURITY.md              # Security policy
 ├── LICENSE                  # MIT license text
 ├── LICENSE-MIT              # MIT license text (duplicate for convenience)
-├── LICENSE-COMMERCIAL       # Commercial license terms
 ├── package.json             # NPM configuration
 └── vitest.config.ts         # Test configuration
 ```
@@ -196,12 +195,9 @@ npm run test:coverage
 ## 📋 Legal Considerations
 
 ### License
-Cerious Scroll™ is dual-licensed:
+Cerious Scroll™ is licensed under the **MIT License**.
 
-- **MIT License** for open-source use
-- **Commercial License** for a separately executed commercial agreement (optional)
-
-All contributions must be compatible with this dual-license model.
+All contributions must be compatible with the MIT license.
 
 ---
 
@@ -213,25 +209,10 @@ By submitting a pull request, issue, or other contribution, you acknowledge and 
 - The contribution is your original work or you have permission to submit it
 - You grant **Cerious DevTech LLC** a perpetual, worldwide, irrevocable,
   royalty-free right to use, modify, sublicense, and redistribute your
-  contribution as part of Cerious Scroll™ under:
-  - the MIT license, and/or
-  - a commercial proprietary license
+  contribution as part of Cerious Scroll™ under the MIT license.
 
 This agreement applies automatically upon submission.
 No additional signature is required.
-
----
-
-### 🔒 Patent Notice
-
-Cerious Scroll™ includes technology covered by a **Patent Pending**
-U.S. Provisional Patent Application owned by **Jared Kirchgatter on behalf of Cerious DevTech LLC**.
-
-By contributing, you acknowledge that:
-- No patent rights are granted to you by this project
-- Your contribution does not assert patent claims against Cerious DevTech LLC
-- Your contribution may be incorporated into patented implementations
-  distributed under both open-source and commercial licenses
 
 ---
 

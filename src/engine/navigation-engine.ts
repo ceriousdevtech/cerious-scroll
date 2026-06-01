@@ -45,6 +45,29 @@ export class NavigationEngine {
     this.viewportHeight = viewportHeight;
   }
 
+  /**
+   * Re-anchor to the bottom after a viewport size change. If growing the
+   * viewport (e.g. a container resize) revealed empty space below the last
+   * element, pull the scroll position up so the content stays anchored to the
+   * bottom ("if I'm at the bottom, stay at the bottom on resize"). Applies a
+   * full correction. Returns the corrected position, or null if none was needed
+   * (i.e. not scrolled near the bottom). Does not touch the scrollbar — the
+   * caller re-syncs it after.
+   */
+  reanchorBottom(viewportHeight: number): ScrollResult | null {
+    if (Number.isFinite(viewportHeight) && viewportHeight > 0) {
+      this.viewportHeight = viewportHeight;
+    }
+    const element = this.deps.getCurrentElement();
+    const offset = this.deps.getScrollOffset();
+    const correction = this.guardian.correctBottomOvershoot(element, offset, 1);
+    if (!correction) return null;
+    this.deps.updateScrollPosition(correction.element, correction.offset);
+    this._scrollResult.element = correction.element;
+    this._scrollResult.offset = correction.offset;
+    return this._scrollResult;
+  }
+
   scroll(deltaY: number, viewportHeight: number): ScrollResult {
     // Validate inputs. NaN/Infinity here would propagate into offset and
     // permanently corrupt scroll state, so refuse them with a no-op result

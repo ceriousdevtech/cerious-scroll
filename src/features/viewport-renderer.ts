@@ -2,7 +2,6 @@
  * @fileoverview Viewport Renderer Module for CeriousScroll
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This module handles DOM viewport rendering and element measurement for virtual scrolling.
  * Implements a pure measurement-driven incremental rendering approach that eliminates the
@@ -138,6 +137,24 @@ export class ViewportRenderer {
   }
 
   /**
+   * Resolve a reused element's height. Prefer the cached measurement (avoids a
+   * synchronous layout on every scroll frame); on a cache miss, read
+   * `offsetHeight` AND write it back to the cache. Re-caching the miss-read is
+   * what keeps the height cache, total content height, "true bottom", and scroll
+   * percentage correct after a row changes height in place (e.g. expand/collapse)
+   * or after `clearAllCaches()` — without it, a reused row's new height is never
+   * recorded until the element is destroyed and recreated (scrolled out and back).
+   */
+  private measureReused(index: number, element: HTMLElement): number {
+    if (this.hasMeasuredHeight(index)) {
+      return this.getMeasuredHeight(index);
+    }
+    const height = element.offsetHeight;
+    this.setMeasuredHeight(index, height);
+    return height;
+  }
+
+  /**
    * Debug-only: renderer lifecycle counters.
    */
   get lifecycleStats(): {
@@ -243,9 +260,7 @@ export class ViewportRenderer {
         // layout on every scroll. The cache is invalidated by the content
         // observer when DOM mutations resize an element, so this is safe.
         elementToRender = this.currentlyRendered.get(i)!;
-        measuredHeight = this.hasMeasuredHeight(i)
-          ? this.getMeasuredHeight(i)
-          : elementToRender.offsetHeight;
+        measuredHeight = this.measureReused(i, elementToRender);
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -292,10 +307,8 @@ export class ViewportRenderer {
       element.style.position = this._styleCache.position;
 
       // Use cached measurement; offsetHeight read here would force a layout
-      // for every buffer element on every scroll frame.
-      const height = this.hasMeasuredHeight(i)
-        ? this.getMeasuredHeight(i)
-        : element.offsetHeight;
+      // for every buffer element on every scroll frame (and is re-cached on miss).
+      const height = this.measureReused(i, element);
       cumulativeTop += height;
     }
     
@@ -320,9 +333,7 @@ export class ViewportRenderer {
         this._topStyleBuffer = cumulativeTop + 'px';
         elementToRender.style.top = this._topStyleBuffer;
 
-        measuredHeight = this.hasMeasuredHeight(elementIndex)
-          ? this.getMeasuredHeight(elementIndex)
-          : elementToRender.offsetHeight;
+        measuredHeight = this.measureReused(elementIndex, elementToRender);
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -392,9 +403,7 @@ export class ViewportRenderer {
         this._topStyleBuffer = cumulativeTop + 'px';
         elementToRender.style.top = this._topStyleBuffer;
 
-        measuredHeight = this.hasMeasuredHeight(i)
-          ? this.getMeasuredHeight(i)
-          : elementToRender.offsetHeight;
+        measuredHeight = this.measureReused(i, elementToRender);
       } else {
         // Create or reuse from pool
         const pooled = this.recycledElements.pop();
@@ -509,9 +518,7 @@ export class ViewportRenderer {
           bottomElement.style.position = this._styleCache.position;
           this._topStyleBuffer = cumulativeTop + 'px';
           bottomElement.style.top = this._topStyleBuffer;
-          bottomHeight = this.hasMeasuredHeight(elemIndex)
-            ? this.getMeasuredHeight(elemIndex)
-            : bottomElement.offsetHeight;
+          bottomHeight = this.measureReused(elemIndex, bottomElement);
         } else {
           // Create or reuse from pool
           const pooled = this.recycledElements.pop();
