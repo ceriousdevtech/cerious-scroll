@@ -45,7 +45,39 @@ export class NavigationEngine {
     this.viewportHeight = viewportHeight;
   }
 
+  /**
+   * Re-anchor to the bottom after a viewport size change. If growing the
+   * viewport (e.g. a container resize) revealed empty space below the last
+   * element, pull the scroll position up so the content stays anchored to the
+   * bottom ("if I'm at the bottom, stay at the bottom on resize"). Applies a
+   * full correction. Returns the corrected position, or null if none was needed
+   * (i.e. not scrolled near the bottom). Does not touch the scrollbar — the
+   * caller re-syncs it after.
+   */
+  reanchorBottom(viewportHeight: number): ScrollResult | null {
+    if (Number.isFinite(viewportHeight) && viewportHeight > 0) {
+      this.viewportHeight = viewportHeight;
+    }
+    const element = this.deps.getCurrentElement();
+    const offset = this.deps.getScrollOffset();
+    const correction = this.guardian.correctBottomOvershoot(element, offset, 1);
+    if (!correction) return null;
+    this.deps.updateScrollPosition(correction.element, correction.offset);
+    this._scrollResult.element = correction.element;
+    this._scrollResult.offset = correction.offset;
+    return this._scrollResult;
+  }
+
   scroll(deltaY: number, viewportHeight: number): ScrollResult {
+    // Validate inputs. NaN/Infinity here would propagate into offset and
+    // permanently corrupt scroll state, so refuse them with a no-op result
+    // returning the current position.
+    if (!Number.isFinite(deltaY) || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+      this._scrollResult.element = this.deps.getCurrentElement();
+      this._scrollResult.offset = this.deps.getScrollOffset();
+      return this._scrollResult;
+    }
+
     this.viewportHeight = viewportHeight;
     let element = this.deps.getCurrentElement();
     let offset = this.deps.getScrollOffset() + deltaY;
@@ -106,6 +138,18 @@ export class NavigationEngine {
       }
     }
 
+    // Snap offset to integer pixels. Sub-pixel drift accumulates over many
+    // small wheel/touch deltas (browsers commonly emit fractional deltaY) and
+    // eventually produces visible mis-alignment with the scrollbar thumb. The
+    // outer position math has already clamped against the element height so
+    // rounding cannot push past the boundary here.
+    offset = Math.round(offset);
+    const finalHeight = Math.max(1, this.deps.getElementHeight(element));
+    if (offset >= finalHeight) {
+      offset = finalHeight - 1;
+    }
+    if (offset < 0) offset = 0;
+
     if (!positionUpdated) {
       this.deps.updateScrollPosition(element, offset);
     }
@@ -119,6 +163,9 @@ export class NavigationEngine {
   }
 
   handleScrollPercentage(percentage: number): ScrollResult {
+    if (!Number.isFinite(percentage)) {
+      return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
+    }
     const clamped = Math.max(0, Math.min(100, percentage));
 
     if (clamped >= 99.99) {
@@ -144,28 +191,49 @@ export class NavigationEngine {
   }
 
   jumpToElement(elementIndex: number): ScrollResult {
-    if (elementIndex >= 0 && elementIndex < this.totalElements) {
-      const trueBottom = this.deps.getTrueBottomPosition?.();
-      if (trueBottom && elementIndex >= trueBottom.element) {
-        this.deps.updateScrollPosition(trueBottom.element, trueBottom.offset);
-        this.deps.requestDisplayUpdate();
-        this.deps.syncScrollbar();
-        return { element: trueBottom.element, offset: trueBottom.offset };
-      }
-
-      this.deps.updateScrollPosition(elementIndex, 0);
-      this.deps.requestDisplayUpdate();
-      this.deps.syncScrollbar();
-      return { element: elementIndex, offset: 0 };
+    // Validate input - non-finite values are programmer errors that would
+    // otherwise silently no-op.
+    if (!Number.isFinite(elementIndex)) {
+      return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
     }
 
-    return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
+    // Clamp instead of silently returning current position; surface the clamp
+    // so consumers can detect bad indices in development.
+    const total = this.totalElements;
+    if (total <= 0) {
+      return { element: 0, offset: 0 };
+    }
+    const target = Math.max(0, Math.min(Math.floor(elementIndex), total - 1));
+    if (target !== elementIndex && elementIndex !== Number.MAX_SAFE_INTEGER) {
+      // MAX_SAFE_INTEGER is the documented "jump to end" sentinel used by the
+      // keyboard controller, so suppress the warning for that case only.
+      console.warn(
+        `CeriousScroll.jumpToElement: index ${elementIndex} out of range (0..${total - 1}); clamped to ${target}`
+      );
+    }
+
+    const trueBottom = this.deps.getTrueBottomPosition?.();
+    if (trueBottom && target >= trueBottom.element) {
+      this.deps.updateScrollPosition(trueBottom.element, trueBottom.offset);
+      this.deps.requestDisplayUpdate();
+      this.deps.syncScrollbar();
+      return { element: trueBottom.element, offset: trueBottom.offset };
+    }
+
+    this.deps.updateScrollPosition(target, 0);
+    this.deps.requestDisplayUpdate();
+    this.deps.syncScrollbar();
+    return { element: target, offset: 0 };
   }
 
   jumpToPosition(elementIndex: number, offset: number, skipScrollbarSync = false): ScrollResult {
-    let element = Math.max(0, Math.min(elementIndex, this.totalElements - 1));
+    if (!Number.isFinite(elementIndex) || !Number.isFinite(offset)) {
+      return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
+    }
+    let element = Math.max(0, Math.min(Math.floor(elementIndex), this.totalElements - 1));
     const elementHeight = Math.max(1, this.deps.getElementHeight(element));
-    let clampedOffset = Math.max(0, Math.min(offset, elementHeight - 1));
+    // Snap to integer pixels for consistency with scroll(); see comment there.
+    let clampedOffset = Math.max(0, Math.min(Math.round(offset), elementHeight - 1));
 
     this.deps.updateScrollPosition(element, clampedOffset);
     this.deps.requestDisplayUpdate();

@@ -2,7 +2,6 @@
  * @fileoverview CeriousScroll - Refactored Main Class
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This is the main entry point for CeriousScroll, now refactored into modular components
  * for better maintainability, testing, and code organization.
@@ -100,6 +99,11 @@ export class CeriousScroll {
   private touchCleanup?: () => void;
   private resizeCleanup?: () => void;
   private contentObserverCleanup?: () => void;
+  private debugCleanup?: () => void;
+
+  // Frozen, deep-cloned options. Mutating the caller's options object after
+  // construction must never alter library behavior.
+  private readonly options: Readonly<CeriousScrollOptions>;
 
   /**
    * Create a new CeriousScroll instance with automatic measurement and viewport detection
@@ -109,38 +113,52 @@ export class CeriousScroll {
     totalElements: number, 
     options: CeriousScrollOptions = {}
   ) {
-    this.totalElements = totalElements;
-    
-    // Auto-detect viewport height from container
-    this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
-    this.windowHeight = this.viewportHeight; // Keep in sync
-    
-    if (totalElements < 1) {
-      throw new Error('CeriousScroll: totalElements must be >= 1');
+    if (!Number.isFinite(totalElements) || totalElements < 1) {
+      throw new Error('CeriousScroll: totalElements must be >= 1 (finite integer required)');
     }
     if (!container) {
       throw new Error('CeriousScroll: container element is required for automatic viewport detection');
     }
 
+    // Deep-clone + freeze caller-supplied options. Each nested object is
+    // frozen separately so library code (and consumers) cannot accidentally
+    // mutate live configuration.
+    const frozenOptions: CeriousScrollOptions = {
+      ...options,
+      keyboard: options.keyboard ? Object.freeze({ ...options.keyboard }) : undefined,
+      touch: options.touch ? Object.freeze({ ...options.touch }) : undefined,
+      wheel: options.wheel ? Object.freeze({ ...options.wheel }) : undefined,
+    };
+    this.options = Object.freeze(frozenOptions);
+
+    this.totalElements = Math.floor(totalElements);
+    
+    // Auto-detect viewport height from container
+    this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
+    this.windowHeight = this.viewportHeight; // Keep in sync
+
     // Create measurement-only height calculator - uses just-in-time measurement
     this.getElementHeight = (index: number) => {
-      // Use measured height if available
+      // Use the measured height if available, otherwise fall back to the default
+      // estimate. Do NOT write the default into the cache: that would make
+      // `hasMeasuredHeight(index)` report true for a row that was never actually
+      // measured, so the renderer would trust the fake default instead of reading
+      // the row's real `offsetHeight` (e.g. after a reflow that touched far-away
+      // indices and pruned the real measurements). Estimating without caching
+      // keeps "measured" meaning measured.
       const measuredHeight = this.performanceCache.getMeasuredHeight(index);
-      if (measuredHeight !== undefined) {
-        return measuredHeight;
-      }
-      
-      // For unmeasured elements, return default height
-      // Store it temporarily to maintain consistency during scroll calculations
-      this.performanceCache.setMeasuredHeight(index, CeriousScroll.DEFAULT_ELEMENT_HEIGHT);
-      
-      return CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
+      return measuredHeight !== undefined ? measuredHeight : CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
     };
     
     // Initialize performance cache
     this.performanceCache = new PerformanceCache(this.getElementHeight);
+    // Bound linear walks (e.g. findRowFromScrollPosition) by the dataset size
+    // to defend against malformed scroll positions causing runaway loops.
+    this.performanceCache.setTotalElements(this.totalElements);
 
-    // Initialize native scrollbar (note: scrollHandlers will be passed after it's created)
+    // Initialize native scrollbar. The navigation engine is constructed below
+    // and injected via setScrollHandlers() to avoid the previous `null as any`
+    // cast and the NPE risk it created.
     this.nativeScrollbar = new NativeScrollbar(
       this.totalElements,
       () => this.calculateScrollPercentage(),
@@ -149,7 +167,7 @@ export class CeriousScroll {
         this.currentElement = element;
         this.scrollOffset = offset;
       },
-      null as any, // scrollHandlers - will be set after initialization
+      null, // scrollHandlers - set after NavigationEngine construction
       () => this.viewportHeight,
       () => this.currentElement,
       () => this.scrollOffset,
@@ -157,8 +175,8 @@ export class CeriousScroll {
       CeriousScroll.VIRTUAL_TRACK_HEIGHT,
       (result) => {
         // Trigger render when scrollbar position changes
-        if (options.onScroll) {
-          options.onScroll();
+        if (this.options.onScroll) {
+          this.options.onScroll();
         }
       }
     );
@@ -240,26 +258,39 @@ export class CeriousScroll {
     this.contentObserverManager = new ContentObserverManager({
       getMeasuredHeight: (index: number) => this.performanceCache.getMeasuredHeight(index),
       setMeasuredHeight: (index: number, height: number) => this.performanceCache.setMeasuredHeight(index, height),
-      invalidateCache: () => this.invalidateCache()
+      invalidateCache: () => this.invalidateCache(),
+      // A rendered row changed height in place (e.g. expand/collapse, density
+      // switch). Reflow so positions, total height, scroll percentage and the
+      // scrollbar update — and the consumer re-renders — without anyone having
+      // to call recalculate(). Identical behavior across all frameworks.
+      onResize: () => this.reflow()
     });
     
-    // Now set scrollHandlers on nativeScrollbar
-    (this.nativeScrollbar as any).scrollHandlers = this.navigationEngine;
+    // Now set scrollHandlers on nativeScrollbar via the typed setter
+    this.nativeScrollbar.setScrollHandlers(this.navigationEngine);
     
     this.totalContentHeight = 0;
     this.updateDisplay();
 
     // Optional debug hook for automated harnesses (e.g., Playwright) and field diagnostics.
     // Enabled only when the URL includes ?debugScroll=1 (or debugScroll=true), so this stays
-    // inert in normal usage.
+    // inert in normal usage. Multiple instances share a registry keyed by id
+    // so the global hook from one instance never overwrites another.
     try {
       const params = new URLSearchParams(globalThis.location?.search ?? '');
       const enabled = params.has('debugScroll') && params.get('debugScroll') !== '0' && params.get('debugScroll') !== 'false';
       if (enabled) {
-        (globalThis as any).__ceriousScrollDebug = () => {
+        const g = globalThis as any;
+        const registry: Map<string, () => any> = g.__ceriousScrollDebugRegistry instanceof Map
+          ? g.__ceriousScrollDebugRegistry
+          : (g.__ceriousScrollDebugRegistry = new Map());
+
+        const debugId = `cerious-scroll-${(g.__ceriousScrollDebugCounter = (g.__ceriousScrollDebugCounter ?? 0) + 1)}`;
+        const snapshot = () => {
           const trueBottom = this.viewportRenderer.calculateTrueBottomPosition(this.viewportHeight);
           return {
             version: 'cerious-scroll-debug-v1',
+            id: debugId,
             totalElements: this.totalElements,
             viewportHeight: this.viewportHeight,
             currentElement: this.currentElement,
@@ -271,60 +302,71 @@ export class CeriousScroll {
             trueBottom,
           };
         };
+        registry.set(debugId, snapshot);
+
+        // The default hook returns the most recently created instance for
+        // backward compatibility, and accepts an optional id to address a
+        // specific instance.
+        g.__ceriousScrollDebug = (id?: string) => {
+          if (id) return registry.get(id)?.();
+          return snapshot();
+        };
+        g.__ceriousScrollDebug.list = () => Array.from(registry.keys());
+
+        this.debugCleanup = () => {
+          registry.delete(debugId);
+          if (registry.size === 0) {
+            try { delete g.__ceriousScrollDebug; } catch { g.__ceriousScrollDebug = undefined; }
+          }
+        };
       }
     } catch {
       // Ignore environments without URL/location (SSR/tests)
     }
 
     // Conditionally attach native scrollbar (default: true)
-    if (options.attachScrollbar !== false) {
+    if (this.options.attachScrollbar !== false) {
       this.nativeScrollbar.attachNativeScrollbar(container);
     }
     
     // Set up keyboard navigation if enabled (default: true)
-    if (options.keyboard?.enabled !== false) {
+    if (this.options.keyboard?.enabled !== false) {
       this.keyboardCleanup = this.keyboardController.attach(
         container,
-        options.keyboard,
+        this.options.keyboard,
         () => {
-          if (options.onScroll) {
-            options.onScroll();
-          }
+          this.options.onScroll?.();
         }
       );
     }
 
     // Set up wheel navigation if enabled (default: true)
-    if (options.wheel?.enabled !== false) {
+    if (this.options.wheel?.enabled !== false) {
       this.wheelCleanup = this.setupWheelHandler(container, () => {
-        if (options.onScroll) {
-          options.onScroll();
-        }
-      }, options.wheel);
+        this.options.onScroll?.();
+      }, this.options.wheel);
     }
 
     // Set up touch navigation if enabled (default: true)
-    if (options.touch?.enabled !== false) {
+    if (this.options.touch?.enabled !== false) {
       this.touchCleanup = this.touchController.attach(
         container,
         () => {
-          if (options.onScroll) {
-            options.onScroll();
-          }
+          this.options.onScroll?.();
         },
-        options.touch
+        this.options.touch
       );
     }
     
     // Set up automatic resize handling (default: enabled)
     // This ensures the scroller adapts when browser window or container is resized
-    if (options.autoResize !== false) {
+    if (this.options.autoResize !== false) {
       this.resizeCleanup = this.setupAutoResizeHandling(container);
     }
     
     // Set up automatic content change detection (default: enabled)
     // This detects when rendered elements change size and invalidates height caches
-    if (options.observeContentChanges !== false) {
+    if (this.options.observeContentChanges !== false) {
       this.contentObserverCleanup = this.contentObserverManager.observe(container);
     }
   }
@@ -359,6 +401,16 @@ export class CeriousScroll {
    * @param height Measured height in pixels
    */
   setMeasuredHeight(index: number, height: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= this.totalElements) {
+      throw new Error(
+        `CeriousScroll.setMeasuredHeight: index ${index} out of range (0..${this.totalElements - 1})`
+      );
+    }
+    if (!Number.isFinite(height) || height < 0) {
+      throw new Error(
+        `CeriousScroll.setMeasuredHeight: height must be a non-negative finite number, got ${height}`
+      );
+    }
     this.performanceCache.setMeasuredHeight(index, height);
   }
 
@@ -372,6 +424,9 @@ export class CeriousScroll {
    * @returns Object containing the new element index and pixel offset
    */
   scroll(deltaY: number, viewportHeight: number): ScrollResult {
+    if (!Number.isFinite(deltaY) || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+      return { element: this.currentElement, offset: this.scrollOffset };
+    }
     return this.navigationEngine.scroll(deltaY, viewportHeight);
   }
 
@@ -422,6 +477,11 @@ export class CeriousScroll {
    * @returns Object containing the calculated element index and pixel offset
    */
   handleScrollPercentage(percentage: number): ScrollResult {
+    if (!Number.isFinite(percentage)) {
+      throw new Error(
+        `CeriousScroll.handleScrollPercentage: percentage must be finite, got ${percentage}`
+      );
+    }
     return this.navigationEngine.handleScrollPercentage(percentage);
   }
 
@@ -432,6 +492,11 @@ export class CeriousScroll {
    * @returns Object containing the final element and offset (offset will be 0)
    */
   jumpToElement(elementIndex: number): ScrollResult {
+    if (!Number.isFinite(elementIndex)) {
+      throw new Error(
+        `CeriousScroll.jumpToElement: elementIndex must be finite, got ${elementIndex}`
+      );
+    }
     return this.navigationEngine.jumpToElement(elementIndex);
   }
 
@@ -457,7 +522,25 @@ export class CeriousScroll {
     container: HTMLElement, 
     renderElement: ElementRenderer
   ): MeasuredViewportRange {
-    return this.viewportRenderer.renderViewport(windowHeight, container, renderElement);
+    if (!Number.isFinite(windowHeight) || windowHeight <= 0) {
+      throw new Error(
+        `CeriousScroll.renderViewport: windowHeight must be a positive finite number, got ${windowHeight}`
+      );
+    }
+    if (!container || typeof (container as any).appendChild !== 'function') {
+      throw new Error('CeriousScroll.renderViewport: container must be an HTMLElement');
+    }
+    if (typeof renderElement !== 'function') {
+      throw new Error('CeriousScroll.renderViewport: renderElement must be a function');
+    }
+    const range = this.viewportRenderer.renderViewport(windowHeight, container, renderElement);
+    // Refresh derived display state (scroll percentage, visible range) so it
+    // reflects the heights just measured this pass. This keeps the percentage in
+    // sync after a row's height changes in place and is re-measured (e.g. an
+    // expand/collapse followed by a re-render), without waiting for the next
+    // scroll event.
+    this.updateDisplay();
+    return range;
   }
 
   /**
@@ -571,12 +654,47 @@ export class CeriousScroll {
     // Update viewport height from container
     this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
     this.windowHeight = this.viewportHeight;
-    
+
     // Update modules with new viewport height
     this.navigationEngine.updateConfig(this.totalElements, this.viewportHeight);
-    
-    // Handle scrollbar viewport change
+
+    // Handle scrollbar viewport change (this re-attaches the native scrollbar,
+    // which creates a fresh element whose scrollTop is 0).
     this.nativeScrollbar.handleViewportChange(container, this.viewportHeight);
+
+    // Re-anchor, re-sync the scrollbar thumb, refresh display state, and ask the
+    // consumer to re-render — see reflow().
+    this.reflow();
+  }
+
+  /**
+   * Reflow after the content/viewport changed without an explicit scroll: a
+   * container resize, or a rendered row changing height in place (expand/
+   * collapse, density switch — detected by the content observer). Centralised in
+   * the engine so every consumer/framework behaves identically.
+   *
+   * 1. Re-anchor to the bottom if there is now empty space below the last
+   *    element ("at the bottom stays at the bottom"; no-op otherwise).
+   * 2. Re-sync the native scrollbar thumb to the current position (the
+   *    programmatic-update marker makes the resulting scroll event a no-op, so
+   *    the position is preserved rather than reset to the top).
+   * 3. Refresh derived display state (percentage, visible range).
+   * 4. Ask the consumer to re-render via the same `onScroll` hook used for
+   *    wheel/touch/scrollbar navigation (the engine doesn't own the row-render
+   *    callback). This keeps resize/height-change handling inside the engine —
+   *    consumers and the framework wrappers don't need their own observers or
+   *    manual `recalculate()` calls.
+   */
+  private reflow(): void {
+    this.navigationEngine.reanchorBottom(this.viewportHeight);
+
+    if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
+      this.nativeScrollbar.updateLastProgrammaticUpdate();
+      this.nativeScrollbar.syncNativeScrollbar();
+    }
+
+    this.updateDisplay();
+    this.options.onScroll?.();
   }
 
   /**
@@ -681,6 +799,12 @@ export class CeriousScroll {
     if (this.contentObserverCleanup) {
       this.contentObserverCleanup();
       this.contentObserverCleanup = undefined;
+    }
+
+    // Remove debug hook from the global registry
+    if (this.debugCleanup) {
+      try { this.debugCleanup(); } catch { /* noop */ }
+      this.debugCleanup = undefined;
     }
     
     // Clear all caches

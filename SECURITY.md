@@ -88,10 +88,6 @@ We take security seriously and appreciate your efforts to responsibly disclose y
    - Keep CeriousScroll updated to the latest version
    - Regularly audit your dependencies: `npm audit`
 
-4. **Commercial License:**
-   - Ensure you have appropriate licensing for your use case
-   - Commercial license includes priority security support
-
 ### Known Security Considerations
 
 - **DOM Injection:** CeriousScroll renders user-provided content to the DOM. Always sanitize untrusted content before rendering.
@@ -151,17 +147,8 @@ Security updates are announced via:
 1. GitHub Security Advisories
 2. Release notes in CHANGELOG.md
 3. npm security advisories
-4. Email to commercial license holders
 
 ---
-
-## Commercial Support
-
-Commercial license holders receive:
-- **Priority Security Support:** Faster response times
-- **Pre-release Security Patches:** Early access to security fixes
-- **Dedicated Security Contact:** Direct communication channel
-- **Custom Security Audits:** Available upon request
 
 Contact: info@ceriousdevtech.com
 
@@ -200,17 +187,14 @@ Thank you to all researchers who help keep CeriousScroll secure!
 
 ## Legal
 
-This security policy is subject to the terms of the CeriousScroll license agreement.
-
-**Patent Pending:** Certain features are patent pending. Security reports related to patented technology remain confidential.
+This security policy is subject to the terms of the CeriousScroll MIT license.
 
 ---
 
 ## Contact
 
 **Security Issues:** security@ceriousdevtech.com  
-**General Support:** info@ceriousdevtech.com  
-**Commercial Licensing:** info@ceriousdevtech.com
+**General Support:** info@ceriousdevtech.com
 
 **PGP Key:** Available upon request for encrypted communication
 

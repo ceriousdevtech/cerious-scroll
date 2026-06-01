@@ -1,6 +1,6 @@
 {
   "name": "@ceriousdevtech/cerious-scroll",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "High-performance virtual scrolling library with O(1) memory usage, supporting millions of elements",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,7 @@
   "types": "dist/index.d.ts",
   "unpkg": "dist/cerious-scroll.min.js",
   "jsdelivr": "dist/cerious-scroll.min.js",
-  "license": "(MIT OR LicenseRef-CeriousScroll-Commercial)",
+  "license": "MIT",
   "author": "Cerious DevTech LLC <info@ceriousdevtech.com>",
   "homepage": "https://github.com/ceriousdevtech/cerious-scroll#readme",
   "repository": {
@@ -48,8 +48,6 @@
   "files": [
     "dist",
     "LICENSE",
-    "LICENSE-MIT",
-    "LICENSE-COMMERCIAL",
     "README.md",
     "CHANGELOG.md"
   ],

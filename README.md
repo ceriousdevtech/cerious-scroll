@@ -1,8 +1,7 @@
 # Cerious Scroll™
 
-[![License](https://img.shields.io/badge/license-MIT%20%7C%20Commercial-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
-[![Patent Pending](https://img.shields.io/badge/patent-pending-orange.svg)](LICENSE)
 
 **High-Performance Virtual Scrolling for Web Applications**
 
@@ -111,25 +110,11 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 
 ## 📄 License
 
-Cerious Scroll™ is **dual-licensed** by **Cerious DevTech LLC**.
+Cerious Scroll™ is licensed under the **MIT License** by **Cerious DevTech LLC**.
 
-### Open-Source License
-- **MIT License** (see LICENSE or LICENSE-MIT)
-
-### Commercial License
-Available for organizations that prefer a separately executed commercial agreement
-(for example: explicit patent rights, priority support, or custom terms).
-
-See LICENSE-COMMERCIAL for details.
+See [LICENSE](LICENSE) or [LICENSE-MIT](LICENSE-MIT) for details.
 
 📧 **info@ceriousdevtech.com**
-
----
-
-## 🔒 Patent Status
-
-**Patent Pending**  
-U.S. Provisional Patent Application filed by **Cerious DevTech LLC**, October 2025.
 
 ---
 

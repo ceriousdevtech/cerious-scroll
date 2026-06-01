@@ -2,7 +2,6 @@
  * @fileoverview Performance Cache Module for CeriousScroll
  * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * PATENT PENDING - U.S. Provisional Patent Application Filed October 2025
  * 
  * This module handles height caching and optimization for virtual scrolling.
  * Provides O(1) memory usage regardless of dataset size through sliding window caching.
@@ -33,8 +32,21 @@ export class PerformanceCache {
   private _cacheWindowBase = 0;
   private _measuredHeights = new Map<number, number>();
   private _lastAccessedIndex: number = 0; // Track last accessed element for cache cleanup
+  // Upper bound on element count, used to keep linear walks bounded. 0 means
+  // "unknown"; in that case the cache falls back to its previous behavior.
+  private _totalElements = 0;
 
   constructor(private getElementHeight: ElementHeightCalculator) {}
+
+  /**
+   * Tell the cache how many elements exist in the dataset. Used to bound
+   * linear walks (e.g. findRowFromScrollPosition) so a malformed scroll
+   * position can never spin past the dataset.
+   */
+  setTotalElements(totalElements: number): void {
+    if (!Number.isFinite(totalElements) || totalElements < 0) return;
+    this._totalElements = Math.floor(totalElements);
+  }
 
   /**
    * Cache a measured height for a specific element
@@ -42,6 +54,19 @@ export class PerformanceCache {
    * @param height Measured height in pixels
    */
   setMeasuredHeight(index: number, height: number): void {
+    // Defensive validation. NaN/Infinity/negative heights would corrupt the
+    // total-height cache permanently and propagate into every scroll math
+    // result downstream.
+    if (!Number.isFinite(index) || index < 0) {
+      return;
+    }
+    if (!Number.isFinite(height) || height < 0) {
+      // Fall back to a 1px placeholder rather than throwing; the caller is
+      // typically `offsetHeight` which can occasionally yield 0 during
+      // measurement of detached/zero-height nodes.
+      height = 1;
+    }
+
     const wasAlreadyMeasured = this._measuredHeights.has(index);
     const oldHeight = wasAlreadyMeasured ? this._measuredHeights.get(index)! : 1;
     
@@ -53,7 +78,26 @@ export class PerformanceCache {
     
     if (this._cachedTotalHeight !== undefined) {
       const heightDifference = height - oldHeight;
-      this._cachedTotalHeight += heightDifference;
+      if (Number.isFinite(heightDifference)) {
+        this._cachedTotalHeight += heightDifference;
+      } else {
+        // Should never happen given validation above, but never let a bad
+        // value poison the cache silently.
+        this._cachedTotalHeight = undefined;
+        this._cachedTotalElements = undefined;
+      }
+    }
+
+    // If this measurement falls within or before the active sliding-window
+    // cumulative cache, the cached prefix sums are now stale. Clear them so
+    // the next getCumulativeHeight() call rebuilds.
+    if (
+      this._cumulativeHeights.length > 0 &&
+      index < this._cacheWindowStart + this._cumulativeHeights.length
+    ) {
+      this._cumulativeHeights.length = 0;
+      this._cacheWindowBase = 0;
+      this._cacheWindowStart = 0;
     }
     
     if (this._isUniformHeight === undefined && this._measuredHeights.size >= 10) {
@@ -257,47 +301,57 @@ export class PerformanceCache {
    * @performance O(1) for uniform heights, O(log n) for variable heights with binary search
    */
   findRowFromScrollPosition(scrollPixel: number): { element: number; offset: number } {
-    if (scrollPixel <= 0) {
+    // Validate input. NaN/Infinity falls through to the (0, 0) safe default.
+    if (!Number.isFinite(scrollPixel) || scrollPixel <= 0) {
       return { element: 0, offset: 0 };
     }
 
+    // Upper bound for any walk. Without an explicit total we fall back to the
+    // largest known measured index; if even that's unknown we cap at a
+    // generous-but-bounded value so a malformed input can never hot-loop.
+    const maxElementIndex = this._totalElements > 0
+      ? this._totalElements - 1
+      : (this._measuredHeights.size > 0
+          ? Math.max(...this._measuredHeights.keys()) + 1
+          : 1_000_000);
+
     // For uniform heights, use O(1) calculation
-    if (this._isUniformHeight && this._uniformHeightValue !== undefined) {
-      const element = Math.floor(scrollPixel / this._uniformHeightValue);
-      const offset = scrollPixel % this._uniformHeightValue;
-      return { 
-        element: Math.min(element, Number.MAX_SAFE_INTEGER), 
-        offset: Math.min(offset, this.getElementHeight(Math.min(element, Number.MAX_SAFE_INTEGER)) - 1)
-      };
+    if (this._isUniformHeight && this._uniformHeightValue !== undefined && this._uniformHeightValue > 0) {
+      let element = Math.floor(scrollPixel / this._uniformHeightValue);
+      element = Math.min(element, maxElementIndex);
+      const offset = scrollPixel - element * this._uniformHeightValue;
+      const clampedOffset = Math.max(
+        0,
+        Math.min(offset, Math.max(1, this.getElementHeight(element)) - 1)
+      );
+      return { element, offset: clampedOffset };
     }
 
-    // For variable heights with TRUE O(1) memory, use estimation instead of binary search
-    // This avoids building large caches proportional to dataset size
-    
-    // Start from beginning and search through measured heights
+    // Variable heights: walk forward using measurements where available.
+    // Bounded by maxElementIndex so a malformed scrollPixel can never iterate
+    // past the dataset.
     let element = 0;
     let cumulativeHeight = 0;
-    
-    // Walk through elements using measured heights where available
-    while (element < Number.MAX_SAFE_INTEGER) {
-      const elementHeight = this._measuredHeights.has(element) 
-        ? this._measuredHeights.get(element)! 
+    while (element <= maxElementIndex) {
+      const elementHeight = this._measuredHeights.has(element)
+        ? this._measuredHeights.get(element)!
         : 1; // Minimal placeholder
-      
+
       if (cumulativeHeight + elementHeight > scrollPixel) {
-        // Found the target element
         break;
       }
-      
+
       cumulativeHeight += elementHeight;
       element++;
     }
-    
-    const offset = Math.max(0, scrollPixel - cumulativeHeight);
-    return { 
-      element: Math.min(element, Number.MAX_SAFE_INTEGER), 
-      offset: Math.min(offset, this.getElementHeight(Math.min(element, Number.MAX_SAFE_INTEGER)) - 1)
-    };
+
+    if (element > maxElementIndex) {
+      element = maxElementIndex;
+    }
+
+    const elementHeight = Math.max(1, this.getElementHeight(element));
+    const offset = Math.max(0, Math.min(scrollPixel - cumulativeHeight, elementHeight - 1));
+    return { element, offset };
   }
 
   /**
