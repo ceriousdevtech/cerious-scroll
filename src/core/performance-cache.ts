@@ -134,6 +134,16 @@ export class PerformanceCache {
   }
 
   /**
+   * Return the detected uniform row height, or undefined if rows are not
+   * (yet) known to be uniform. Used by the viewport renderer to skip
+   * `offsetHeight` reads on newly-created rows during fast scroll — one
+   * forced layout per new row otherwise dominates frame time.
+   */
+  getUniformHeightHint(): number | undefined {
+    return this._isUniformHeight === true ? this._uniformHeightValue : undefined;
+  }
+
+  /**
    * Get a measured height for an element, or undefined if not measured
    * @param index Element index
    * @returns Measured height or undefined

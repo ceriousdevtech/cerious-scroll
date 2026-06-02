@@ -189,7 +189,8 @@ export class CeriousScroll {
       () => this.calculateScrollPercentage(),
       (index: number, height: number) => this.performanceCache.setMeasuredHeight(index, height),
       (index: number) => this.performanceCache.hasMeasuredHeight(index),
-      (index: number) => this.performanceCache.getMeasuredHeight(index)
+      (index: number) => this.performanceCache.getMeasuredHeight(index),
+      () => this.performanceCache.getUniformHeightHint()
     );
 
     this.navigationEngine = new NavigationEngine({

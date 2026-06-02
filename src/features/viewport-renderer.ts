@@ -93,7 +93,11 @@ export class ViewportRenderer {
     private getCalculateScrollPercentage: () => number,
     private setMeasuredHeight: (index: number, height: number) => void,
     private hasMeasuredHeight: (index: number) => boolean,
-    private getMeasuredHeight: (index: number) => number
+    private getMeasuredHeight: (index: number) => number,
+    // Optional: when rows are known to be uniform-height, return that height
+    // so the renderer can skip the per-new-row `offsetHeight` read (each one
+    // forces a synchronous layout and dominates fast-scroll frame time).
+    private getUniformHeightHint?: () => number | undefined
   ) {}
 
   /**
@@ -148,6 +152,11 @@ export class ViewportRenderer {
   private measureReused(index: number, element: HTMLElement): number {
     if (this.hasMeasuredHeight(index)) {
       return this.getMeasuredHeight(index);
+    }
+    const hint = this.getUniformHeightHint?.();
+    if (hint !== undefined) {
+      this.setMeasuredHeight(index, hint);
+      return hint;
     }
     const height = element.offsetHeight;
     this.setMeasuredHeight(index, height);
@@ -284,8 +293,13 @@ export class ViewportRenderer {
         container.appendChild(elementToRender);
         renderElement(i, elementToRender);
         
-        // Measure actual height
-        measuredHeight = elementToRender.offsetHeight;
+        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
+        const hintTop = this.getUniformHeightHint?.();
+        if (hintTop !== undefined) {
+          measuredHeight = hintTop;
+        } else {
+          measuredHeight = elementToRender.offsetHeight;
+        }
         this.setMeasuredHeight(i, measuredHeight);
         
         if (this.shouldTrackIndexForBottom(i)) {
@@ -361,8 +375,13 @@ export class ViewportRenderer {
         // Render content
         renderElement(elementIndex, elementToRender);
         
-        // NOW measure the actual height
-        measuredHeight = elementToRender.offsetHeight;
+        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
+        const hintVis = this.getUniformHeightHint?.();
+        if (hintVis !== undefined) {
+          measuredHeight = hintVis;
+        } else {
+          measuredHeight = elementToRender.offsetHeight;
+        }
         
         // Cache the measurement
         this.setMeasuredHeight(elementIndex, measuredHeight);
@@ -428,7 +447,13 @@ export class ViewportRenderer {
         container.appendChild(elementToRender);
         renderElement(i, elementToRender);
         
-        measuredHeight = elementToRender.offsetHeight;
+        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
+        const hintBot = this.getUniformHeightHint?.();
+        if (hintBot !== undefined) {
+          measuredHeight = hintBot;
+        } else {
+          measuredHeight = elementToRender.offsetHeight;
+        }
         this.setMeasuredHeight(i, measuredHeight);
         
         if (this.shouldTrackIndexForBottom(i)) {
@@ -441,6 +466,32 @@ export class ViewportRenderer {
       cumulativeTop += measuredHeight;
     }
     
+    const endElement = Math.min(elementIndex - 1, this.totalElements - 1);
+
+    // PRE-STEP 6: Compute bottom boundary indices and add them to _shouldBeVisibleSet
+    // BEFORE Step 5 runs the cleanup. This prevents the cleanup from evicting bottom
+    // boundary elements from currentlyRendered, which previously forced them to be
+    // fully re-created (160+ appendChild calls) on every scroll frame.
+    const datasetLastIndex = this.totalElements - 1;
+    const bottomElementsToRender = this._bottomElementsToRenderArray;
+    bottomElementsToRender.length = 0;
+    if (datasetLastIndex >= 0 && endElement < datasetLastIndex) {
+      let bottomAccumulatedHeight = 0;
+      const MAX_BOTTOM_ELEMENTS = 50;
+      for (let i = datasetLastIndex; i >= 0; i--) {
+        if (i <= endElement) break;
+        if (bottomElementsToRender.length >= MAX_BOTTOM_ELEMENTS) break;
+        bottomElementsToRender.push(i);
+        // Mark as visible so Step 5 does NOT evict these from currentlyRendered.
+        this._shouldBeVisibleSet.add(i);
+        if (this.hasMeasuredHeight(i)) {
+          bottomAccumulatedHeight += this.getMeasuredHeight(i);
+          if (bottomAccumulatedHeight >= windowHeight) break;
+        }
+      }
+      bottomElementsToRender.reverse();
+    }
+
     // STEP 5: Remove elements that are no longer visible
     this._toRemoveArray.length = 0;
     this.currentlyRendered.forEach((element, index) => {
@@ -455,72 +506,29 @@ export class ViewportRenderer {
     
     this._toRemoveArray.forEach(index => this.currentlyRendered.delete(index));
     
-    const endElement = Math.min(elementIndex - 1, this.totalElements - 1);
-    
     // Update tracking
     this.lastStartElement = startElement;
     this.lastEndElement = endElement;
     
-    // STEP 6: Render bottom boundary elements for precise end-of-scroll detection
+    // STEP 6: Render bottom boundary elements for precise end-of-scroll detection.
+    // bottomElementsToRender was pre-computed in PRE-STEP 6 (before Step 5), so
+    // stable bottom rows are still in currentlyRendered — no renderElement needed.
     this._lastRenderedElement = null;
-    
-    const datasetLastIndex = this.totalElements - 1;
-    if (datasetLastIndex >= 0 && endElement < datasetLastIndex) {
-      // Render elements from the end backwards until we have a viewport's worth
-      // This enables accurate bottom boundary detection
-      const bottomElementsToRender = this._bottomElementsToRenderArray;
-      bottomElementsToRender.length = 0;
-      let bottomAccumulatedHeight = 0;
-      
-      // Limit bottom elements to prevent rendering millions on initial load
-      // Once measured, we'll stop when accumulated height >= viewport
-      const MAX_BOTTOM_ELEMENTS = 50;
-      
-      // Build list of bottom elements to render (in reverse order)
-      for (let i = datasetLastIndex; i >= 0; i--) {
-        if (i <= endElement) {
-          // Already rendered in the normal pass
-          break;
-        }
-        
-        // Safety limit: cap at maximum elements for boundary detection
-        if (bottomElementsToRender.length >= MAX_BOTTOM_ELEMENTS) {
-          break;
-        }
-        
-        bottomElementsToRender.push(i);
-        
-        // Track accumulated height with actual measurements only
-        if (this.hasMeasuredHeight(i)) {
-          bottomAccumulatedHeight += this.getMeasuredHeight(i);
-          
-          // Stop once we have enough measured elements to fill the viewport
-          if (bottomAccumulatedHeight >= windowHeight) {
-            break;
-          }
-        }
-      }
 
-      // Reverse to get proper order (closest to viewport first)
-      bottomElementsToRender.reverse();
-      
-      // Render these bottom elements
+    if (datasetLastIndex >= 0 && endElement < datasetLastIndex) {
       for (const elemIndex of bottomElementsToRender) {
-        this._shouldBeVisibleSet.add(elemIndex);
-        
         let bottomElement: HTMLElement;
         let bottomHeight: number;
         
         if (this.currentlyRendered.has(elemIndex)) {
-          // Already rendered (shouldn't happen, but handle it). See note
-          // above on cached offsetHeight reads.
+          // Already in currentlyRendered (kept alive by PRE-STEP 6 marking it visible).
           bottomElement = this.currentlyRendered.get(elemIndex)!;
           bottomElement.style.position = this._styleCache.position;
           this._topStyleBuffer = cumulativeTop + 'px';
           bottomElement.style.top = this._topStyleBuffer;
           bottomHeight = this.measureReused(elemIndex, bottomElement);
         } else {
-          // Create or reuse from pool
+          // First time rendering this bottom boundary row — create or reuse from pool.
           const pooled = this.recycledElements.pop();
           if (pooled) {
             bottomElement = pooled;
@@ -543,8 +551,13 @@ export class ViewportRenderer {
           container.appendChild(bottomElement);
           renderElement(elemIndex, bottomElement);
 
-          // Measure actual height
-          bottomHeight = bottomElement.offsetHeight;
+          // Skip offsetHeight when rows are known-uniform; each read forces a layout.
+          const hintBoundary = this.getUniformHeightHint?.();
+          if (hintBoundary !== undefined) {
+            bottomHeight = hintBoundary;
+          } else {
+            bottomHeight = bottomElement.offsetHeight;
+          }
           this.setMeasuredHeight(elemIndex, bottomHeight);
           
           if (this.shouldTrackIndexForBottom(elemIndex)) {
@@ -556,7 +569,6 @@ export class ViewportRenderer {
         
         cumulativeTop += bottomHeight;
         
-        // Track last element
         if (elemIndex === datasetLastIndex) {
           this._lastRenderedElement = bottomElement;
         }
