@@ -238,11 +238,16 @@ export class NativeScrollbar {
 
     // Create scrollable content (sets scroll range based on element count, not heights)
     // Add +1 to ensure scrollbar can reach 100% (accounts for rounding/boundary conditions)
+    // Also ensure the surface always exceeds the container height so the thumb
+    // renders even for small lists whose total element units would otherwise
+    // fit within the viewport (e.g. paged datasets).
     const scrollableContent = document.createElement('div');
     scrollableContent.setAttribute('data-cerious-scrollbar', 'content');
+    const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
+    const elementHeight = (this.totalElements + 1) * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
     scrollableContent.style.cssText = `
       width: 1px;
-      height: ${(this.totalElements + 1) * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER}px;
+      height: ${Math.max(elementHeight, minHeight)}px;
       pointer-events: none;
     `;
 
@@ -422,8 +427,11 @@ export class NativeScrollbar {
 
     const scrollableContent = container.querySelector('[data-cerious-scrollbar="content"]') as HTMLElement;
     if (scrollableContent) {
-      // Use element count for scroll height, not content height
-      scrollableContent.style.height = (totalElements * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER) + 'px';
+      // Use element count for scroll height, not content height. Ensure the
+      // surface exceeds the container so the thumb renders for small lists.
+      const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
+      const elementHeight = totalElements * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
+      scrollableContent.style.height = Math.max(elementHeight, minHeight) + 'px';
     }
   }
 

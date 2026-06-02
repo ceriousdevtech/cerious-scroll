@@ -30,6 +30,20 @@ export interface TouchNavigationOptions {
   momentumFriction?: number;
   /** Minimum velocity to trigger momentum in px/ms (default: 0.1) */
   momentumThreshold?: number;
+  /**
+   * Optional resolver for a sibling element that owns horizontal native scroll
+   * (i.e. `overflow-x: scroll`). When provided, the controller performs axis
+   * detection on the first significant touch movement; if the gesture is
+   * horizontal-dominant, deltaX is forwarded to the returned element's
+   * scrollLeft (instead of vertical scrolling), enabling mobile horizontal
+   * scrolling without disabling vertical touch.
+   */
+  getHorizontalScrollTarget?: () => HTMLElement | null | undefined;
+  /**
+   * Pixel distance the touch must travel before the controller locks the
+   * gesture to an axis. Default: 8.
+   */
+  axisLockThreshold?: number;
 }
 
 /**

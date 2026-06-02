@@ -39,8 +39,11 @@ export class TouchController {
       enableMomentum: true,
       momentumFriction: 0.95,
       momentumThreshold: 0.1,
+      axisLockThreshold: 8,
       ...options
     };
+
+    const getHorizontalTarget = opts.getHorizontalScrollTarget;
 
     const originalTouchAction = container.style.touchAction;
     const styleId = 'cerious-touch-action-style';
@@ -65,6 +68,16 @@ export class TouchController {
     let velocityY = 0;
     let momentumAnimationId: number | null = null;
     let activeTouchId: number | null = null;
+
+    // Axis-lock state. Until the gesture exceeds `axisLockThreshold` we don't
+    // know whether the user intends a vertical or horizontal scroll. We
+    // accumulate raw deltas from the touchstart point and lock once one
+    // dimension wins, so subsequent moves are routed to the right consumer.
+    let startTouchX = 0;
+    let startTouchY = 0;
+    let lastTouchX = 0;
+    let axis: 'unknown' | 'vertical' | 'horizontal' = 'unknown';
+    let horizontalTarget: HTMLElement | null = null;
 
     // Velocity tracking via fixed-size ring buffer to avoid Array.shift() in
     // the hot touchmove path (O(n) per move) and unbounded growth on slow
@@ -108,6 +121,11 @@ export class TouchController {
         const touch = event.touches[0];
         activeTouchId = touch.identifier;
         lastTouchY = touch.clientY;
+        lastTouchX = touch.clientX;
+        startTouchX = touch.clientX;
+        startTouchY = touch.clientY;
+        axis = 'unknown';
+        horizontalTarget = getHorizontalTarget?.() ?? null;
         lastTouchTime = Date.now();
         velocityY = 0;
         resetVelocityHistory();
@@ -137,10 +155,40 @@ export class TouchController {
       }
 
       const currentY = touch.clientY;
+      const currentX = touch.clientX;
       const currentTime = Date.now();
       const deltaY = lastTouchY - currentY;
+      const deltaX = lastTouchX - currentX;
       const deltaTime = currentTime - lastTouchTime;
 
+      // Axis lock: once the gesture leaves the dead-zone, pick the dominant
+      // direction and stay with it for the rest of the gesture.
+      if (axis === 'unknown') {
+        const totalDx = Math.abs(currentX - startTouchX);
+        const totalDy = Math.abs(currentY - startTouchY);
+        if (Math.max(totalDx, totalDy) >= opts.axisLockThreshold) {
+          if (totalDx > totalDy && horizontalTarget) {
+            axis = 'horizontal';
+          } else {
+            axis = 'vertical';
+          }
+        }
+      }
+
+      if (axis === 'horizontal' && horizontalTarget) {
+        // Forward horizontal delta to the native overflow-x scroller. Its own
+        // scroll listener cascades the change through the rest of the grid.
+        if (deltaX !== 0) {
+          horizontalTarget.scrollLeft += deltaX;
+        }
+        lastTouchY = currentY;
+        lastTouchX = currentX;
+        lastTouchTime = currentTime;
+        return;
+      }
+
+      // axis === 'vertical' (or still unknown but trending vertical): run the
+      // existing velocity tracking + vertical engine scroll.
       if (deltaTime > 0) {
         const instantVelocity = deltaY / deltaTime;
 
@@ -179,6 +227,7 @@ export class TouchController {
       }
 
       lastTouchY = currentY;
+      lastTouchX = currentX;
       lastTouchTime = currentTime;
     };
 
@@ -215,7 +264,7 @@ export class TouchController {
       activeTouchId = null;
       onScroll?.({ element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() });
 
-      if (opts.enableMomentum && Math.abs(velocityY) >= (opts.momentumThreshold ?? 0)) {
+      if (axis !== 'horizontal' && opts.enableMomentum && Math.abs(velocityY) >= (opts.momentumThreshold ?? 0)) {
         // iOS-style momentum: use exponential decay with cubic-bezier easing
         const initialVelocity = velocityY;
         const startTime = performance.now();
