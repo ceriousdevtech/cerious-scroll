@@ -117,11 +117,23 @@
             border: 1px solid #e0e0e0;
         }
 
+        /* Horizontal scroll wrapper: header + virtual rows live inside this
+         * element so the native horizontal scrollbar shifts both together.
+         * The cerious-scroll sibling scrollbar strip stays a direct child of
+         * #gridViewport and remains pinned to the visible right edge. */
+        .grid-h-scroll {
+            position: absolute;
+            inset: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
         #scrollContent {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
+            min-width: 1210px;
+            width: max-content;
             pointer-events: none;
             overflow: visible;
         }
@@ -138,6 +150,7 @@
             border-bottom: 2px solid #dee2e6;
             display: grid;
             grid-template-columns: 50px 120px 150px 220px 120px 100px 140px 120px 80px 110px;
+            min-width: 1210px;
             font-weight: 600;
             font-size: 0.85rem;
             color: #495057;
@@ -173,6 +186,7 @@
         .grid-row {
             display: grid;
             grid-template-columns: 50px 120px 150px 220px 120px 100px 140px 120px 80px 110px;
+            min-width: 1210px;
             border-bottom: 1px solid #e9ecef;
             transition: background 0.1s;
             pointer-events: auto;
@@ -502,7 +516,14 @@
         // Setup viewport
         const viewport = document.getElementById('gridViewport');
         viewport.innerHTML = '';
-        
+
+        // Horizontal scroll wrapper holds header + virtual rows so they shift
+        // together; cerious-scroll's sibling scrollbar stays a direct child
+        // of `viewport` and remains pinned to the visible right edge.
+        const hScroll = document.createElement('div');
+        hScroll.className = 'grid-h-scroll';
+        viewport.appendChild(hScroll);
+
         // Add sticky header
         const headerRow = document.createElement('div');
         headerRow.className = 'grid-header-row';
@@ -518,12 +539,12 @@
             <div class="grid-header-cell" data-column="score">Score <span class="sort-icon">⇅</span></div>
             <div class="grid-header-cell" data-column="date">Date <span class="sort-icon">⇅</span></div>
         `;
-        viewport.appendChild(headerRow);
+        hScroll.appendChild(headerRow);
         
         const scrollContent = document.createElement('div');
         scrollContent.id = 'scrollContent';
         scrollContent.style.marginTop = '48px'; // Account for sticky header
-        viewport.appendChild(scrollContent);
+        hScroll.appendChild(scrollContent);
 
         // Column sorting
         headerRow.querySelectorAll('.grid-header-cell[data-column]').forEach(cell => {
@@ -558,6 +579,13 @@
             viewport,
             filteredIndices.length,
             {
+                touch: {
+                    enabled: true,
+                    // Forward horizontal swipes to the wrapper that owns the
+                    // native overflow-x scrollbar so the column header and
+                    // rows scroll together on mobile.
+                    getHorizontalScrollTarget: () => hScroll
+                },
                 onScroll: () => {
                     scroller.renderViewport(
                         viewport.clientHeight - 48, // Account for header

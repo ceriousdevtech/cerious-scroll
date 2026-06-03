@@ -192,17 +192,19 @@ export function createMockWheelEvent(deltaY: number): WheelEvent {
  */
 export function createMockTouchEvent(
   type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel',
-  touches: Array<{ identifier: number; clientY: number }>
+  touches: Array<{ identifier: number; clientY: number; clientX?: number }>
 ): TouchEvent {
   return {
     type,
     touches: touches.map(t => ({
       identifier: t.identifier,
       clientY: t.clientY,
+      clientX: t.clientX ?? 0,
     })),
     changedTouches: touches.map(t => ({
       identifier: t.identifier,
       clientY: t.clientY,
+      clientX: t.clientX ?? 0,
     })),
     preventDefault: vi.fn(),
     stopPropagation: vi.fn(),

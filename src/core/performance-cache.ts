@@ -19,17 +19,12 @@ export class PerformanceCache {
   // Constants for cache management
   private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200; // Keep only 200 measured heights
   private static readonly CACHE_PRUNE_THRESHOLD = 250; // Prune when we exceed this
-  private static readonly MAX_CUMULATIVE_CACHE_SIZE = 300; // Max cumulative heights cache
-  
+
   // ===== CACHE STATE =====
   private _cachedTotalHeight: number | undefined = undefined;
   private _cachedTotalElements: number | undefined = undefined;
   private _isUniformHeight: boolean | undefined = undefined;
   private _uniformHeightValue: number | undefined = undefined;
-  private _cumulativeHeights: number[] = [];
-  private readonly _maxCacheSize = PerformanceCache.MAX_CUMULATIVE_CACHE_SIZE;
-  private _cacheWindowStart = 0;
-  private _cacheWindowBase = 0;
   private _measuredHeights = new Map<number, number>();
   private _lastAccessedIndex: number = 0; // Track last accessed element for cache cleanup
   // Upper bound on element count, used to keep linear walks bounded. 0 means
@@ -88,18 +83,6 @@ export class PerformanceCache {
       }
     }
 
-    // If this measurement falls within or before the active sliding-window
-    // cumulative cache, the cached prefix sums are now stale. Clear them so
-    // the next getCumulativeHeight() call rebuilds.
-    if (
-      this._cumulativeHeights.length > 0 &&
-      index < this._cacheWindowStart + this._cumulativeHeights.length
-    ) {
-      this._cumulativeHeights.length = 0;
-      this._cacheWindowBase = 0;
-      this._cacheWindowStart = 0;
-    }
-    
     if (this._isUniformHeight === undefined && this._measuredHeights.size >= 10) {
       // GC optimization: Use iterator-based approach instead of Array.from
       // Check uniformity without creating array if possible
@@ -147,10 +130,12 @@ export class PerformanceCache {
    * Get a measured height for an element, or undefined if not measured
    * @param index Element index
    * @returns Measured height or undefined
+   *
+   * Hot path: this is called many times per scroll frame. Keep it as a
+   * single Map.get — pruning happens in setMeasuredHeight (the only path
+   * that grows the map), so doing it here would just burn cycles.
    */
   getMeasuredHeight(index: number): number | undefined {
-    this._lastAccessedIndex = index;
-    this._pruneOldCacheEntries();
     return this._measuredHeights.get(index);
   }
   
@@ -231,74 +216,25 @@ export class PerformanceCache {
   }
 
   /**
-   * Get cumulative height up to a specific row (TRUE O(1) memory implementation)
-   * 
+   * Get cumulative height up to a specific row.
+   *
    * @param row Row index to calculate cumulative height for
    * @returns Total height from row 0 to row-1 (exclusive)
-   * @performance O(1) memory regardless of dataset size
+   *
+   * O(1) when uniform-height has been detected; O(row) otherwise. Not on
+   * the scroll hot path — kept as a public utility for consumers.
    */
   getCumulativeHeight(row: number): number {
     if (row <= 0) return 0;
 
-    // For uniform heights, use O(1) calculation
     if (this._isUniformHeight && this._uniformHeightValue !== undefined) {
       return row * this._uniformHeightValue;
     }
 
-    // For variable heights, use sliding window cache with FIXED maximum size
-    const targetRow = row;
-    
-    // Check if target row is in current cache window
-    const windowSize = Math.min(this._maxCacheSize, targetRow + 1);
-    const windowStart = Math.max(0, targetRow - windowSize + 1);
-    const windowEnd = windowStart + windowSize;
-    
-    // If we need to rebuild the cache window
-    if (this._cacheWindowStart !== windowStart || this._cumulativeHeights.length !== windowSize) {
-      this._cacheWindowStart = windowStart;
-      this._cumulativeHeights = new Array(windowSize);
-      this._cumulativeHeights[0] = 0;
-      
-      // Calculate base height for this window (sum of all rows before window)
-      if (windowStart > 0) {
-        // Use measured heights where available for better accuracy
-        let baseHeight = 0;
-        let measuredCount = 0;
-        
-        for (let i = 0; i < windowStart; i++) {
-          if (this._measuredHeights.has(i)) {
-            baseHeight += this._measuredHeights.get(i)!;
-            measuredCount++;
-          } else {
-            baseHeight += this.getElementHeight(i);
-          }
-        }
-        
-        this._cacheWindowBase = baseHeight;
-      } else {
-        this._cacheWindowBase = 0;
-      }
-      
-      // Build cumulative heights within the fixed-size window
-      for (let i = 1; i < windowSize && (windowStart + i) <= targetRow; i++) {
-        this._cumulativeHeights[i] = this._cumulativeHeights[i - 1] + this.getElementHeight(windowStart + i - 1);
-      }
-    }
-    
-    // Return base + offset within window
-    const indexInWindow = targetRow - this._cacheWindowStart;
-    if (indexInWindow >= 0 && indexInWindow < this._cumulativeHeights.length) {
-      return this._cacheWindowBase + this._cumulativeHeights[indexInWindow];
-    }
-    
-    // For requests outside cache window, calculate directly using measurements
     let cumulativeHeight = 0;
-    for (let i = 0; i < targetRow; i++) {
-      if (this._measuredHeights.has(i)) {
-        cumulativeHeight += this._measuredHeights.get(i)!;
-      } else {
-        cumulativeHeight += 1; // Minimal placeholder
-      }
+    for (let i = 0; i < row; i++) {
+      const measured = this._measuredHeights.get(i);
+      cumulativeHeight += measured !== undefined ? measured : 1;
     }
     return cumulativeHeight;
   }
@@ -373,9 +309,6 @@ export class PerformanceCache {
     this._cachedTotalElements = undefined;
     this._isUniformHeight = undefined;
     this._uniformHeightValue = undefined;
-    this._cumulativeHeights = [];
-    this._cacheWindowStart = 0;
-    this._cacheWindowBase = 0;
     // Keep measured heights since they are real measurements
     // this._measuredHeights.clear(); // Only clear if data actually changed
   }
@@ -397,8 +330,8 @@ export class PerformanceCache {
       measuredElements: this._measuredHeights.size,
       isUniformHeight: this._isUniformHeight,
       uniformHeightValue: this._uniformHeightValue,
-      cacheWindowSize: this._cumulativeHeights.length,
-      cacheWindowStart: this._cacheWindowStart,
+      cacheWindowSize: 0,
+      cacheWindowStart: 0,
       cachedTotalHeight: this._cachedTotalHeight,
       cachedTotalElements: this._cachedTotalElements
     };

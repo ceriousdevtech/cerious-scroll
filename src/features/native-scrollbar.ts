@@ -23,8 +23,34 @@ export class NativeScrollbar {
   private static readonly PROGRAMMATIC_UPDATE_GRACE_PERIOD_MS = 50;
   private static readonly BOTTOM_THRESHOLD_PERCENTAGE = 99;
   private static readonly PERCENTAGE_MAX = 100;
+  // Custom thumb tuning. Sibling-driver strip is fixed width; the thumb
+  // floats over the right edge of the host container and is visually
+  // independent of that strip width.
+  private static readonly THUMB_MIN_HEIGHT_PX = 24;
+  private static readonly THUMB_FADE_DELAY_MS = 800;
+  // One stylesheet for all CeriousScroll instances. Injected lazily on the
+  // first scrollbar creation so SSR / non-DOM environments stay clean.
+  private static _stylesInjected = false;
 
   private _scrollbarContainer: HTMLElement | null = null;
+  private _thumbElement: HTMLElement | null = null;
+  // Transparent overlay on the right edge of the container (touch only) that
+  // makes the whole sibling-scrollbar strip a drag target — so a tap anywhere
+  // in the column jumps the thumb and starts a drag, instead of requiring the
+  // user to land on the slim painted thumb.
+  private _thumbHitZone: HTMLElement | null = null;
+  private _thumbHitZoneDown: ((e: PointerEvent) => void) | null = null;
+  private _thumbFadeTimer: number | null = null;
+  // Active drag state. Captured on pointerdown for the thumb; cleared on
+  // pointerup/cancel. We drive scroll by writing to the sibling container's
+  // `scrollTop`, which the existing scroll listener already maps to the
+  // virtual position — so all scroll math stays in one place.
+  private _thumbDrag: {
+    pointerId: number;
+    startClientY: number;
+    startScrollTop: number;
+    trackPx: number;
+  } | null = null;
   private _syncingScrollbar = false;
   private _lastProgrammaticUpdate = 0;
   // Counter of pending programmatic scrollTop assignments. Each programmatic
@@ -41,6 +67,77 @@ export class NativeScrollbar {
   // Track scroll-event listeners so we can remove them on detach to prevent
   // listener leaks when the scrollbar is recreated.
   private _scrollListener: ((e: Event) => void) | null = null;
+  // Bound pointer handlers, retained so we can remove them on detach.
+  private _thumbPointerDown: ((e: PointerEvent) => void) | null = null;
+  private _thumbPointerMove: ((e: PointerEvent) => void) | null = null;
+  private _thumbPointerUp: ((e: PointerEvent) => void) | null = null;
+
+  /**
+   * Inject the one-time stylesheet that hides the native OS scrollbar on
+   * the sibling driver and styles our custom thumb. Done once per document
+   * because every CeriousScroll instance uses the same selectors.
+   *
+   * Consumers can override the thumb appearance via CSS variables on the
+   * scroll host (`--cerious-thumb-color`, `--cerious-thumb-color-active`,
+   * `--cerious-thumb-width`, `--cerious-thumb-width-active`).
+   */
+  private static ensureStylesInjected(): void {
+    if (this._stylesInjected) return;
+    if (typeof document === 'undefined') return;
+    const style = document.createElement('style');
+    style.setAttribute('data-cerious-scrollbar-styles', '');
+    style.textContent = `
+[data-cerious-scrollbar="container"][data-touch="true"] { scrollbar-width: none; -ms-overflow-style: none; }
+[data-cerious-scrollbar="container"][data-touch="true"]::-webkit-scrollbar { width: 0; height: 0; display: none; }
+[data-cerious-scrollbar="thumb"] {
+  position: absolute;
+  right: 2px;
+  width: var(--cerious-thumb-width, 5px);
+  min-height: ${NativeScrollbar.THUMB_MIN_HEIGHT_PX}px;
+  border-radius: 999px;
+  background: var(--cerious-thumb-color, rgba(0, 0, 0, 0.45));
+  opacity: 0;
+  transition: opacity 200ms ease, width 120ms ease, background-color 120ms ease;
+  pointer-events: auto;
+  touch-action: none;
+  /* Expand the touch hit target without changing the painted size: a
+   * transparent pseudo-element extends the pointer area ~10px in each
+   * direction so a fingertip reliably grabs the slim pill. */
+  will-change: top, height, opacity;
+  z-index: ${NativeScrollbar.DEFAULT_Z_INDEX + 1};
+}
+[data-cerious-scrollbar="thumb"]::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  left: -12px;
+  right: -12px;
+}
+[data-cerious-scrollbar="thumb"][data-visible="true"] { opacity: 1; }
+[data-cerious-scrollbar="thumb"][data-active="true"] {
+  width: var(--cerious-thumb-width-active, 8px);
+  background: var(--cerious-thumb-color-active, rgba(0, 0, 0, 0.7));
+  opacity: 1;
+}
+@media (prefers-color-scheme: dark) {
+  [data-cerious-scrollbar="thumb"] { background: var(--cerious-thumb-color, rgba(255, 255, 255, 0.5)); }
+  [data-cerious-scrollbar="thumb"][data-active="true"] { background: var(--cerious-thumb-color-active, rgba(255, 255, 255, 0.75)); }
+}
+`;
+    document.head.appendChild(style);
+    this._stylesInjected = true;
+  }
+
+  /**
+   * Detect a touch-primary device (mobile/tablet). The custom thumb only
+   * applies here — desktop browsers keep the native OS scrollbar on the
+   * sibling strip because it works correctly and matches platform chrome.
+   */
+  private static isTouchPrimary(): boolean {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  }
 
   constructor(
     private totalElements: number,
@@ -185,12 +282,19 @@ export class NativeScrollbar {
     // Use dynamic scrollbar width detection
     const detectedWidth = this.getScrollbarWidth();
 
+    // On touch-primary devices the OS won't paint a scrollbar on this
+    // sibling strip (the user's finger drags content, not the strip), so we
+    // collapse the strip to zero width and draw our own overlay thumb on top
+    // of the content. On desktop the native OS scrollbar on the strip works
+    // and matches platform chrome — keep the original look.
+    const touch = NativeScrollbar.isTouchPrimary();
+
     this._scrollbarContainer = this.createNativeScrollbar(container, {
-      width: `${detectedWidth}px`,
+      width: touch ? '0px' : `${detectedWidth}px`,
       position: 'right',
       style: {
-        background: '#f0f0f0',
-        borderLeft: '1px solid #ccc',
+        background: touch ? 'transparent' : '#f0f0f0',
+        borderLeft: touch ? 'none' : '1px solid #ccc',
         zIndex: String(NativeScrollbar.DEFAULT_Z_INDEX)
       }
     });
@@ -211,17 +315,27 @@ export class NativeScrollbar {
     position?: 'left' | 'right';
     style?: Record<string, string>;
   } = {}): HTMLElement {
+    NativeScrollbar.ensureStylesInjected();
+
     // Remove any existing scrollbar first since we need to create one with current data
     const existingScrollbar = container.querySelector('[data-cerious-scrollbar="container"]');
     if (existingScrollbar) {
       existingScrollbar.remove();
     }
+    // Also remove any prior thumb so we don't leak elements across recreations.
+    const existingThumb = container.querySelector('[data-cerious-scrollbar="thumb"]');
+    if (existingThumb) existingThumb.remove();
 
     const { width = `${this.getScrollbarWidth()}px`, position = 'right', style = {} } = options;
+
+    // Touch-primary devices get the overlay thumb path. We tag the strip so
+    // the scoped stylesheet hides its (otherwise-present) native scrollbar.
+    const touch = NativeScrollbar.isTouchPrimary();
 
     // Create scrollbar container
     const scrollbarContainer = document.createElement('div');
     scrollbarContainer.setAttribute('data-cerious-scrollbar', 'container');
+    if (touch) scrollbarContainer.setAttribute('data-touch', 'true');
     scrollbarContainer.style.cssText = `
       position: absolute;
       top: 0;
@@ -231,8 +345,8 @@ export class NativeScrollbar {
       overflow-y: scroll;
       overflow-x: hidden;
       z-index: ${style['zIndex'] || NativeScrollbar.DEFAULT_Z_INDEX};
-      background: ${style['background'] || '#f0f0f0'};
-      border-left: ${style['borderLeft'] || '1px solid #ccc'};
+      background: ${style['background'] || 'transparent'};
+      border-left: ${style['borderLeft'] || 'none'};
       pointer-events: auto;
     `;
 
@@ -258,12 +372,14 @@ export class NativeScrollbar {
       container.style.position = 'relative';
     }
 
-    // Add padding to container to make room for scrollbar and prevent overlap
+    // Add padding to container to make room for scrollbar and prevent overlap.
+    // Skip on touch — the strip is zero-width and the overlay thumb floats
+    // over content, so the content should use the full container width.
     const scrollbarWidth = parseInt(width) || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
-    if (position === 'right') {
+    if (!touch && position === 'right') {
       const currentPaddingRight = parseInt(getComputedStyle(container).paddingRight) || 0;
       container.style.paddingRight = `${Math.max(currentPaddingRight, scrollbarWidth + 2)}px`;
-    } else if (position === 'left') {
+    } else if (!touch && position === 'left') {
       const currentPaddingLeft = parseInt(getComputedStyle(container).paddingLeft) || 0;
       container.style.paddingLeft = `${Math.max(currentPaddingLeft, scrollbarWidth + 2)}px`;
     }
@@ -296,6 +412,11 @@ export class NativeScrollbar {
       
       // Update last scroll position
       this._lastScrollTop = scrollTop;
+
+      // Keep the custom thumb visually in sync with the strip position on
+      // every user scroll (wheel, drag-on-sibling, touch-driven via
+      // syncNativeScrollbar). Cheap: only top/height + a data attribute.
+      this._updateThumbVisuals();
       
       // Calculate percentage based on scrollbar position
       // Add tolerance for when scrollbar is at/near bottom (scrollbar thumb has minimum size)
@@ -384,6 +505,14 @@ export class NativeScrollbar {
     this._pendingProgrammaticEvents = 0;
 
     this._scrollbarContainer = scrollbarContainer;
+
+    // Custom overlay thumb is touch-only. Desktop keeps the platform-native
+    // scrollbar on the strip.
+    if (touch) {
+      this._createThumb(container, scrollbarContainer, position);
+      this._updateThumbVisuals();
+    }
+
     return scrollbarContainer;
   }
 
@@ -412,6 +541,12 @@ export class NativeScrollbar {
       this._lastScrollTop = targetScrollTop;
       this._syncingScrollbar = false;
     }
+
+    // Reflect the new logical position on the custom thumb (touch-only;
+    // no-op on desktop because _thumbElement is null). On touch this path
+    // is what fires during touch-driven content scroll, where the OS will
+    // never paint a thumb for the sibling strip.
+    this._updateThumbVisuals();
   }
 
   /**
@@ -455,6 +590,10 @@ export class NativeScrollbar {
         this._scrollListener = null;
       }
 
+      // Tear down the custom thumb: pointer listeners (window-scoped during
+      // an active drag), fade timer, and the element itself.
+      this._teardownThumb();
+
       this._scrollbarContainer.remove();
       this._scrollbarContainer = null;
       
@@ -481,6 +620,255 @@ export class NativeScrollbar {
           container.style.paddingRight = `${Math.max(0, currentPadding - 19)}px`;
         }
       }
+      const orphanThumb = container.querySelector('[data-cerious-scrollbar="thumb"]');
+      if (orphanThumb) orphanThumb.remove();
     }
+  }
+
+  /**
+   * Create the custom thumb overlay on the host container.
+   *
+   * The thumb lives alongside the scrollbar strip (not inside it) so it is
+   * not displaced by the strip's own `scrollTop`. We size and position it in
+   * pixel space against the container's client rect.
+   */
+  private _createThumb(
+    container: HTMLElement,
+    scrollbarContainer: HTMLElement,
+    position: 'left' | 'right'
+  ): void {
+    const thumb = document.createElement('div');
+    thumb.setAttribute('data-cerious-scrollbar', 'thumb');
+    // Honour left/right placement of the strip so the thumb tracks it.
+    if (position === 'left') {
+      thumb.style.left = '2px';
+      thumb.style.right = 'auto';
+    }
+    container.appendChild(thumb);
+    this._thumbElement = thumb;
+
+    // Drag handling. We translate vertical pointer movement to a delta on the
+    // sibling strip's `scrollTop`, which fires the existing scroll listener
+    // and routes through the same true-bottom mapping the wheel/keyboard
+    // paths use. This keeps scroll math in one place.
+    const onPointerDown = (e: PointerEvent): void => {
+      if (e.button !== undefined && e.button !== 0) return;
+      const sb = this._scrollbarContainer;
+      if (!sb) return;
+      const clientH = sb.clientHeight;
+      const thumbH = thumb.getBoundingClientRect().height;
+      const trackPx = Math.max(1, clientH - thumbH);
+      this._thumbDrag = {
+        pointerId: e.pointerId,
+        startClientY: e.clientY,
+        startScrollTop: sb.scrollTop,
+        trackPx,
+      };
+      thumb.setAttribute('data-active', 'true');
+      thumb.setAttribute('data-visible', 'true');
+      try { thumb.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      // Suppress fade-out while actively dragging.
+      if (this._thumbFadeTimer != null) {
+        window.clearTimeout(this._thumbFadeTimer);
+        this._thumbFadeTimer = null;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onPointerMove = (e: PointerEvent): void => {
+      const drag = this._thumbDrag;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      const sb = this._scrollbarContainer;
+      if (!sb) return;
+      const maxScroll = sb.scrollHeight - sb.clientHeight;
+      if (maxScroll <= 0) return;
+      const deltaPx = e.clientY - drag.startClientY;
+      // Convert pixel travel of the thumb on its track into scrollTop. The
+      // scroll listener handles the percentage → virtual position mapping.
+      const scrollDelta = (deltaPx / drag.trackPx) * maxScroll;
+      let next = drag.startScrollTop + scrollDelta;
+      if (next < 0) next = 0;
+      if (next > maxScroll) next = maxScroll;
+      sb.scrollTop = next;
+      e.preventDefault();
+    };
+
+    const onPointerUp = (e: PointerEvent): void => {
+      const drag = this._thumbDrag;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      this._thumbDrag = null;
+      thumb.removeAttribute('data-active');
+      try { thumb.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+      // Resume the normal fade-out sequence.
+      this._scheduleThumbFade();
+    };
+
+    this._thumbPointerDown = onPointerDown;
+    this._thumbPointerMove = onPointerMove;
+    this._thumbPointerUp = onPointerUp;
+
+    thumb.addEventListener('pointerdown', onPointerDown);
+    // Listen on the thumb (pointer is captured) for move/up; covers both
+    // mouse and touch via the unified Pointer Events API.
+    thumb.addEventListener('pointermove', onPointerMove);
+    thumb.addEventListener('pointerup', onPointerUp);
+    thumb.addEventListener('pointercancel', onPointerUp);
+
+    // Full-strip touch zone: a transparent column overlay along the right
+    // edge (or left, mirroring `position`) so the entire scrollbar lane is a
+    // tap/drag target. Tapping outside the thumb jumps it to the touch point
+    // (page-jump) and immediately begins a drag from there; tapping on the
+    // thumb behaves like a direct grab.
+    const hit = document.createElement('div');
+    hit.setAttribute('data-cerious-scrollbar', 'hit');
+    hit.style.cssText = `
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      ${position}: 0;
+      width: 24px;
+      background: transparent;
+      z-index: ${NativeScrollbar.DEFAULT_Z_INDEX};
+      touch-action: none;
+      pointer-events: none;
+    `;
+    const onHitPointerDown = (e: PointerEvent): void => {
+      if (e.button !== undefined && e.button !== 0) return;
+      const sb = this._scrollbarContainer;
+      if (!sb) return;
+      const thumbRect = thumb.getBoundingClientRect();
+      // If the touch landed within the thumb's vertical band, delegate —
+      // the thumb's own pointerdown will run (the thumb sits on top of the
+      // hit zone via z-index). For taps outside the thumb, jump the strip's
+      // scrollTop so the thumb centers on the touch Y, then start a drag.
+      if (e.clientY >= thumbRect.top && e.clientY <= thumbRect.bottom) return;
+      const sbRect = sb.getBoundingClientRect();
+      const clientH = sb.clientHeight;
+      const thumbH = thumbRect.height;
+      const trackPx = Math.max(1, clientH - thumbH);
+      // Desired thumb-top so the thumb centers on the touch point, clamped.
+      let desiredTop = (e.clientY - sbRect.top) - thumbH / 2;
+      if (desiredTop < 0) desiredTop = 0;
+      if (desiredTop > trackPx) desiredTop = trackPx;
+      const maxScroll = sb.scrollHeight - sb.clientHeight;
+      const newScrollTop = (desiredTop / trackPx) * maxScroll;
+      sb.scrollTop = newScrollTop;
+      // Begin a drag anchored at the new position so subsequent move events
+      // pan smoothly from the jumped-to location.
+      this._thumbDrag = {
+        pointerId: e.pointerId,
+        startClientY: e.clientY,
+        startScrollTop: newScrollTop,
+        trackPx,
+      };
+      thumb.setAttribute('data-active', 'true');
+      thumb.setAttribute('data-visible', 'true');
+      try { hit.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      if (this._thumbFadeTimer != null) {
+        window.clearTimeout(this._thumbFadeTimer);
+        this._thumbFadeTimer = null;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    hit.addEventListener('pointerdown', onHitPointerDown);
+    // Re-use the thumb's move/up handlers so the same drag state machine
+    // services both entry points.
+    hit.addEventListener('pointermove', onPointerMove);
+    hit.addEventListener('pointerup', onPointerUp);
+    hit.addEventListener('pointercancel', onPointerUp);
+    container.appendChild(hit);
+    this._thumbHitZone = hit;
+    this._thumbHitZoneDown = onHitPointerDown;
+
+    // Keep `scrollbarContainer` referenced for symmetry with future variants
+    // (e.g. clicking the strip background to page). Currently unused.
+    void scrollbarContainer;
+  }
+
+  /**
+   * Recompute the thumb's `top`/`height` from the strip's current scrollTop
+   * and mark it visible. Cheap; called from the user-scroll listener and from
+   * `syncNativeScrollbar` (the latter is what fires during touch-driven
+   * content scroll on iOS).
+   */
+  private _updateThumbVisuals(): void {
+    const thumb = this._thumbElement;
+    const sb = this._scrollbarContainer;
+    if (!thumb || !sb) return;
+    const clientH = sb.clientHeight;
+    const scrollH = sb.scrollHeight;
+    if (clientH <= 0 || scrollH <= 0) return;
+    // Thumb height reflects how much of the runway is currently in view.
+    // Clamp to a usable grab target.
+    const rawHeight = clientH * (clientH / scrollH);
+    const thumbHeight = Math.max(NativeScrollbar.THUMB_MIN_HEIGHT_PX, Math.min(clientH, rawHeight));
+    const maxScroll = scrollH - clientH;
+    const pct = maxScroll > 0 ? sb.scrollTop / maxScroll : 0;
+    const top = (clientH - thumbHeight) * pct;
+    thumb.style.height = `${thumbHeight}px`;
+    thumb.style.top = `${top}px`;
+    thumb.setAttribute('data-visible', 'true');
+    // Activate the full-strip touch hit zone only while the thumb is
+    // visible. Before the first scroll (or after fade-out) the strip is
+    // inert so it never intercepts taps on underlying content.
+    if (this._thumbHitZone) this._thumbHitZone.style.pointerEvents = 'auto';
+    this._scheduleThumbFade();
+  }
+
+  private _scheduleThumbFade(): void {
+    if (typeof window === 'undefined') return;
+    // Don't fade while a drag is in flight; pointerup will reschedule.
+    if (this._thumbDrag) return;
+    if (this._thumbFadeTimer != null) {
+      window.clearTimeout(this._thumbFadeTimer);
+    }
+    this._thumbFadeTimer = window.setTimeout(() => {
+      this._thumbFadeTimer = null;
+      if (this._thumbDrag) return;
+      const t = this._thumbElement;
+      if (t) t.removeAttribute('data-visible');
+      // Deactivate the strip hit zone alongside the fade so the column
+      // returns to inert after a brief grace window.
+      if (this._thumbHitZone) this._thumbHitZone.style.pointerEvents = 'none';
+    }, NativeScrollbar.THUMB_FADE_DELAY_MS);
+  }
+
+  private _teardownThumb(): void {
+    if (this._thumbFadeTimer != null && typeof window !== 'undefined') {
+      window.clearTimeout(this._thumbFadeTimer);
+      this._thumbFadeTimer = null;
+    }
+    const thumb = this._thumbElement;
+    if (thumb) {
+      if (this._thumbPointerDown) thumb.removeEventListener('pointerdown', this._thumbPointerDown);
+      if (this._thumbPointerMove) thumb.removeEventListener('pointermove', this._thumbPointerMove);
+      if (this._thumbPointerUp) {
+        thumb.removeEventListener('pointerup', this._thumbPointerUp);
+        thumb.removeEventListener('pointercancel', this._thumbPointerUp);
+      }
+      thumb.remove();
+    }
+    const hit = this._thumbHitZone;
+    const hitDown = this._thumbHitZoneDown;
+    const moveHandler = this._thumbPointerMove;
+    const upHandler = this._thumbPointerUp;
+    this._thumbElement = null;
+    this._thumbDrag = null;
+    this._thumbPointerDown = null;
+    this._thumbPointerMove = null;
+    this._thumbPointerUp = null;
+    if (hit) {
+      if (hitDown) hit.removeEventListener('pointerdown', hitDown);
+      if (moveHandler) hit.removeEventListener('pointermove', moveHandler);
+      if (upHandler) {
+        hit.removeEventListener('pointerup', upHandler);
+        hit.removeEventListener('pointercancel', upHandler);
+      }
+      hit.remove();
+    }
+    this._thumbHitZone = null;
+    this._thumbHitZoneDown = null;
   }
 }

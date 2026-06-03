@@ -5,6 +5,15 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-06-03
+
+### Added
+- **Horizontal momentum** in `TouchController`. When `touch.getHorizontalScrollTarget` is provided, horizontal flicks now decay with the same iOS-style cubic-bezier easing already used for vertical scrolling, including boundary-hit early-exit so momentum stops cleanly at the left/right edges instead of burning frames.
+- **Custom scrollbar thumb** in `NativeScrollbar`. The sibling-driver strip now renders a styled thumb that floats over the host container's right edge. Touch hit zone covers the full strip so a tap anywhere in the column starts a drag. Appearance is themable via CSS variables on the scroll host: `--cerious-thumb-color`, `--cerious-thumb-color-active`, `--cerious-thumb-width`, `--cerious-thumb-width-active`. One stylesheet is injected lazily on first use; SSR/non-DOM environments are unaffected.
+
+### Changed
+- Renamed the internal `velocityY` velocity accumulator to `velocity` and made it axis-aware so the same momentum pipeline can drive vertical engine scroll or horizontal `scrollLeft` writes.
+
 ## [1.0.2] - 2026-06-01
 
 ### Changed

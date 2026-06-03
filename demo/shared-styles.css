@@ -88,6 +88,7 @@ body {
     padding: 12px;
     border-radius: 6px;
     border: 1px solid #e0e0e0;
+    min-width: 0;
 }
 
 .control-section h3 {
@@ -170,7 +171,7 @@ body {
     display: flex;
     gap: 6px;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
 }
 
 .control-group select:focus,
@@ -380,6 +381,8 @@ body {
     color: #495057;
     font-size: 0.95rem;
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis; /* Show ellipsis for very long text */
 }
@@ -598,7 +601,24 @@ body {
     }
     
     .header h1 {
-        font-size: 2rem;
+        font-size: 1.35rem;
+        line-height: 1.2;
+    }
+
+    .subtitle {
+        font-size: 0.85rem;
+    }
+
+    body {
+        padding: 10px;
+    }
+
+    .app-container {
+        padding: 12px;
+    }
+
+    .input-button-group {
+        flex-wrap: wrap;
     }
     
     .metric-value {
