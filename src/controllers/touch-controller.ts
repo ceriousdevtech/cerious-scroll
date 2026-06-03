@@ -65,7 +65,10 @@ export class TouchController {
 
     let lastTouchY = 0;
     let lastTouchTime = 0;
-    let velocityY = 0;
+    // Velocity in the currently-locked axis (px/ms). Sign matches the
+    // direction the engine/scrollLeft moves (drag finger up → positive vertical;
+    // drag finger left → positive horizontal).
+    let velocity = 0;
     let momentumAnimationId: number | null = null;
     let activeTouchId: number | null = null;
 
@@ -127,7 +130,7 @@ export class TouchController {
         axis = 'unknown';
         horizontalTarget = getHorizontalTarget?.() ?? null;
         lastTouchTime = Date.now();
-        velocityY = 0;
+        velocity = 0;
         resetVelocityHistory();
       }
     };
@@ -176,10 +179,26 @@ export class TouchController {
       }
 
       if (axis === 'horizontal' && horizontalTarget) {
-        // Forward horizontal delta to the native overflow-x scroller. Its own
-        // scroll listener cascades the change through the rest of the grid.
+        // Forward horizontal delta to the native overflow-x scroller and
+        // track velocity so we can run momentum on touchend (matches the
+        // iOS-style flick behavior used for vertical scrolling).
         if (deltaX !== 0) {
           horizontalTarget.scrollLeft += deltaX;
+        }
+        if (deltaTime > 0) {
+          recordVelocitySample(deltaX / deltaTime, currentTime);
+          let totalWeight = 0;
+          let weightedSum = 0;
+          let weight = velocityRingCount;
+          for (let i = 0; i < velocityRingCount; i++) {
+            const idx = (velocityRingHead - 1 - i + VELOCITY_RING_SIZE) % VELOCITY_RING_SIZE;
+            const sampleTime = velocityRingTimes[idx];
+            if (currentTime - sampleTime > VELOCITY_SAMPLE_MS) break;
+            weightedSum += velocityRingValues[idx] * weight;
+            totalWeight += weight;
+            weight--;
+          }
+          velocity = totalWeight > 0 ? weightedSum / totalWeight : 0;
         }
         lastTouchY = currentY;
         lastTouchX = currentX;
@@ -209,7 +228,7 @@ export class TouchController {
           totalWeight += weight;
           weight--;
         }
-        velocityY = totalWeight > 0 ? weightedSum / totalWeight : 0;
+        velocity = totalWeight > 0 ? weightedSum / totalWeight : 0;
       }
 
       if (Math.abs(deltaY) > 0) {
@@ -264,9 +283,12 @@ export class TouchController {
       activeTouchId = null;
       onScroll?.({ element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() });
 
-      if (axis !== 'horizontal' && opts.enableMomentum && Math.abs(velocityY) >= (opts.momentumThreshold ?? 0)) {
+      const lockedAxis = axis;
+      const momentumTarget = lockedAxis === 'horizontal' ? horizontalTarget : null;
+      if (opts.enableMomentum && Math.abs(velocity) >= (opts.momentumThreshold ?? 0) &&
+          (lockedAxis === 'vertical' || (lockedAxis === 'horizontal' && momentumTarget))) {
         // iOS-style momentum: use exponential decay with cubic-bezier easing
-        const initialVelocity = velocityY;
+        const initialVelocity = velocity;
         const startTime = performance.now();
         let lastFrameTime = startTime;
         
@@ -304,8 +326,22 @@ export class TouchController {
           const frameTime = rawFrameTime > 0 && rawFrameTime < 100 ? rawFrameTime : 16;
           lastFrameTime = now;
 
-          const deltaY = currentVelocity * frameTime;
-          const result = this.deps.scroll(deltaY, getViewportHeight());
+          const delta = currentVelocity * frameTime;
+
+          if (lockedAxis === 'horizontal' && momentumTarget) {
+            // Stop momentum once we hit a horizontal boundary so it doesn't
+            // burn frames trying to scroll past the edge.
+            const before = momentumTarget.scrollLeft;
+            momentumTarget.scrollLeft = before + delta;
+            if (momentumTarget.scrollLeft === before) {
+              momentumAnimationId = null;
+              return;
+            }
+            momentumAnimationId = requestAnimationFrame(applyMomentum);
+            return;
+          }
+
+          const result = this.deps.scroll(delta, getViewportHeight());
 
           // GC optimization: Reuse event detail object instead of creating new one
           this._eventDetail.percentage = this.deps.calculateScrollPercentage();
@@ -361,11 +397,15 @@ export class TouchController {
   }
 
   private isScrollbarTouch(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false;
+    // Recognize both the legacy class-based selector (kept for backwards
+    // compatibility) and the data-attribute used by the current
+    // NativeScrollbar (strip and overlay thumb). When the touch lands on the
+    // overlay thumb the controller must yield so pointer events drive the
+    // custom drag handler instead of being preventDefault'd here.
     return Boolean(
-      target instanceof HTMLElement && (
-        target.classList.contains('cerious-scrollbar-container') ||
-        target.closest('.cerious-scrollbar-container')
-      )
+      target.closest('[data-cerious-scrollbar]') ||
+      target.closest('.cerious-scrollbar-container')
     );
   }
 }
