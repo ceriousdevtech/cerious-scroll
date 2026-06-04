@@ -5,6 +5,16 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-06-04
+
+### Added
+- **Wheel input classifier** in `WheelController`. Each event is classified as `trackpad` or `wheel` from a 120ms rolling window: horizontal motion -> trackpad, non-pixel `deltaMode` -> wheel, ≥5 events in window -> trackpad (catches free-scroll mice like the Logitech G502X Lightspeed), isolated event in window -> wheel (catches small ratcheted notches with `deltaY` ~ 30–50), `|deltaY| ≥ 80` -> wheel, otherwise trackpad. Trackpad / free-scroll input now bypasses the smooth-scroll RAF and is applied synchronously, so OS- or hardware-level momentum is no longer layered on top of our easing (which had read as delayed overscroll and sluggish trackpad feel).
+- **`wheel.wheelBehavior`** option: `'auto' | 'immediate' | 'smooth'` (default `'auto'`). `'immediate'` disables smoothing for every event; `'smooth'` smooths every event regardless of device. The legacy `wheel.smooth: false` continues to work as an alias for `'immediate'`.
+
+### Fixed
+- **Horizontal wheel forwarding** now walks ancestor elements from `[data-cerious-scroll-content]` up to the container looking for the first element whose computed `overflow-x` is `auto`/`scroll` AND that actually overflows horizontally, instead of assuming the marked content node is itself the horizontal scroller. Layouts that put `overflow-x: auto` on an ancestor of `[data-cerious-scroll-content]` (e.g. a sticky-header grid wrapper) now respond to trackpad two-finger and shift+wheel horizontally.
+- Trackpad gestures arriving mid-flight in a smooth wheel animation now cancel the in-flight RAF and reset the queue, preventing leftover momentum from being applied on top of the trackpad delta.
+
 ## [1.0.4] - 2026-06-03
 
 ### Added

@@ -14,6 +14,90 @@ interface WheelControllerDeps {
   getScrollOffset: () => number;
 }
 
+type WheelInputType = 'trackpad' | 'wheel';
+
+/**
+ * Walk from `start` up to (but not past) `root`, returning the first element
+ * whose computed `overflow-x` is `auto` or `scroll` and that actually overflows
+ * horizontally. Used to find which element should receive a horizontal wheel
+ * delta when the marked content node isn't itself the scrollable one.
+ */
+function findHorizontalScrollTarget(start: HTMLElement, root: HTMLElement): HTMLElement | null {
+  let el: HTMLElement | null = start;
+  const stop = root.parentElement;
+  while (el && el !== stop) {
+    if (el.scrollWidth > el.clientWidth) {
+      const ox = getComputedStyle(el).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Heuristic classifier for distinguishing trackpad / free-scroll-mouse
+ * gestures from ratcheted mouse-wheel notches. No browser API gives this
+ * directly; we look at deltaMode, deltaY magnitude, and a short rolling
+ * window of recent events.
+ *
+ * Rules (checked in order):
+ *  1. Any horizontal component in the recent window  -> trackpad (mice rarely
+ *     produce deltaX; trackpads do constantly).
+ *  2. deltaMode != PIXEL (line/page units)           -> wheel (only mice emit
+ *     non-pixel deltas in modern browsers).
+ *  3. >= 5 events in the 120ms window                -> continuous input
+ *     (trackpad OR free-scroll mouse wheel like the G502X). These have OS
+ *     or hardware momentum already; layering our easing produces delayed
+ *     overscroll, so treat as 'trackpad' (immediate-apply).
+ *  4. Isolated event (only one in window)            -> wheel. A trackpad
+ *     gesture cannot produce a single event in 120ms; it always streams.
+ *     This catches small ratcheted notches (deltaY 30-50) that would
+ *     otherwise fall through every magnitude check.
+ *  5. |deltaY| >= 80                                 -> wheel (a single big
+ *     ratcheted notch).
+ *  6. Several small (<40px) deltas in the window     -> trackpad.
+ *  7. Fallback                                       -> trackpad (safer to
+ *     skip custom smoothing than to layer it on top of OS momentum).
+ */
+class WheelClassifier {
+  private recent: { time: number; deltaX: number; deltaY: number }[] = [];
+
+  classify(e: WheelEvent): WheelInputType {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    this.recent.push({ time: now, deltaX: e.deltaX, deltaY: e.deltaY });
+    // Keep only events from the last 120ms.
+    const cutoff = now - 120;
+    while (this.recent.length > 0 && this.recent[0].time < cutoff) {
+      this.recent.shift();
+    }
+
+    const absY = Math.abs(e.deltaY);
+    const hasHorizontal = this.recent.some(x => Math.abs(x.deltaX) > 0);
+    const smallDeltaCount = this.recent.reduce(
+      (n, x) => n + (Math.abs(x.deltaY) > 0 && Math.abs(x.deltaY) < 40 ? 1 : 0),
+      0,
+    );
+
+    if (hasHorizontal) return 'trackpad';
+    if (e.deltaMode !== 0 /* DOM_DELTA_PIXEL */) return 'wheel';
+    // Continuous high-rate input: trackpad or free-scroll mouse (e.g. Logitech
+    // G502X with the wheel unlocked). Catch this BEFORE the magnitude check —
+    // a fast free-spin can produce |deltaY| > 80 per event, which would
+    // otherwise misclassify as a ratchet notch.
+    if (this.recent.length >= 5) return 'trackpad';
+    // Isolated event: trackpads always stream multiple events in 120ms,
+    // so a single event in the window is a ratchet notch. This catches
+    // small notches (Logitech mice often emit deltaY ~ 30-50) that would
+    // otherwise fail the magnitude check below.
+    if (this.recent.length === 1) return 'wheel';
+    if (absY >= 80) return 'wheel';
+    if (this.recent.length >= 4 && smallDeltaCount >= 3) return 'trackpad';
+    return 'trackpad';
+  }
+}
+
 export class WheelController {
   // GC optimization: Reuse event detail object to avoid allocations
   private readonly _eventDetail: {
@@ -35,7 +119,7 @@ export class WheelController {
     onScroll?: (result: ScrollResult) => void,
     wheelOptions?: WheelNavigationOptions
   ): () => void {
-    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor'>> = {
+    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor' | 'wheelBehavior'>> = {
       enabled: wheelOptions?.enabled !== false,
       emitViewportChangeEvent: wheelOptions?.emitViewportChangeEvent !== false,
       coalesceViewportChangeEvent: wheelOptions?.coalesceViewportChangeEvent === true,
@@ -43,11 +127,16 @@ export class WheelController {
       smoothFactor: typeof wheelOptions?.smoothFactor === 'number' && wheelOptions.smoothFactor > 0 && wheelOptions.smoothFactor <= 1
         ? wheelOptions.smoothFactor
         : 0.22,
+      // wheelBehavior takes precedence; if unset, derive from legacy `smooth`.
+      wheelBehavior: wheelOptions?.wheelBehavior
+        ?? (wheelOptions?.smooth === false ? 'immediate' : 'auto'),
     };
 
     if (!options.enabled) {
       return () => {};
     }
+
+    const classifier = new WheelClassifier();
 
     let rafId: number | null = null;
     let pendingPercentage = 0;
@@ -77,17 +166,22 @@ export class WheelController {
       // (Vue/React/Angular) put rows into [data-cerious-scroll-content] and
       // that's where overflow-x: auto lives for wide content (e.g.
       // spreadsheet). When present, horizontal wheel deltas are forwarded
-      // to its scrollLeft so trackpad two-finger sideways and shift+wheel
-      // work; if the gesture is dominantly horizontal we skip the vertical
-      // engine scroll. We also use the inner element's clientHeight as the
-      // viewport so the engine accounts for the h-scrollbar gutter.
+      // to whichever element actually owns the horizontal scroll so trackpad
+      // two-finger sideways and shift+wheel work; if the gesture is
+      // dominantly horizontal we skip the vertical engine scroll. We also
+      // use the inner element's clientHeight as the viewport so the engine
+      // accounts for the h-scrollbar gutter.
       const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
       const dx = event.deltaX;
       const dy = event.deltaY;
-      const hTarget: HTMLElement =
-        inner && inner.scrollWidth > inner.clientWidth
-          ? inner
-          : (container.scrollWidth > container.clientWidth ? container : null!) as HTMLElement;
+      // Find the nearest ancestor (starting from the inner content node, or
+      // the container if no inner exists) that actually has horizontal
+      // overflow scrolling. Some demos put overflow-x:auto on
+      // [data-cerious-scroll-content] directly (comparison, wrappers); others
+      // put it on an ancestor with [data-cerious-scroll-content] as a
+      // non-scrolling child (standalone grid/sql demos). Walking the chain
+      // handles both layouts.
+      const hTarget = findHorizontalScrollTarget(inner ?? container, container);
       if (hTarget && dx !== 0) {
         hTarget.scrollLeft += dx;
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -101,7 +195,30 @@ export class WheelController {
       const innerH = inner?.clientHeight ?? 0;
       const viewportHeight = innerH > 0 ? innerH : (container.clientHeight || container.offsetHeight);
 
-      if (!options.smooth) {
+      // Decide whether to smooth this event. Trackpads have OS-level momentum
+      // already, so layering our easing on top causes delayed overscroll and
+      // a "sluggish" feel; apply trackpad deltas synchronously. Mouse-wheel
+      // notches land as single large events that snap when applied raw, so
+      // they benefit from our easing.
+      let smoothThisEvent: boolean;
+      if (options.wheelBehavior === 'immediate') {
+        smoothThisEvent = false;
+      } else if (options.wheelBehavior === 'smooth') {
+        smoothThisEvent = true;
+      } else {
+        smoothThisEvent = classifier.classify(event) === 'wheel';
+      }
+
+      if (!smoothThisEvent) {
+        // Cancel any in-flight smooth animation so a trackpad gesture
+        // arriving mid-flight isn't stacked on top of leftover momentum.
+        if (smoothRafId != null) {
+          cancelAnimationFrame(smoothRafId);
+          smoothRafId = null;
+          targetDy = 0;
+          animatedDy = 0;
+          animFromDy = 0;
+        }
         const result = this.deps.scroll(dy, viewportHeight);
         emitChange(result);
         onScroll?.(result);
