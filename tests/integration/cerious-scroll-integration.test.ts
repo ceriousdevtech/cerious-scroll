@@ -326,6 +326,7 @@ describe('CeriousScroll Integration Tests', () => {
         onScroll,
         attachScrollbar: false,
         observeContentChanges: false,
+        wheel: { smooth: false },
       });
     });
 

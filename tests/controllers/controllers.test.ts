@@ -65,7 +65,7 @@ describe('WheelController', () => {
 
   describe('Wheel Event Handling', () => {
     it('should call scroll on wheel event', () => {
-      controller.attach(mockContainer);
+      controller.attach(mockContainer, undefined, { smooth: false });
       
       const wheelEvent = createMockWheelEvent(100);
       const handler = vi.mocked(mockContainer.addEventListener).mock.calls[0][1] as EventListener;
@@ -77,7 +77,7 @@ describe('WheelController', () => {
 
     it('should invoke onScroll callback', () => {
       const onScroll = vi.fn();
-      controller.attach(mockContainer, onScroll);
+      controller.attach(mockContainer, onScroll, { smooth: false });
       
       const wheelEvent = createMockWheelEvent(50);
       const handler = vi.mocked(mockContainer.addEventListener).mock.calls[0][1] as EventListener;
@@ -87,7 +87,7 @@ describe('WheelController', () => {
     });
 
     it('should emit viewport-change event by default', () => {
-      controller.attach(mockContainer);
+      controller.attach(mockContainer, undefined, { smooth: false });
       
       const wheelEvent = createMockWheelEvent(100);
       const handler = vi.mocked(mockContainer.addEventListener).mock.calls[0][1] as EventListener;
@@ -101,7 +101,7 @@ describe('WheelController', () => {
     });
 
     it('should not emit event when disabled', () => {
-      controller.attach(mockContainer, undefined, { emitViewportChangeEvent: false });
+      controller.attach(mockContainer, undefined, { emitViewportChangeEvent: false, smooth: false });
       
       const wheelEvent = createMockWheelEvent(100);
       const handler = vi.mocked(mockContainer.addEventListener).mock.calls[0][1] as EventListener;
