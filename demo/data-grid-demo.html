@@ -1,676 +1,227 @@
 <!DOCTYPE html>
-<html lang="en" style="overflow: hidden; height: 100%;">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Grid - CeriousScroll Demo</title>
-    <script>
-        // Mobile detection for performance optimization
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-    </script>
+    <title>Data Grid · Cerious-Scroll</title>
     <link rel="stylesheet" href="shared-styles.css">
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        body {
-            display: flex;
-            flex-direction: column;
-            background: #f5f5f5;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        }
-
-        .grid-header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            padding: 1.5rem 2rem;
-            color: white;
-            flex-shrink: 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .grid-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .grid-subtitle {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-
-        .grid-toolbar {
-            background: white;
-            padding: 1rem 2rem;
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-shrink: 0;
-            border-bottom: 2px solid #e0e0e0;
-            flex-wrap: wrap;
-        }
-
-        .search-box {
-            flex: 1;
-            min-width: 250px;
-            padding: 0.5rem 1rem;
-            border: 2px solid #e0e0e0;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-
-        .search-box:focus {
-            outline: none;
-            border-color: #1e3c72;
-        }
-
-        .toolbar-group {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-
-        .toolbar-button {
-            padding: 0.5rem 1rem;
-            border: 2px solid #e0e0e0;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .toolbar-button:hover {
-            border-color: #1e3c72;
-            background: #f8f9fa;
-        }
-
-        .toolbar-button.active {
-            background: #1e3c72;
-            color: white;
-            border-color: #1e3c72;
-        }
-
-        .stats-info {
-            font-size: 0.85rem;
-            color: #666;
-        }
-
-        #gridViewport {
-            flex: 1;
-            overflow: hidden;
-            background: #fff;
-            position: relative;
-            margin: 0;
-            min-height: 0;
-            border: 1px solid #e0e0e0;
-        }
-
-        /* Horizontal scroll wrapper: header + virtual rows live inside this
-         * element so the native horizontal scrollbar shifts both together.
-         * The cerious-scroll sibling scrollbar strip stays a direct child of
-         * #gridViewport and remains pinned to the visible right edge. */
-        .grid-h-scroll {
-            position: absolute;
-            inset: 0;
-            overflow-x: auto;
-            overflow-y: hidden;
-        }
-
-        #scrollContent {
-            position: absolute;
-            top: 0;
-            left: 0;
-            min-width: 1210px;
-            width: max-content;
-            pointer-events: none;
-            overflow: visible;
-        }
-
-        #scrollContent > * {
-            pointer-events: auto;
-        }
-
-        .grid-header-row {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background: #f8f9fa;
-            border-bottom: 2px solid #dee2e6;
-            display: grid;
-            grid-template-columns: 50px 120px 150px 220px 120px 100px 140px 120px 80px 110px;
-            min-width: 1210px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #495057;
-        }
-
-        .grid-header-cell {
-            padding: 0.875rem 0.75rem;
-            border-right: 1px solid #dee2e6;
-            cursor: pointer;
-            user-select: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: background 0.2s;
-            overflow: hidden;
-        }
-
-        .grid-header-cell:hover {
-            background: #e9ecef;
-        }
-
-        .sort-icon {
-            font-size: 0.75rem;
-            opacity: 0.4;
-            margin-left: auto;
-        }
-
-        .sort-icon.active {
-            opacity: 1;
-            color: #1e3c72;
-        }
-
-        .grid-row {
-            display: grid;
-            grid-template-columns: 50px 120px 150px 220px 120px 100px 140px 120px 80px 110px;
-            min-width: 1210px;
-            border-bottom: 1px solid #e9ecef;
-            transition: background 0.1s;
-            pointer-events: auto;
-        }
-
-        .grid-row:hover {
-            background: #f8f9fa;
-        }
-
-        .grid-row.selected {
-            background: #e7f3ff;
-        }
-
-        .grid-cell {
-            padding: 0.75rem;
-            border-right: 1px solid #e9ecef;
-            font-size: 0.9rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-        }
-
-        .row-number {
-            background: #f8f9fa;
-            color: #6c757d;
-            font-weight: 600;
-            justify-content: center;
-            border-right: 2px solid #dee2e6;
-            font-size: 0.8rem;
-        }
-
-        .cell-id {
-            font-family: 'Courier New', monospace;
-            color: #0066cc;
-        }
-
-        .cell-status {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .status-active {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-inactive {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .cell-number {
-            text-align: right;
-            font-family: 'Courier New', monospace;
-        }
-
-        .cell-positive {
-            color: #28a745;
-        }
-
-        .cell-negative {
-            color: #dc3545;
-        }
-
-        .cell-email {
-            color: #6c757d;
-            font-size: 0.85rem;
-        }
-
-        .cell-date {
-            color: #495057;
-        }
-
-        .footer-bar {
-            background: #f8f9fa;
-            padding: 0.75rem 2rem;
-            border-top: 1px solid #dee2e6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-            font-size: 0.85rem;
-            color: #6c757d;
-        }
-
-        .footer-stats {
-            display: flex;
-            gap: 2rem;
-        }
-
-        @media (max-width: 1400px) {
-            .grid-row, .grid-header-row {
-                grid-template-columns: 45px 110px 140px 200px 110px 90px 130px 110px 75px 100px;
-            }
-            
-            .grid-cell, .grid-header-cell {
-                font-size: 0.85rem;
-                padding: 0.65rem 0.6rem;
-            }
-        }
-    </style>
 </head>
 <body>
-    <div class="grid-header">
-        <div class="grid-title">
-            📊 Enterprise Data Grid
-            <span style="font-size: 0.7rem; opacity: 0.8; background: rgba(255,255,255,0.2); padding: 0.25rem 0.5rem; border-radius: 4px;">BETA</span>
-        </div>
-        <div class="grid-subtitle">Smooth scrolling through 250,000+ records with CeriousScroll</div>
-    </div>
+    <header class="topbar" data-auto-topbar></header>
 
-    <div class="grid-toolbar">
-        <input type="text" class="search-box" id="searchBox" placeholder="Search by ID, name, email...">
-        
-        <div class="toolbar-group">
-            <button class="toolbar-button" id="exportBtn">📥 Export</button>
-            <button class="toolbar-button" id="filterBtn">🔍 Filter</button>
-            <button class="toolbar-button" id="refreshBtn">🔄 Refresh</button>
-        </div>
+    <main class="content">
+        <div class="demo-page grid-page">
+            <div class="demo-page__header">
+                <h1>📊 Enterprise Data Grid</h1>
+                <p id="subtitle">Sort, search, and multi-select across 100,000 of 100,000 records.</p>
+            </div>
 
-        <div class="stats-info">
-            <strong id="rowCount">250,000</strong> rows
-        </div>
-    </div>
+            <div class="demo-toolbar">
+                <input id="search" type="search" placeholder="Search id, name, email, department…" style="flex:1; min-width:220px">
+                <button id="exportBtn" type="button">📥 Export</button>
+                <button id="resetBtn" type="button">🔄 Reset</button>
+                <span class="stat"><strong id="countLabel">100,000</strong> rows</span>
+            </div>
 
-    <div id="gridViewport"></div>
+            <div class="demo-scroll grid-scroll" id="scroll">
+                <div class="grid-h-scroll" id="hscroll">
+                    <div class="grid-head" id="head"></div>
+                    <div data-cerious-scroll-content class="grid-scroll-content"></div>
+                </div>
+            </div>
 
-    <div class="footer-bar">
-        <div class="footer-stats">
-            <span>Selected: <strong id="selectedCount">0</strong></span>
-            <span>Visible: <strong id="visibleCount">0</strong></span>
+            <div class="demo-footer">
+                <span>Selected: <strong id="selCount">0</strong></span>
+                <span>Ctrl/Cmd-click to multi-select · click a header to sort</span>
+            </div>
         </div>
-        <div>Ready</div>
-    </div>
+    </main>
 
     <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="demo-bootstrap.js"></script>
     <script>
-        // Handle bundle export format
-        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
+        (function () {
+            const GRID_TOTAL = 100000;
+            const FIRST = ['James','Mary','John','Patricia','Robert','Jennifer','Michael','Linda','William','Elizabeth','David','Barbara','Richard','Susan','Joseph','Jessica'];
+            const LAST  = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Wilson','Anderson','Thomas','Taylor'];
+            const DEPARTMENTS = ['Engineering','Sales','Marketing','Support','Finance','HR','Operations','Product'];
+            const STATUSES = ['Active','Pending','Inactive'];
+            const REGIONS = ['North America','Europe','Asia Pacific','Latin America','Middle East','Africa'];
+            const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const COLUMNS = [
+                { key: 'index', label: '#', sortable: false },
+                { key: 'id', label: 'ID', sortable: true },
+                { key: 'name', label: 'Name', sortable: true },
+                { key: 'email', label: 'Email', sortable: true },
+                { key: 'department', label: 'Department', sortable: true },
+                { key: 'status', label: 'Status', sortable: true },
+                { key: 'region', label: 'Region', sortable: true },
+                { key: 'revenue', label: 'Revenue', sortable: true },
+                { key: 'score', label: 'Score', sortable: true },
+                { key: 'date', label: 'Date', sortable: true },
+            ];
+            const { hash, randInt, pick } = window.demoUtils;
 
-        // Data generation - reduce on mobile to prevent crashes
-        const TOTAL_ROWS = isMobile ? 10000 : 250000;
-
-        const departments = ['Engineering', 'Sales', 'Marketing', 'Support', 'Finance', 'HR', 'Operations', 'Product'];
-        const statuses = ['Active', 'Pending', 'Inactive'];
-        const regions = ['North America', 'Europe', 'Asia Pacific', 'Latin America', 'Middle East', 'Africa'];
-        const firstNames = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Barbara', 'Richard', 'Susan', 'Joseph', 'Jessica'];
-        const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Wilson', 'Anderson', 'Thomas', 'Taylor'];
-
-        function generateRow(index) {
-            const firstName = firstNames[index % firstNames.length];
-            const lastName = lastNames[Math.floor(index / firstNames.length) % lastNames.length];
-            const name = `${firstName} ${lastName}`;
-            const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${Math.floor(index / 100)}@company.com`;
-            
-            const status = statuses[index % 3];
-            const department = departments[index % departments.length];
-            const region = regions[index % regions.length];
-            
-            // Variable amounts
-            const revenue = (Math.random() * 100000 - 20000).toFixed(2);
-            const score = (Math.random() * 100).toFixed(1);
-            
-            // Date calculation
-            const daysAgo = Math.floor(Math.random() * 365);
-            const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
-            const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-            
-            return {
-                id: `ID-${String(index).padStart(7, '0')}`,
-                name,
-                email,
-                department,
-                status,
-                region,
-                revenue: parseFloat(revenue),
-                score: parseFloat(score),
-                date: dateStr,
-                rawDate: date
-            };
-        }
-
-        // State
-        let currentSort = { column: null, direction: 'asc' };
-        let searchQuery = '';
-        let selectedRows = new Set();
-
-        function matchesSearch(index) {
-            if (!searchQuery) return true;
-            
-            const row = generateRow(index);
-            const query = searchQuery.toLowerCase();
-            
-            return row.id.toLowerCase().includes(query) ||
-                   row.name.toLowerCase().includes(query) ||
-                   row.email.toLowerCase().includes(query) ||
-                   row.department.toLowerCase().includes(query);
-        }
-
-        function getFilteredAndSortedIndices() {
-            // First filter
-            let indices = [];
-            for (let i = 0; i < TOTAL_ROWS; i++) {
-                if (matchesSearch(i)) {
-                    indices.push(i);
-                }
+            function makeRow(index) {
+                const first = pick(FIRST, index, 1);
+                const last = pick(LAST, index, 2);
+                const revenue = Math.round((hash(index, 3) * 120000 - 20000) * 100) / 100;
+                const score = Math.round(hash(index, 4) * 1000) / 10;
+                const daysAgo = randInt(index, 0, 365, 5);
+                const rawDate = Date.UTC(2025, 11, 31) - daysAgo * 86400000;
+                const d = new Date(rawDate);
+                const date = MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
+                return {
+                    index,
+                    id: 'ID-' + String(index).padStart(7, '0'),
+                    name: first + ' ' + last,
+                    email: first.toLowerCase() + '.' + last.toLowerCase() + Math.floor(index / 100) + '@company.com',
+                    department: pick(DEPARTMENTS, index, 6),
+                    status: STATUSES[index % 3],
+                    region: pick(REGIONS, index, 7),
+                    revenue, score, date, rawDate,
+                };
             }
-            
-            // Then sort if needed
-            if (currentSort.column) {
-                indices.sort((a, b) => {
-                    const rowA = generateRow(a);
-                    const rowB = generateRow(b);
-                    
-                    let valA, valB;
-                    
-                    switch(currentSort.column) {
-                        case 'id':
-                            valA = a;
-                            valB = b;
-                            break;
-                        case 'name':
-                            valA = rowA.name;
-                            valB = rowB.name;
-                            break;
-                        case 'email':
-                            valA = rowA.email;
-                            valB = rowB.email;
-                            break;
-                        case 'department':
-                            valA = rowA.department;
-                            valB = rowB.department;
-                            break;
-                        case 'status':
-                            valA = rowA.status;
-                            valB = rowB.status;
-                            break;
-                        case 'region':
-                            valA = rowA.region;
-                            valB = rowB.region;
-                            break;
-                        case 'revenue':
-                            valA = rowA.revenue;
-                            valB = rowB.revenue;
-                            break;
-                        case 'score':
-                            valA = rowA.score;
-                            valB = rowB.score;
-                            break;
-                        case 'date':
-                            valA = rowA.rawDate;
-                            valB = rowB.rawDate;
-                            break;
-                    }
-                    
-                    let comparison = 0;
-                    if (valA < valB) comparison = -1;
-                    if (valA > valB) comparison = 1;
-                    
-                    return currentSort.direction === 'asc' ? comparison : -comparison;
-                });
+            function statusClass(s) {
+                return s === 'Active' ? 'status-active' : s === 'Pending' ? 'status-pending' : 'status-inactive';
             }
-            
-            return indices;
-        }
+            function matches(r, q) {
+                return r.id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q) ||
+                       r.email.toLowerCase().includes(q) || r.department.toLowerCase().includes(q);
+            }
+            function sortValue(r, col) {
+                if (col === 'revenue' || col === 'score') return r[col];
+                if (col === 'date') return r.rawDate;
+                if (col === 'index') return r.index;
+                return r[col];
+            }
+            function escapeHtml(s) {
+                return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
 
-        let filteredIndices = getFilteredAndSortedIndices();
+            let query = '';
+            let sortCol = null;
+            let sortDir = 'asc';
+            const selected = new Set();
 
-        // Render function
-        function renderRow(filteredIndex, element) {
-            const actualIndex = filteredIndices[filteredIndex];
-            const row = generateRow(actualIndex);
-            const isSelected = selectedRows.has(actualIndex);
-            
-            const statusClass = row.status === 'Active' ? 'status-active' : 
-                               row.status === 'Pending' ? 'status-pending' : 'status-inactive';
-            
-            const revenueClass = row.revenue >= 0 ? 'cell-positive' : 'cell-negative';
-            const revenueSign = row.revenue >= 0 ? '+' : '';
-            
-            element.innerHTML = `
-                <div class="grid-row ${isSelected ? 'selected' : ''}" data-index="${actualIndex}">
-                    <div class="grid-cell row-number">${actualIndex + 1}</div>
-                    <div class="grid-cell cell-id">${row.id}</div>
-                    <div class="grid-cell">${row.name}</div>
-                    <div class="grid-cell cell-email">${row.email}</div>
-                    <div class="grid-cell">${row.department}</div>
-                    <div class="grid-cell">
-                        <span class="cell-status ${statusClass}">${row.status}</span>
-                    </div>
-                    <div class="grid-cell">${row.region}</div>
-                    <div class="grid-cell cell-number ${revenueClass}">${revenueSign}$${Math.abs(row.revenue).toLocaleString()}</div>
-                    <div class="grid-cell cell-number">${row.score}</div>
-                    <div class="grid-cell cell-date">${row.date}</div>
-                </div>
-            `;
-            
-            // Add click handler for row selection
-            element.querySelector('.grid-row').addEventListener('click', (e) => {
-                if (selectedRows.has(actualIndex)) {
-                    selectedRows.delete(actualIndex);
-                } else {
-                    if (!e.ctrlKey && !e.metaKey) {
-                        selectedRows.clear();
-                    }
-                    selectedRows.add(actualIndex);
+            function buildOrder() {
+                const q = query.trim().toLowerCase();
+                const order = [];
+                for (let i = 0; i < GRID_TOTAL; i++) {
+                    if (!q || matches(makeRow(i), q)) order.push(i);
                 }
-                updateSelection();
-                element.querySelector('.grid-row').classList.toggle('selected');
+                if (sortCol) {
+                    const keyed = order.map((i) => ({ i, k: sortValue(makeRow(i), sortCol) }));
+                    keyed.sort((a, b) => {
+                        const c = a.k < b.k ? -1 : a.k > b.k ? 1 : 0;
+                        return sortDir === 'asc' ? c : -c;
+                    });
+                    return keyed.map((e) => e.i);
+                }
+                return order;
+            }
+
+            let order = buildOrder();
+
+            function renderHead() {
+                const head = document.getElementById('head');
+                head.innerHTML = COLUMNS.map((c) => {
+                    const isActive = sortCol === c.key;
+                    const arrow = isActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅';
+                    return '<div class="grid-head__cell' + (c.sortable ? ' sortable' : '') + '" data-col="' + c.key + '">' +
+                        c.label +
+                        (c.sortable ? ' <span class="grid-head__sort' + (isActive ? ' active' : '') + '">' + arrow + '</span>' : '') +
+                    '</div>';
+                }).join('');
+            }
+
+            function render(visIdx, container) {
+                const src = order[visIdx];
+                if (src == null) return;
+                const r = makeRow(src);
+                const row = document.createElement('div');
+                row.className = 'grid-row' + (selected.has(src) ? ' selected' : '');
+                row.dataset.src = src;
+                row.innerHTML =
+                    '<div class="grid-cell rownum">' + (r.index + 1) + '</div>' +
+                    '<div class="grid-cell id">' + r.id + '</div>' +
+                    '<div class="grid-cell">' + escapeHtml(r.name) + '</div>' +
+                    '<div class="grid-cell email">' + escapeHtml(r.email) + '</div>' +
+                    '<div class="grid-cell">' + escapeHtml(r.department) + '</div>' +
+                    '<div class="grid-cell"><span class="badge ' + statusClass(r.status) + '">' + r.status + '</span></div>' +
+                    '<div class="grid-cell">' + escapeHtml(r.region) + '</div>' +
+                    '<div class="grid-cell num ' + (r.revenue >= 0 ? 'cell-positive' : 'cell-negative') + '">' +
+                        (r.revenue >= 0 ? '+' : '−') + '$' + Math.abs(r.revenue).toLocaleString() +
+                    '</div>' +
+                    '<div class="grid-cell num">' + r.score.toFixed(1) + '</div>' +
+                    '<div class="grid-cell">' + r.date + '</div>';
+                container.appendChild(row);
+            }
+
+            function updateLabels() {
+                document.getElementById('subtitle').textContent =
+                    'Sort, search, and multi-select across ' + order.length.toLocaleString() + ' of 100,000 records.';
+                document.getElementById('countLabel').textContent = order.length.toLocaleString();
+                document.getElementById('selCount').textContent = selected.size;
+            }
+
+            const hScroll = document.getElementById('hscroll');
+            renderHead();
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: Math.max(1, order.length),
+                render: render,
+                options: { touch: { enabled: true, getHorizontalScrollTarget: () => hScroll } },
             });
-        }
+            updateLabels();
 
-        function updateSelection() {
-            document.getElementById('selectedCount').textContent = selectedRows.size;
-        }
+            function rebuild() {
+                order = buildOrder();
+                renderHead();
+                updateLabels();
+                demo.setTotal(Math.max(1, order.length));
+                demo.jumpTo(0);
+            }
 
-        // Setup viewport
-        const viewport = document.getElementById('gridViewport');
-        viewport.innerHTML = '';
-
-        // Horizontal scroll wrapper holds header + virtual rows so they shift
-        // together; cerious-scroll's sibling scrollbar stays a direct child
-        // of `viewport` and remains pinned to the visible right edge.
-        const hScroll = document.createElement('div');
-        hScroll.className = 'grid-h-scroll';
-        viewport.appendChild(hScroll);
-
-        // Add sticky header
-        const headerRow = document.createElement('div');
-        headerRow.className = 'grid-header-row';
-        headerRow.innerHTML = `
-            <div class="grid-header-cell row-number">#</div>
-            <div class="grid-header-cell" data-column="id">ID <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="name">Name <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="email">Email <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="department">Department <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="status">Status <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="region">Region <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="revenue">Revenue <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="score">Score <span class="sort-icon">⇅</span></div>
-            <div class="grid-header-cell" data-column="date">Date <span class="sort-icon">⇅</span></div>
-        `;
-        hScroll.appendChild(headerRow);
-        
-        const scrollContent = document.createElement('div');
-        scrollContent.id = 'scrollContent';
-        scrollContent.style.marginTop = '48px'; // Account for sticky header
-        hScroll.appendChild(scrollContent);
-
-        // Column sorting
-        headerRow.querySelectorAll('.grid-header-cell[data-column]').forEach(cell => {
-            cell.addEventListener('click', () => {
-                const column = cell.dataset.column;
-                
-                if (currentSort.column === column) {
-                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSort.column = column;
-                    currentSort.direction = 'asc';
-                }
-                
-                // Update sort icons
-                headerRow.querySelectorAll('.sort-icon').forEach(icon => icon.classList.remove('active'));
-                const icon = cell.querySelector('.sort-icon');
-                icon.classList.add('active');
-                icon.textContent = currentSort.direction === 'asc' ? '▲' : '▼';
-                
-                // Re-filter and sort
-                filteredIndices = getFilteredAndSortedIndices();
-                scroller.updateDataset(filteredIndices.length);
-                scroller.jumpToElement(0);
-                scrollContent.innerHTML = '';
-                scroller.renderViewport(viewport.clientHeight - 48, scrollContent, renderRow);
-                document.getElementById('rowCount').textContent = filteredIndices.length.toLocaleString();
+            document.getElementById('head').addEventListener('click', (e) => {
+                const cell = e.target.closest('[data-col]');
+                if (!cell) return;
+                const key = cell.dataset.col;
+                const meta = COLUMNS.find((c) => c.key === key);
+                if (!meta || !meta.sortable) return;
+                if (sortCol === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                else { sortCol = key; sortDir = 'asc'; }
+                rebuild();
             });
-        });
 
-        // Initialize CeriousScroll
-        const scroller = new CeriousScrollClass(
-            viewport,
-            filteredIndices.length,
-            {
-                touch: {
-                    enabled: true,
-                    // Forward horizontal swipes to the wrapper that owns the
-                    // native overflow-x scrollbar so the column header and
-                    // rows scroll together on mobile.
-                    getHorizontalScrollTarget: () => hScroll
-                },
-                onScroll: () => {
-                    scroller.renderViewport(
-                        viewport.clientHeight - 48, // Account for header
-                        scrollContent,
-                        renderRow
-                    );
-                    
-                    // Update visible count
-                    const visibleCount = Math.min(20, filteredIndices.length);
-                    document.getElementById('visibleCount').textContent = visibleCount;
-                }
-            }
-        );
-
-        // Initial render
-        scroller.jumpToElement(0);
-        scroller.renderViewport(viewport.clientHeight - 48, scrollContent, renderRow);
-        document.getElementById('visibleCount').textContent = '20';
-
-        // Search functionality
-        let searchTimeout;
-        document.getElementById('searchBox').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                searchQuery = e.target.value;
-                selectedRows.clear();
-                filteredIndices = getFilteredAndSortedIndices();
-                scroller.updateDataset(filteredIndices.length);
-                scroller.jumpToElement(0);
-                scrollContent.innerHTML = '';
-                scroller.renderViewport(viewport.clientHeight - 48, scrollContent, renderRow);
-                document.getElementById('rowCount').textContent = filteredIndices.length.toLocaleString();
-                updateSelection();
-            }, 300);
-        });
-
-        // Toolbar actions
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            alert(`Exporting ${selectedRows.size || filteredIndices.length} rows...`);
-        });
-
-        document.getElementById('filterBtn').addEventListener('click', () => {
-            alert('Filter dialog would open here');
-        });
-
-        document.getElementById('refreshBtn').addEventListener('click', () => {
-            selectedRows.clear();
-            searchQuery = '';
-            document.getElementById('searchBox').value = '';
-            currentSort = { column: null, direction: 'asc' };
-            filteredIndices = getFilteredAndSortedIndices();
-            scroller.updateDataset(filteredIndices.length);
-            scroller.jumpToElement(0);
-            scrollContent.innerHTML = '';
-            scroller.renderViewport(viewport.clientHeight - 48, scrollContent, renderRow);
-            document.getElementById('rowCount').textContent = filteredIndices.length.toLocaleString();
-            updateSelection();
-            
-            // Reset sort icons
-            headerRow.querySelectorAll('.sort-icon').forEach(icon => {
-                icon.classList.remove('active');
-                icon.textContent = '⇅';
+            let debounce;
+            document.getElementById('search').addEventListener('input', (e) => {
+                clearTimeout(debounce);
+                const v = e.target.value;
+                debounce = setTimeout(() => { query = v; rebuild(); }, 250);
             });
-        });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === '/' && e.target.tagName !== 'INPUT') {
-                e.preventDefault();
-                document.getElementById('searchBox').focus();
-            }
-            
-            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-                e.preventDefault();
-                selectedRows.clear();
-                filteredIndices.forEach(idx => selectedRows.add(idx));
-                updateSelection();
-                scrollContent.innerHTML = '';
-                scroller.renderViewport(viewport.clientHeight - 48, scrollContent, renderRow);
-            }
-        });
+            document.getElementById('scroll').addEventListener('click', (e) => {
+                const row = e.target.closest('.grid-row');
+                if (!row) return;
+                const src = parseInt(row.dataset.src, 10);
+                const additive = e.ctrlKey || e.metaKey;
+                if (!additive) selected.clear();
+                if (selected.has(src) && (additive || selected.size === 0)) selected.delete(src);
+                else selected.add(src);
+                updateLabels();
+                demo.refresh();
+            });
 
-        console.log('Data Grid initialized with', TOTAL_ROWS.toLocaleString(), 'rows');
-        console.log('Click headers to sort, Ctrl/Cmd+Click to multi-select rows');
-        console.log('Press "/" to focus search');
+            document.getElementById('exportBtn').addEventListener('click', () => {
+                alert('Exporting ' + (selected.size || order.length) + ' rows…');
+            });
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                document.getElementById('search').value = '';
+                query = ''; sortCol = null; selected.clear();
+                rebuild();
+            });
+        })();
     </script>
 </body>
 </html>

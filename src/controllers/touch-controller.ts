@@ -45,6 +45,20 @@ export class TouchController {
 
     const getHorizontalTarget = opts.getHorizontalScrollTarget;
 
+    // Auto-fallback: if no resolver was supplied, look for a horizontally-
+    // scrollable element to use as the touch swipe target. Prefer the inner
+    // [data-cerious-scroll-content] (where framework wrappers put rows and
+    // typically apply overflow-x: auto for wide content), then fall back to
+    // the container itself.
+    const resolveHorizontalTarget = (): HTMLElement | null => {
+      const explicit = getHorizontalTarget?.();
+      if (explicit) return explicit;
+      const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      if (inner && inner.scrollWidth > inner.clientWidth) return inner;
+      if (container.scrollWidth > container.clientWidth) return container;
+      return null;
+    };
+
     const originalTouchAction = container.style.touchAction;
     const styleId = 'cerious-touch-action-style';
     let addedStyleElement: HTMLStyleElement | null = null;
@@ -103,7 +117,11 @@ export class TouchController {
       if (velocityRingCount < VELOCITY_RING_SIZE) velocityRingCount++;
     };
 
-    const getViewportHeight = () => container.clientHeight || container.offsetHeight;
+    const getViewportHeight = () => {
+      const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      const h = inner?.clientHeight ?? 0;
+      return h > 0 ? h : (container.clientHeight || container.offsetHeight);
+    };
 
     const handleTouchStart = (event: TouchEvent) => {
       if (this.isScrollbarTouch(event.target)) {
@@ -128,7 +146,7 @@ export class TouchController {
         startTouchX = touch.clientX;
         startTouchY = touch.clientY;
         axis = 'unknown';
-        horizontalTarget = getHorizontalTarget?.() ?? null;
+        horizontalTarget = resolveHorizontalTarget();
         lastTouchTime = Date.now();
         velocity = 0;
         resetVelocityHistory();

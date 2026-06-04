@@ -141,6 +141,28 @@ export class ViewportRenderer {
   }
 
   /**
+   * Re-invoke the renderer callback for every currently-rendered element and
+   * re-measure each one's height into the cache. Use this when row content
+   * (and therefore height) has changed in place — e.g. expand/collapse, an
+   * async image finished loading. The plain renderViewport pass skips the
+   * renderer for indices already in currentlyRendered and falls through to
+   * reading offsetHeight, so external state changes that haven't been pushed
+   * to the DOM yet would silently no-op.
+   *
+   * Call render() afterwards to reposition rows and refresh derived display
+   * state from the new heights.
+   */
+  refreshVisible(renderElement: ElementRenderer): void {
+    if (this.currentlyRendered.size === 0) return;
+    for (const [index, element] of this.currentlyRendered) {
+      renderElement(index, element);
+      const height = element.offsetHeight;
+      this.setMeasuredHeight(index, height);
+    }
+    this.invalidateTrueBottomCache();
+  }
+
+  /**
    * Resolve a reused element's height. Prefer the cached measurement (avoids a
    * synchronous layout on every scroll frame); on a cache miss, read
    * `offsetHeight` AND write it back to the cache. Re-caching the miss-read is

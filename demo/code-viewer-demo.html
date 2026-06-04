@@ -3,593 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CeriousScroll - Code File Viewer Demo</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            overflow: hidden;
-        }
-        .header {
-            background: #323233;
-            padding: 8px 12px;
-            border-bottom: 1px solid #2d2d30;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .header h1 {
-            font-size: 13px;
-            font-weight: 400;
-            color: #cccccc;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-        }
-        .file-path {
-            font-size: 12px;
-            color: #858585;
-            font-family: 'Monaco', 'Menlo', monospace;
-        }
-        .stats {
-            display: flex;
-            gap: 20px;
-            font-size: 11px;
-        }
-        .stat {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .stat-label {
-            color: #858585;
-        }
-        .stat-value {
-            font-weight: 600;
-            color: #4fc1ff;
-        }
-        
-        .toolbar {
-            background: #2d2d30;
-            padding: 10px 12px;
-            border-bottom: 1px solid #2d2d30;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .toolbar-group {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .toolbar label {
-            font-size: 11px;
-            color: #cccccc;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-        }
-        .toolbar select, .toolbar input {
-            padding: 4px 8px;
-            background: #3c3c3c;
-            color: #cccccc;
-            border: 1px solid #3e3e42;
-            border-radius: 2px;
-            font-size: 11px;
-            font-family: 'Monaco', 'Menlo', monospace;
-        }
-        .toolbar input[type="text"] {
-            width: 200px;
-        }
-        .toolbar input[type="number"] {
-            width: 80px;
-        }
-        .toolbar button {
-            padding: 4px 12px;
-            background: #0e639c;
-            color: white;
-            border: none;
-            border-radius: 2px;
-            cursor: pointer;
-            font-size: 11px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            font-weight: 500;
-        }
-        .toolbar button:hover {
-            background: #1177bb;
-        }
-        
-        .editor-container {
-            height: calc(100vh - 90px);
-            background: #1e1e1e;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .scroll-content {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-        }
-        
-        .code-line {
-            display: flex;
-            line-height: 22px;
-            font-size: 13px;
-            min-height: 22px;
-            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-        }
-        
-        .line-number {
-            width: 60px;
-            flex-shrink: 0;
-            text-align: right;
-            padding-right: 12px;
-            color: #858585;
-            background: #1e1e1e;
-            border-right: 1px solid #2d2d30;
-            user-select: none;
-        }
-        
-        .line-content {
-            flex: 1;
-            padding: 0 16px;
-            white-space: pre;
-            overflow: hidden;
-        }
-        
-        .code-line:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-        
-        .code-line.highlight {
-            background: rgba(255, 200, 0, 0.15);
-        }
-        
-        .code-line.current-line {
-            background: rgba(255, 255, 255, 0.08);
-        }
-        
-        /* Syntax highlighting */
-        .keyword { color: #569cd6; }
-        .string { color: #ce9178; }
-        .comment { color: #6a9955; font-style: italic; }
-        .function { color: #dcdcaa; }
-        .number { color: #b5cea8; }
-        .operator { color: #d4d4d4; }
-        .class-name { color: #4ec9b0; }
-        .property { color: #9cdcfe; }
-        
-        .status-bar {
-            background: #007acc;
-            padding: 2px 12px;
-            font-size: 11px;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .loading-overlay.active {
-            display: flex;
-        }
-        .loading-content {
-            background: #2d2d30;
-            padding: 30px 50px;
-            border-radius: 4px;
-            text-align: center;
-            border: 1px solid #3e3e42;
-        }
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #3e3e42;
-            border-top-color: #0e639c;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
+    <title>Code Viewer · Cerious-Scroll</title>
+    <link rel="stylesheet" href="shared-styles.css">
 </head>
 <body>
-    <div class="header">
-        <div class="header-left">
-            <h1>Code File Viewer</h1>
-            <span class="file-path" id="filePath">large-file.js</span>
-        </div>
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-label">FPS:</span>
-                <span class="stat-value" id="fps">60</span>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>👨‍💻 Code Viewer</h1>
+                <p>100,000 syntax-highlighted lines with line numbers and find.</p>
             </div>
-            <div class="stat">
-                <span class="stat-label">Latency:</span>
-                <span class="stat-value" id="latency">1ms</span>
+
+            <div class="demo-toolbar">
+                <input id="find" type="search" placeholder="Find in file…" style="flex:1; min-width:220px">
+                <button id="findBtn" type="button">Find next ↵</button>
+                <button id="topBtn" type="button">Top</button>
+                <span class="stat">100,000 lines</span>
             </div>
-            <div class="stat">
-                <span class="stat-label">Lines:</span>
-                <span class="stat-value" id="totalLines">0</span>
-            </div>
-        </div>
-    </div>
 
-    <div class="toolbar">
-        <div class="toolbar-group">
-            <label>File Size:</label>
-            <select id="fileSize">
-                <option value="1000">1K lines</option>
-                <option value="5000">5K lines</option>
-                <option value="10000" selected>10K lines</option>
-                <option value="50000">50K lines</option>
-                <option value="100000">100K lines</option>
-            </select>
-            <button id="loadBtn">Load File</button>
+            <div class="demo-scroll code-scroll" id="scroll"></div>
         </div>
-        <div class="toolbar-group">
-            <label>Jump to line:</label>
-            <input type="number" id="jumpToLine" placeholder="Line #" min="1">
-            <button id="jumpBtn">Go</button>
-        </div>
-        <div class="toolbar-group">
-            <label>Search:</label>
-            <input type="text" id="searchInput" placeholder="Search in file...">
-            <button id="searchBtn">Find</button>
-        </div>
-    </div>
-
-    <div class="editor-container" id="codeContainer">
-
-    </div>
-
-    <div class="status-bar">
-        <span id="statusText">Ready to load file</span>
-        <span id="positionText">Ln 1, Col 1</span>
-    </div>
-
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div id="loadingText">Loading file...</div>
-        </div>
-    </div>
+    </main>
 
     <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="demo-bootstrap.js"></script>
     <script>
-        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
-        
-        // Detect mobile/tablet for safe defaults
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-        
-        class CodeViewerDemo {
-            constructor() {
-                this.lines = [];
-                this.scroller = null;
-                this.lineNumberScroller = null;
-                this.currentLine = 1;
-                this.searchResults = new Set();
-                this.performanceMonitorId = null;
-                this.initializeEventListeners();
+        (function () {
+            const CODE_TOTAL = 100000;
+            const SNIPPET = [
+                '// Virtualized rendering keeps memory flat regardless of dataset size.',
+                'export function renderViewport(height: number, rows: Row[]): Range {',
+                '  const visible: number[] = [];',
+                '  let offset = 0;',
+                '  for (let i = startIndex; i < rows.length; i++) {',
+                '    const el = pool.acquire(i);',
+                '    el.style.top = offset + "px";',
+                '    const measured = measure(el);',
+                '    cache.set(i, measured);',
+                '    offset += measured;',
+                '    visible.push(i);',
+                '    if (offset > height) break;',
+                '  }',
+                '  return { start: startIndex, end: visible.at(-1) ?? 0, visible };',
+                '}',
+                '',
+                'class PerformanceCache {',
+                '  private heights = new Map<number, number>();',
+                '  constructor(private readonly total: number) {}',
+                '  get(index: number): number | undefined {',
+                '    return this.heights.get(index);',
+                '  }',
+                '  set(index: number, value: number): void {',
+                '    this.heights.set(index, value);',
+                '  }',
+                '  clear(): void {',
+                '    this.heights.clear();',
+                '  }',
+                '}',
+                '',
+                'const scroller = new CeriousScroll(container, 1000000, options);',
+                'await scroller.ready();',
+                'if (offset >= total && !done) {',
+                '  emit("reached-end", { index: total - 1 });',
+                '}',
+                '',
+            ];
+            const KEYWORDS = new Set([
+                'const','let','var','function','return','if','else','for','while','await','async',
+                'import','from','export','class','new','interface','type','of','in','void','this',
+                'private','public','readonly','constructor','number','string','boolean',
+            ]);
+            const TOKEN_RE = /(\s+|\/\/.*$|'[^']*'|`[^`]*`|"[^"]*"|\b\d+\b|\b[A-Za-z_$][\w$]*\b|[^\w\s])/g;
+
+            function getLine(i) { return SNIPPET[i % SNIPPET.length]; }
+
+            function tokenize(raw) {
+                if (raw.trimStart().startsWith('//')) return [{ text: raw, type: 'comment' }];
+                const parts = raw.match(TOKEN_RE) || [];
+                const out = [];
+                for (let i = 0; i < parts.length; i++) {
+                    const p = parts[i];
+                    if (/^\s+$/.test(p)) out.push({ text: p, type: 'plain' });
+                    else if (/^['"`]/.test(p)) out.push({ text: p, type: 'string' });
+                    else if (/^\d+$/.test(p)) out.push({ text: p, type: 'number' });
+                    else if (/^[A-Za-z_$]/.test(p)) {
+                        const next = parts[i + 1];
+                        if (KEYWORDS.has(p)) out.push({ text: p, type: 'keyword' });
+                        else if (next === '(') out.push({ text: p, type: 'fn' });
+                        else out.push({ text: p, type: 'plain' });
+                    } else out.push({ text: p, type: 'punct' });
+                }
+                return out;
             }
 
-            initializeEventListeners() {
-                document.getElementById('loadBtn').addEventListener('click', () => this.loadFile());
-                document.getElementById('jumpBtn').addEventListener('click', () => this.jumpToLine());
-                document.getElementById('searchBtn').addEventListener('click', () => this.search());
-                
-                document.getElementById('jumpToLine').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.jumpToLine();
-                });
-                
-                document.getElementById('searchInput').addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.search();
-                });
-                
-                // Load initial file
-                this.loadFile();
+            function escapeHtml(s) {
+                return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             }
 
-            generateCodeFile(numLines) {
-                const lines = [];
-                const keywords = ['function', 'const', 'let', 'var', 'return', 'if', 'else', 'for', 'while', 'class', 'import', 'export'];
-                const functions = ['processData', 'handleRequest', 'validateInput', 'fetchUser', 'updateCache', 'renderView'];
-                const variables = ['result', 'data', 'user', 'config', 'options', 'response', 'items', 'value'];
-                
-                for (let i = 0; i < numLines; i++) {
-                    const indent = '  '.repeat(Math.floor(Math.random() * 4));
-                    const type = Math.random();
-                    
-                    if (type < 0.05) {
-                        // Comment
-                        lines.push(`${indent}// This is a comment explaining the code logic at line ${i + 1}`);
-                    } else if (type < 0.15) {
-                        // Function declaration
-                        const func = functions[Math.floor(Math.random() * functions.length)];
-                        const params = variables.slice(0, Math.floor(Math.random() * 3) + 1).join(', ');
-                        lines.push(`${indent}function ${func}(${params}) {`);
-                    } else if (type < 0.25) {
-                        // Variable declaration
-                        const keyword = keywords[Math.floor(Math.random() * 3)];
-                        const varName = variables[Math.floor(Math.random() * variables.length)];
-                        const value = Math.random() > 0.5 ? Math.floor(Math.random() * 1000) : `"value_${i}"`;
-                        lines.push(`${indent}${keyword} ${varName} = ${value};`);
-                    } else if (type < 0.30) {
-                        // Return statement
-                        lines.push(`${indent}return ${variables[Math.floor(Math.random() * variables.length)]};`);
-                    } else if (type < 0.35) {
-                        // Closing brace
-                        lines.push(`${indent}}`);
-                    } else if (type < 0.45) {
-                        // If statement
-                        const varName = variables[Math.floor(Math.random() * variables.length)];
-                        lines.push(`${indent}if (${varName} !== null && ${varName}.length > 0) {`);
-                    } else if (type < 0.55) {
-                        // For loop
-                        lines.push(`${indent}for (let i = 0; i < items.length; i++) {`);
-                    } else {
-                        // Function call
-                        const func = functions[Math.floor(Math.random() * functions.length)];
-                        const args = Math.floor(Math.random() * 3);
-                        const argList = Array.from({length: args}, (_, i) => variables[i % variables.length]).join(', ');
-                        lines.push(`${indent}${func}(${argList});`);
-                    }
-                }
-                
-                return lines;
+            let query = '';
+
+            function render(i, container) {
+                const raw = getLine(i);
+                const tokens = tokenize(raw);
+                const isMatch = query.length > 0 && raw.toLowerCase().includes(query);
+                const row = document.createElement('div');
+                row.className = 'code-row' + (isMatch ? ' match' : '');
+                let html = '<span class="code-gutter">' + (i + 1) + '</span><span class="code-text">';
+                for (const t of tokens) html += '<span class="tok-' + t.type + '">' + escapeHtml(t.text) + '</span>';
+                html += '</span>';
+                row.innerHTML = html;
+                container.appendChild(row);
             }
 
-            applySyntaxHighlighting(line) {
-                // Simple regex-based syntax highlighting
-                return line
-                    .replace(/\/\/.*/g, '<span class="comment">$&</span>')
-                    .replace(/\b(function|const|let|var|return|if|else|for|while|class|import|export|new|this|typeof|instanceof)\b/g, '<span class="keyword">$1</span>')
-                    .replace(/\b(processData|handleRequest|validateInput|fetchUser|updateCache|renderView)\b/g, '<span class="function">$1</span>')
-                    .replace(/(['"`])(.*?)\1/g, '<span class="string">$1$2$1</span>')
-                    .replace(/\b(\d+)\b/g, '<span class="number">$1</span>')
-                    .replace(/\b([A-Z][a-zA-Z0-9]*)\b/g, '<span class="class-name">$1</span>');
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: CODE_TOTAL,
+                render: render,
+            });
+
+            function runFind() {
+                query = document.getElementById('find').value.trim().toLowerCase();
+                if (!query) { demo.refresh(); return; }
+                for (let i = 0; i < CODE_TOTAL; i++) {
+                    if (getLine(i).toLowerCase().includes(query)) { demo.jumpTo(i); return; }
+                }
+                demo.refresh();
             }
 
-            async loadFile() {
-                const loadBtn = document.getElementById('loadBtn');
-                const overlay = document.getElementById('loadingOverlay');
-                const loadingText = document.getElementById('loadingText');
-                const size = parseInt(document.getElementById('fileSize').value);
-                
-                // Warn on mobile for large files
-                if (isMobile && size > 10000) {
-                    if (!confirm(`⚠️ Loading ${size.toLocaleString()} lines on mobile may cause performance issues.\n\nRecommended maximum: 10,000 lines\n\nContinue anyway?`)) {
-                        return;
-                    }
-                }
-                
-                loadBtn.disabled = true;
-                loadBtn.textContent = 'Loading...';
-                overlay.classList.add('active');
-                loadingText.textContent = `Generating ${size.toLocaleString()} lines of code...`;
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                this.lines = this.generateCodeFile(size);
-                this.searchResults.clear();
-                
-                loadingText.textContent = 'Initializing virtual scroller...';
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
-                this.initializeScroller();
-                this.startPerformanceMonitoring();
-                
-                loadBtn.disabled = false;
-                loadBtn.textContent = 'Load File';
-                overlay.classList.remove('active');
-                
-                document.getElementById('totalLines').textContent = size.toLocaleString();
-                document.getElementById('filePath').textContent = `large-file.js (${size.toLocaleString()} lines)`;
-                document.getElementById('statusText').textContent = `Loaded ${size.toLocaleString()} lines`;
-                document.getElementById('jumpToLine').max = size;
-            }
-
-            initializeScroller() {
-                const codeContainer = document.getElementById('codeContainer');
-                
-                // Stop performance monitoring
-                if (this.performanceMonitorId) {
-                    cancelAnimationFrame(this.performanceMonitorId);
-                    this.performanceMonitorId = null;
-                }
-                
-                // Dispose of old scroller if it exists
-                if (this.scroller) {
-                    this.scroller.dispose();
-                    this.scroller = null;
-                }
-                
-                // Clear container and reset
-                codeContainer.innerHTML = '';
-                codeContainer.scrollTop = 0;
-                
-                // Create new scroll content
-                const scrollContent = document.createElement('div');
-                scrollContent.className = 'scroll-content';
-                scrollContent.id = 'codeContent';
-                codeContainer.appendChild(scrollContent);
-                
-                const codeContent = document.getElementById('codeContent');
-
-                // Create code scroller
-                this.scroller = new CeriousScrollClass(codeContainer, this.lines.length, {
-                    onScroll: () => {
-                        // Render code with line numbers
-                        this.scroller.renderViewport(
-                            codeContainer.clientHeight,
-                            codeContent,
-                            (index, element) => this.renderCodeLine(index, element)
-                        );
-                        
-                        // Update position text
-                        const currentElement = this.scroller.currentElement || 0;
-                        document.getElementById('positionText').textContent = `Ln ${currentElement + 1}, Col 1`;
-                    }
-                });
-
-                // Scroll to top and initial render
-                this.scroller.jumpToElement(0);
-                codeContent.innerHTML = '';
-                this.scroller.renderViewport(codeContainer.clientHeight, codeContent, 
-                    (index, element) => this.renderCodeLine(index, element));
-            }
-
-            renderCodeLine(index, container) {
-                const line = this.lines[index];
-                
-                // Clear the container first
-                container.innerHTML = '';
-                
-                const lineElement = document.createElement('div');
-                lineElement.className = 'code-line';
-                
-                // Line number column
-                const lineNumberEl = document.createElement('div');
-                lineNumberEl.className = 'line-number';
-                lineNumberEl.textContent = index + 1;
-                
-                // Code content column
-                const lineContentEl = document.createElement('div');
-                lineContentEl.className = 'line-content';
-                
-                if (this.searchResults.has(index)) {
-                    lineElement.classList.add('highlight');
-                }
-                
-                if (index + 1 === this.currentLine) {
-                    lineElement.classList.add('current-line');
-                }
-                
-                lineContentEl.innerHTML = this.applySyntaxHighlighting(line || ' ');
-                
-                lineElement.appendChild(lineNumberEl);
-                lineElement.appendChild(lineContentEl);
-                container.appendChild(lineElement);
-            }
-
-            jumpToLine() {
-                const lineInput = document.getElementById('jumpToLine');
-                const lineNumber = parseInt(lineInput.value);
-                
-                if (!lineNumber || lineNumber < 1 || lineNumber > this.lines.length) {
-                    alert(`Please enter a valid line number (1-${this.lines.length})`);
-                    return;
-                }
-                
-                this.currentLine = lineNumber;
-                
-                // Calculate scroll position
-                const lineHeight = 22;
-                const targetScrollTop = (lineNumber - 1) * lineHeight;
-                const codeContainer = document.getElementById('codeContainer');
-                
-                // Scroll to the line
-                codeContainer.scrollTop = targetScrollTop;
-                
-                // Force re-render
-                const scrollContent = document.getElementById('codeContent');
-                this.scroller.renderViewport(codeContainer.clientHeight, scrollContent, 
-                    (index, element) => this.renderCodeLine(index, element));
-                
-                document.getElementById('statusText').textContent = `Jumped to line ${lineNumber}`;
-            }
-
-            search() {
-                const searchInput = document.getElementById('searchInput');
-                const searchTerm = searchInput.value.trim().toLowerCase();
-                
-                if (!searchTerm) {
-                    this.searchResults.clear();
-                    const container = document.getElementById('codeContainer');
-                    const scrollContent = document.getElementById('codeContent');
-                    this.scroller.renderViewport(container.clientHeight, scrollContent, 
-                        (index, element) => this.renderCodeLine(index, element));
-                    document.getElementById('statusText').textContent = 'Search cleared';
-                    return;
-                }
-                
-                this.searchResults.clear();
-                
-                for (let i = 0; i < this.lines.length; i++) {
-                    if (this.lines[i].toLowerCase().includes(searchTerm)) {
-                        this.searchResults.add(i);
-                    }
-                }
-                
-                // Force re-render to show highlights
-                const container = document.getElementById('codeContainer');
-                const scrollContent = document.getElementById('codeContent');
-                scrollContent.innerHTML = '';
-                this.scroller.renderViewport(container.clientHeight, scrollContent, 
-                    (index, element) => this.renderCodeLine(index, element));
-                
-                document.getElementById('statusText').textContent = 
-                    `Found ${this.searchResults.size} match${this.searchResults.size !== 1 ? 'es' : ''} for "${searchTerm}"`;
-                
-                // Jump to first result
-                if (this.searchResults.size > 0) {
-                    const firstResult = Math.min(...Array.from(this.searchResults));
-                    document.getElementById('jumpToLine').value = firstResult + 1;
-                    this.jumpToLine();
-                }
-            }
-
-            startPerformanceMonitoring() {
-                let frames = 0;
-                let lastTime = performance.now();
-
-                const updateMetrics = () => {
-                    const now = performance.now();
-                    const delta = now - lastTime;
-                    
-                    if (delta >= 1000) {
-                        const fps = Math.round((frames * 1000) / delta);
-                        document.getElementById('fps').textContent = fps;
-                        document.getElementById('latency').textContent = 
-                            (delta / frames).toFixed(1) + 'ms';
-                        
-                        frames = 0;
-                        lastTime = now;
-                    }
-                    
-                    frames++;
-                    this.performanceMonitorId = requestAnimationFrame(updateMetrics);
-                };
-                
-                this.performanceMonitorId = requestAnimationFrame(updateMetrics);
-            }
-        }
-
-        // Initialize the demo
-        new CodeViewerDemo();
+            document.getElementById('findBtn').addEventListener('click', runFind);
+            document.getElementById('find').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') runFind();
+            });
+            document.getElementById('topBtn').addEventListener('click', () => demo.scrollToPercentage(0));
+        })();
     </script>
 </body>
 </html>

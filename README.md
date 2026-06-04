@@ -2,6 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://ceriousdevtech.github.io/cerious-scroll/)
 
 **High-Performance Virtual Scrolling for Web Applications**
 
@@ -9,7 +10,26 @@ Cerious Scroll™ is an enterprise-grade virtual scrolling engine that enables s
 
 It is designed for data grids, chat applications, log viewers, financial dashboards, analytics platforms, and any application that must efficiently render massive datasets without performance degradation.
 
-🌐 **[View Live Demos](https://ceriousdevtech.github.io/cerious-scroll/)** | 📚 **[Read Documentation](https://ceriousdevtech.github.io/cerious-scroll/docs/IMPLEMENTATION_GUIDE.html)**
+---
+
+## Demo
+
+**[Live demos →](https://ceriousdevtech.github.io/cerious-scroll/demo/)** — basic virtual scroll, data grid, chat, log viewer, code viewer, e-commerce, finance ticker, git history, SQL results, and a side-by-side bake-off against Clusterize.js.
+
+To run locally:
+
+```bash
+npm install
+npm run build
+npx http-server . -p 8080   # then open http://localhost:8080/demo/
+```
+
+---
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — engine internals, the element-based positioning algorithm, and the controller/observer model.
+- [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md) — step-by-step usage, options, lifecycle, and integration patterns.
 
 ---
 
@@ -112,7 +132,7 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 
 Cerious Scroll™ is licensed under the **MIT License** by **Cerious DevTech LLC**.
 
-See [LICENSE](LICENSE) or [LICENSE-MIT](LICENSE-MIT) for details.
+See [LICENSE](LICENSE) for details.
 
 📧 **info@ceriousdevtech.com**
 

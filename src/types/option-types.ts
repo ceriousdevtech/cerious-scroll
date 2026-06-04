@@ -65,6 +65,20 @@ export interface WheelNavigationOptions {
    * Default: false (keeps existing timing semantics).
    */
   coalesceViewportChangeEvent?: boolean;
+
+  /**
+   * Animate wheel deltas over multiple frames instead of applying them
+   * instantly. Matches the smooth feel of native browser overflow scrolling,
+   * where one wheel notch eases over ~150ms. Default: true.
+   */
+  smooth?: boolean;
+
+  /**
+   * Per-frame interpolation factor for smooth wheel scrolling (0-1). Larger
+   * values consume the remaining delta faster (snappier); smaller values feel
+   * gentler. Default: 0.22 (~tracks native macOS feel).
+   */
+  smoothFactor?: number;
 }
 
 /**

@@ -3,732 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cerious-Scroll™ Proof - Vanilla JS</title>
+    <title>Basic Virtual Scroll · Cerious-Scroll</title>
     <link rel="stylesheet" href="shared-styles.css">
-    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
-    <div class="app-container">
-        <div class="header">
-            <h1>Cerious-Scroll™ Proof of Concept</h1>
-            <p class="subtitle">Vanilla JavaScript Implementation - Enterprise-Grade Virtual Scrolling</p>
-        </div>
+    <header class="topbar" data-auto-topbar></header>
 
-        <!-- Demo Controls -->
-        <div class="demo-controls">
-            <!-- Data Configuration -->
-            <div class="control-section">
-                <h3>Data Configuration</h3>
-                <div class="control-row">
-                    <div class="control-group">
-                        <label for="datasetSize">Dataset Size</label>
-                        <div class="input-button-group">
-                            <select id="datasetSize">
-                                <option value="10">10 rows</option>
-                                <option value="100" selected>100 rows</option>
-                                <option value="1000">1,000 rows</option>
-                                <option value="10000">10,000 rows</option>
-                                <option value="100000">100,000 rows</option>
-                                <option value="1000000">1,000,000 rows</option>
-                                <option value="10000000">10,000,000 rows</option>
-                                <option value="20000000">20,000,000 rows</option>
-                            </select>
-                            <select id="heightVariation">
-                                <option value="uniform">Uniform (40px)</option>
-                                <option value="mixed" selected>Mixed (40/60/100px)</option>
-                                <option value="variable">Variable (30-150px)</option>
-                                <option value="large">Large Elements (100-800px, some > viewport)</option>
-                                <option value="wide">Wide Content (triggers horizontal scroll)</option>
-                            </select>
-                            <button id="generateData" class="generate-button">Generate</button>
-                        </div>
-                    </div>
-                </div>
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🧱 Basic virtual scroll</h1>
+                <p>Lazy data source — no array is allocated, so a million rows costs nothing.</p>
             </div>
 
-            <!-- Navigation Controls -->
-            <div class="control-section">
-                <h3>Navigation</h3>
-                <div class="control-row">
-                    <div class="control-group">
-                        <label for="jumpToRow">Navigation</label>
-                        <div class="input-button-group">
-                            <input type="number" id="jumpToRow" min="0" value="0" placeholder="Enter row number">
-                            <button id="jumpToRowBtn">Go</button>
-                            <button id="jumpToBeginning">Beginning</button>
-                            <button id="jumpToEnd">End</button>
-                        </div>
-                    </div>
-                </div>
+            <div class="demo-toolbar">
+                <label for="size">Rows</label>
+                <select id="size">
+                    <option value="100">100</option>
+                    <option value="1000">1,000</option>
+                    <option value="10000">10,000</option>
+                    <option value="100000" selected>100,000</option>
+                    <option value="1000000">1,000,000</option>
+                </select>
+
+                <label for="var">Heights</label>
+                <select id="var">
+                    <option value="uniform">Uniform (44px)</option>
+                    <option value="mixed" selected>Mixed (44/64/104px)</option>
+                    <option value="variable">Variable (32–152px)</option>
+                </select>
+
+                <span style="display: inline-flex; gap: 6px">
+                    <input id="jump" type="number" placeholder="row #" style="width: 110px">
+                    <button id="goBtn" type="button">Go</button>
+                    <button id="topBtn" type="button">Top</button>
+                    <button id="endBtn" type="button">End</button>
+                </span>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">scroll to see live stats</span>
             </div>
 
-            <!-- Actions -->
-            <div class="control-section">
-                <h3>Actions</h3>
-                <div class="control-row">
-                    <div class="control-group">
-                        <label>&nbsp;</label>
-                        <div class="button-group">
-                            <button id="runBenchmark">Run Benchmark</button>
-                            <button id="exportData">Export Data</button>
-                        </div>
-                    </div>
-                </div>
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">100,000</strong></span>
+                <span>Mode: <strong id="modeLabel">mixed</strong></span>
             </div>
         </div>
+    </main>
 
-        <!-- Performance Metrics Dashboard -->
-        <div class="metrics-dashboard">
-            <div class="metric-card">
-                <div class="metric-value" id="fpsValue">60</div>
-                <div class="metric-label">FPS</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value" id="memoryValue">8</div>
-                <div class="metric-label">Memory (MB)</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value" id="latencyValue">0</div>
-                <div class="metric-label">Scroll Latency (ms)</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value" id="renderValue">0</div>
-                <div class="metric-label">Render Time (ms)</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value" id="visibleRowsValue">20</div>
-                <div class="metric-label">Visible Rows</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value" id="totalRowsValue">10000</div>
-                <div class="metric-label">Total Rows</div>
-            </div>
-        </div>
+    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="demo-bootstrap.js"></script>
+    <script>
+        (function () {
+            const PALETTE = ['#1f6feb', '#238636', '#a371f7', '#db6d28', '#cf222e', '#0969da'];
+            const { hash } = window.demoUtils;
 
-        <!-- Demo Area -->
-        <div class="demo-area">
-            <div class="scroll-container">
-                <div class="scroll-viewport" id="scrollViewport">
-                    <div class="scroll-content" id="scrollContent">
-                        <!-- Dynamic rows will be inserted here -->
-                    </div>
-                </div>
-            </div>
+            let variation = 'mixed';
+            let total = 100000;
 
-            <div class="performance-panel">
-                <div class="performance-section">
-                    <h3>Real-time Performance</h3>
-                    <ul class="performance-list">
-                        <li class="performance-item">
-                            <span class="performance-label">Current Row:</span>
-                            <span class="performance-value" id="currentRowValue">0</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Scroll Offset:</span>
-                            <span class="performance-value" id="scrollOffsetValue">0px</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Scroll %:</span>
-                            <span class="performance-value" id="scrollPercentValue">0%</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Start Row:</span>
-                            <span class="performance-value" id="startRowValue">0</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">End Row:</span>
-                            <span class="performance-value" id="endRowValue">20</span>
-                        </li>
-                    </ul>
-                </div>
-
-                <div class="performance-section">
-                    <h3>Memory Efficiency</h3>
-                    <ul class="performance-list">
-                        <li class="performance-item">
-                            <span class="performance-label">Total Memory:</span>
-                            <span class="performance-value" id="peakMemoryValue">8 MB</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Data Memory:</span>
-                            <span class="performance-value" id="dataMemoryValue">6 MB</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Virtualization Overhead:</span>
-                            <span class="performance-value" id="virtualizationOverheadValue">2 MB</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">DOM Elements:</span>
-                            <span class="performance-value" id="domElementsValue">20</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Memory Growth:</span>
-                            <span class="performance-value">O(1)</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Scroll Complexity:</span>
-                            <span class="performance-value">O(k)</span>
-                        </li>
-                    </ul>
-                </div>
-
-                <div class="performance-section">
-                    <h3>Scroll Performance</h3>
-                    <ul class="performance-list">
-                        <li class="performance-item">
-                            <span class="performance-label">Avg Latency:</span>
-                            <span class="performance-value" id="avgLatencyValue">0ms</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Total Events:</span>
-                            <span class="performance-value" id="totalEventsValue">0</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Events/sec:</span>
-                            <span class="performance-value" id="eventsPerSecValue">0</span>
-                        </li>
-                        <li class="performance-item">
-                            <span class="performance-label">Status:</span>
-                            <span class="performance-value">
-                                <span class="status-indicator status-good"></span>Optimal
-                            </span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <!-- Benchmark Results -->
-        <div class="benchmark-section">
-            <h2>Validation Benchmarks</h2>
-            <div class="benchmark-grid">
-                <div class="benchmark-card">
-                    <div class="benchmark-value" id="benchmarkFPS">--</div>
-                    <div class="benchmark-label">Sustained FPS</div>
-                </div>
-                <div class="benchmark-card">
-                    <div class="benchmark-value" id="benchmarkMemory">--</div>
-                    <div class="benchmark-label">Memory (MB)</div>
-                </div>
-                <div class="benchmark-card">
-                    <div class="benchmark-value" id="benchmarkLatency">--</div>
-                    <div class="benchmark-label">Latency (ms)</div>
-                </div>
-                <div class="benchmark-card">
-                    <div class="benchmark-value" id="benchmarkScalability">--</div>
-                    <div class="benchmark-label">Max Rows</div>
-                </div>
-            </div>
-            
-            <div class="export-controls">
-                <button class="export-button" id="exportCSV">Export CSV Data</button>
-                <button class="export-button" id="exportReport">Export Report</button>
-                <button class="export-button" id="captureScreenshot">Capture Screenshot</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Include CeriousScroll and Performance Monitor -->
-    <script type="module">
-        import { CeriousScroll } from '../dist/cerious-scroll.js';
-        import { PerformanceMonitor, DataGenerator, ScreenshotGenerator, BenchmarkRunner } from './performance-monitor.js';
-
-        class VanillaDemoApp {
-            constructor() {
-                this.scroller = null;
-                this.data = [];
-                this.performanceMonitor = new PerformanceMonitor();
-                this.benchmarkRunner = new BenchmarkRunner(this.performanceMonitor);
-                this.viewportHeight = 600;
-                this.lastMeasuredViewport = null; // Store the most recent measured viewport data
-                
-                // Detect mobile/tablet for safe defaults
-                this.isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                                (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-                
-                this.initializeElements();
-                this.bindEvents();
-                this.setMobileFriendlyDefaults();
-                this.generateInitialData();
+            function heightFor(index) {
+                if (variation === 'uniform') return 44;
+                if (variation === 'mixed') return [44, 64, 104][index % 3];
+                return 32 + Math.floor(hash(index, 7) * 120);
             }
 
-            initializeElements() {
-                // Control elements
-                this.datasetSizeSelect = document.getElementById('datasetSize');
-                this.heightVariationSelect = document.getElementById('heightVariation');
-                this.jumpToRowInput = document.getElementById('jumpToRow');
-                this.jumpToRowBtn = document.getElementById('jumpToRowBtn');
-                this.jumpToBeginningBtn = document.getElementById('jumpToBeginning');
-                this.jumpToEndBtn = document.getElementById('jumpToEnd');
-                this.generateDataBtn = document.getElementById('generateData');
-                this.runBenchmarkBtn = document.getElementById('runBenchmark');
-                this.exportDataBtn = document.getElementById('exportData');
-
-                // Display elements
-                this.scrollContainer = document.querySelector('.scroll-container');
-                this.scrollViewport = document.getElementById('scrollViewport');
-                this.scrollContent = document.getElementById('scrollContent');
-
-                // Metric elements
-                this.metricElements = {
-                    fps: document.getElementById('fpsValue'),
-                    memory: document.getElementById('memoryValue'),
-                    latency: document.getElementById('latencyValue'),
-                    render: document.getElementById('renderValue'),
-                    visibleRows: document.getElementById('visibleRowsValue'),
-                    totalRows: document.getElementById('totalRowsValue'),
-                    currentRow: document.getElementById('currentRowValue'),
-                    scrollOffset: document.getElementById('scrollOffsetValue'),
-                    scrollPercent: document.getElementById('scrollPercentValue'),
-                    startRow: document.getElementById('startRowValue'),
-                    endRow: document.getElementById('endRowValue'),
-                    peakMemory: document.getElementById('peakMemoryValue'),
-                    dataMemory: document.getElementById('dataMemoryValue'),
-                    virtualizationOverhead: document.getElementById('virtualizationOverheadValue'),
-                    domElements: document.getElementById('domElementsValue'),
-                    avgLatency: document.getElementById('avgLatencyValue'),
-                    totalEvents: document.getElementById('totalEventsValue'),
-                    eventsPerSec: document.getElementById('eventsPerSecValue')
-                };
-
-                // Export elements
-                this.exportCSVBtn = document.getElementById('exportCSV');
-                this.exportReportBtn = document.getElementById('exportReport');
-                this.captureScreenshotBtn = document.getElementById('captureScreenshot');
+            function render(index, container) {
+                const h = heightFor(index);
+                const color = PALETTE[index % PALETTE.length];
+                const row = document.createElement('div');
+                row.className = 'basic-row';
+                row.style.height = h + 'px';
+                row.style.borderLeftColor = color;
+                row.innerHTML =
+                    '<span class="basic-row__index">#' + index.toLocaleString() + '</span>' +
+                    '<span class="basic-row__bar" style="background:' + color + ';width:' + (30 + (index % 60)) + '%"></span>' +
+                    '<span class="basic-row__meta">' + h + 'px</span>';
+                container.appendChild(row);
             }
 
-            bindEvents() {
-                // Control events
-                this.generateDataBtn.addEventListener('click', () => this.generateData());
-                this.runBenchmarkBtn.addEventListener('click', () => this.runBenchmark());
-                this.exportDataBtn.addEventListener('click', () => this.exportData());
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: total,
+                render: render,
+                onViewport: (v) => {
+                    document.getElementById('stat').textContent =
+                        'top row ' + v.currentElement.toLocaleString() + ' · ' + v.percentage.toFixed(1) + '%';
+                },
+            });
 
-                // Navigation events
-                this.jumpToRowBtn.addEventListener('click', () => this.jumpToRow());
-                this.jumpToRowInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        this.jumpToRow();
-                    }
-                });
-                this.jumpToBeginningBtn.addEventListener('click', () => this.jumpToBeginning());
-                this.jumpToEndBtn.addEventListener('click', () => this.jumpToEnd());
-
-                this.startMetricsTimer();
-
-                // Wheel and touch events are now handled automatically by CeriousScroll
-
-                this.exportCSVBtn.addEventListener('click', () => this.benchmarkRunner.exportResults());
-                this.exportReportBtn.addEventListener('click', () => this.exportReport());
-                this.captureScreenshotBtn.addEventListener('click', () => ScreenshotGenerator.captureFullDemo());
-
-                window.demoInstance = this;
-            }
-
-            generateData() {
-                const size = parseInt(this.datasetSizeSelect.value);
-                const variation = this.heightVariationSelect.value;
-
-                // Warn on mobile for large datasets
-                if (this.isMobile && size > 10000) {
-                    if (!confirm(`⚠️ Generating ${size.toLocaleString()} rows on mobile may cause performance issues or crashes.\n\nRecommended maximum: 10,000 rows\n\nContinue anyway?`)) {
-                        return;
-                    }
-                }
-
-                this.generateDataBtn.textContent = 'Generating...';
-                this.generateDataBtn.disabled = true;
-
-                // Use setTimeout to allow UI update
-                setTimeout(() => {
-                    // Clean up old data and scroller instance FIRST
-                    this.cleanupOldData();
-                    
-                this.data = DataGenerator.generateDataset(size, variation);
-                                        
-                if (this.data._dataSizeMB) {
-                    this.performanceMonitor.setDataMemory(this.data._dataSizeMB, this.data._dataSizeFormatted);
-                }
-                
-                this.initializeScroller();
-                    this.updateDisplay();
-                    
-                    // NOW reset the baseline after everything is set up
-                    this.resetMemoryTrackingAfterDataSet();
-                    
-                    this.generateDataBtn.textContent = 'Generate';
-                    this.generateDataBtn.disabled = false;
-                }, 50);
-            }
-
-            cleanupOldData() {
-                if (this.scroller && typeof this.scroller.invalidateCache === 'function') {
-                    this.scroller.invalidateCache();
-                }
-                
-                this.scroller = null;
-                
-                if (this.data) {
-                    this.data.length = 0;
-                    this.data = null;
-                }
-                
-                if (window.gc) {
-                    window.gc();
-                }
-            }
-            
-            resetMemoryTrackingAfterDataSet() {
-                setTimeout(() => {
-                    this.performanceMonitor.captureBaselineMemory();
-                }, 100);
-            }
-
-            jumpToRow() {
-                const rowNumber = parseInt(this.jumpToRowInput.value);
-                if (isNaN(rowNumber) || rowNumber < 0 || rowNumber >= this.data.length) {
-                    alert(`Please enter a valid row number between 0 and ${this.data.length - 1}`);
-                    return;
-                }
-                
-                if (this.scroller) {
-                    console.log(`🎯 Go button: Jumping to row ${rowNumber}`);
-                    
-                    // For Go button, use precise positioning - jump directly to element
-                    this.scroller.jumpToElement(rowNumber);
-                    
-                    console.log(`🎯 After jump: currentElement=${this.scroller.currentElement}, scrollOffset=${this.scroller.scrollOffset}`);
-                    
-                    this.updateDisplay();
-                }
-            }
-
-            smartJumpToRow(targetRowIndex) {
-                const lastRowIndex = this.data.length - 1;
-                const isNearEnd = targetRowIndex >= (this.data.length * 0.8);
-                
-                if (!isNearEnd) {
-                    this.scroller.jumpToElement(targetRowIndex);
-                    return;
-                }
-                
-                let totalHeightToLastRow = 0;
-                for (let i = 0; i <= lastRowIndex; i++) {
-                    totalHeightToLastRow += this.scroller.getElementHeight(i);
-                }
-                
-                const optimalScrollPixel = Math.max(0, totalHeightToLastRow - this.viewportHeight);
-                
-                let accumulatedHeight = 0;
-                let optimalRow = 0;
-                let optimalOffset = 0;
-                
-                for (let i = 0; i < this.data.length; i++) {
-                    const rowHeight = this.scroller.getElementHeight(i);
-                    if (accumulatedHeight + rowHeight > optimalScrollPixel) {
-                        optimalRow = i;
-                        optimalOffset = optimalScrollPixel - accumulatedHeight;
-                        break;
-                    }
-                    accumulatedHeight += rowHeight;
-                }
-                
-                this.scroller.currentElement = optimalRow;
-                this.scroller.scrollOffset = optimalOffset;
-                this.scroller.updateDisplay();
-                
-                // Update scrollbar position to match the new scroll position
-                if (this.scroller._scrollbarContainer && !this.scroller._syncingScrollbar) {
-                    this.scroller.syncNativeScrollbar(this.scroller._scrollbarContainer);
-                }
-                
-                if (targetRowIndex < this.scroller.startElement || targetRowIndex > this.scroller.endElement) {
-                    this.scroller.jumpToElement(targetRowIndex);
-                }
-            }
-
-            jumpToBeginning() {
-                if (this.scroller) {
-                    this.scroller.jumpToElement(0);
-                    this.updateDisplay();
-                }
-            }
-
-            jumpToEnd() {
-                if (this.scroller && this.data.length > 0) {
-                    const lastIndex = this.data.length - 1;
-                    console.log(`🔍 Jumping to end: lastIndex=${lastIndex}, data.length=${this.data.length}`);
-                    
-                    // Jump to the absolute last element
-                    this.scroller.jumpToElement(lastIndex);
-                    
-                    console.log(`🔍 After jumpToElement: currentElement=${this.scroller.currentElement}, startElement=${this.scroller.startElement}, endElement=${this.scroller.endElement}`);
-                    
-                    this.updateDisplay();
-                }
-            }
-
-            generateInitialData() {
-                // Use smaller dataset for mobile devices to prevent crashes
-                const initialSize = this.isMobile ? 50 : 100;
-                this.data = DataGenerator.generateDataset(initialSize, 'mixed');
-                
-                if (this.data._dataSizeMB) {
-                    this.performanceMonitor.setDataMemory(this.data._dataSizeMB, this.data._dataSizeFormatted);
-                }
-                
-                this.initializeScroller();
-                this.updateDisplay();
-            }
-
-            setMobileFriendlyDefaults() {
-                if (this.isMobile) {
-                    // Set safer defaults for mobile/tablet devices
-                    this.datasetSizeSelect.value = '100';
-                    // Remove very large dataset options on mobile
-                    const options = this.datasetSizeSelect.options;
-                    for (let i = options.length - 1; i >= 0; i--) {
-                        const value = parseInt(options[i].value);
-                        if (value > 100000) {
-                            options[i].disabled = true;
-                            options[i].text = options[i].text + ' (Desktop only)';
-                        }
-                    }
-                    
-                    // Add mobile indicator
-                    const header = document.querySelector('.header');
-                    if (header) {
-                        const notice = document.createElement('p');
-                        notice.className = 'subtitle';
-                        notice.style.fontSize = '0.9em';
-                        notice.style.color = '#ffa500';
-                        notice.textContent = '📱 Mobile-optimized settings applied for best performance';
-                        header.appendChild(notice);
-                    }
-                }
-            }
-
-            async updateData(newData) {                
-                this.cleanupOldData();
-                
-                this.data = newData;
-                
-                if (this.data._dataSizeMB) {
-                    this.performanceMonitor.setDataMemory(this.data._dataSizeMB, this.data._dataSizeFormatted);
-                }
-                
-                this.initializeScroller();
-                this.updateDisplay();
-                
-                const rowCountInput = document.getElementById('rowCount');
-                if (rowCountInput) {
-                    rowCountInput.value = newData.length;
-                }
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            initializeScroller() {
-                const container = document.querySelector('.scroll-container'); // Changed from .scroll-viewport
-                
-                this.scroller = new CeriousScroll(
-                    container,
-                    this.data.length,
-                    {
-                        keyboard: {
-                            enabled: true,
-                            arrowKeySpeed: 120,
-                            pageKeySpeed: 1.0,
-                            onKeyDown: (event, scroller) => {
-                                // Custom keyboard handler - can add logging or custom behavior
-                                console.log(`Keyboard navigation: ${event.key}`);
-                                // Return false to let CeriousScroll handle the event
-                                return false;
-                            }
-                        },
-                        wheel: { enabled: true },
-                        touch: { 
-                            enabled: true,
-                            enableMomentum: true,
-                            momentumFriction: 0.95
-                        },
-                        onScroll: () => {
-                            // Track performance metrics
-                            this.performanceMonitor.startScrollMeasurement();
-                            this.updateDisplay();
-                            this.performanceMonitor.endScrollMeasurement();
-                            
-                            // Record benchmark data
-                            this.performanceMonitor.recordBenchmark(
-                                this.data.length,
-                                this.scroller.scrollPercentage,
-                                this.scroller.endElement - this.scroller.startElement
-                            );
-                        }
-                    }
-                );
-            }
-
-            updateDisplay() {
-                if (!this.scroller) return;
-
-                this.performanceMonitor.startRenderMeasurement();
-
-                const measuredViewport = this.scroller.renderViewport(
-                    this.viewportHeight, 
-                    this.scrollContent,
-                    (index, container) => {
-                        const item = this.data[index];
-                        const rowElement = document.createElement('div');
-                        rowElement.className = `row-item ${item.type}`;
-                        rowElement.style.position = 'relative';
-                        rowElement.style.left = '0';
-                        rowElement.style.right = '0';
-                        rowElement.style.height = `${item.height}px`;
-                        
-                        rowElement.innerHTML = `
-                            <div class="row-content">
-                                <div class="row-index">#${item.id}</div>
-                                <div class="row-text">${item.text}</div>
-                                ${item.type === 'massive' ? '<div style="margin-top: 10px; font-style: italic; color: #666;">⚠️ This element is larger than most viewports!</div>' : ''}
-                                ${item.type === 'extra-large' ? '<div style="margin-top: 8px; font-style: italic; color: #666;">📏 Large content section</div>' : ''}
-                            </div>
-                            <div class="row-height">Set: ${item.height}px</div>
-                        `;
-                        
-                        container.appendChild(rowElement);
-                        
-                        const measuredHeight = rowElement.offsetHeight || rowElement.getBoundingClientRect().height || item.height;
-
-                        const heightDisplay = rowElement.querySelector('.row-height');
-                        if (heightDisplay) {
-                            heightDisplay.textContent = `Measured: ${measuredHeight}px`;
-                        }
-                    }
-                );
-
-                this.jumpToRowInput.max = this.data.length - 1;
-
-                this.performanceMonitor.endRenderMeasurement();
-                this.lastMeasuredViewport = measuredViewport;
-                this.updateMetrics(measuredViewport);
-            }
-
-            updateMetrics(measuredViewport = null) {
-                const metrics = this.performanceMonitor.getMetrics();
-                
-                this.metricElements.fps.textContent = metrics.fps;
-                this.metricElements.memory.textContent = metrics.memoryUsage;
-                this.metricElements.latency.textContent = metrics.scrollLatency;
-                this.metricElements.render.textContent = metrics.renderTime;
-                
-                if (this.scroller) {
-                    const totalRows = this.data.length;
-                    let decimalPlaces = 3;
-                    
-                    if (totalRows >= 10000000) {
-                        decimalPlaces = 8;
-                    } else if (totalRows >= 1000000) {
-                        decimalPlaces = 6;
-                    } else if (totalRows >= 100000) {
-                        decimalPlaces = 5;
-                    } else if (totalRows >= 10000) {
-                        decimalPlaces = 4;
-                    }
-                    
-                    if (measuredViewport) {
-                        this.metricElements.visibleRows.textContent = measuredViewport.renderedElements.length;
-                        this.metricElements.startRow.textContent = measuredViewport.startElement;
-                        this.metricElements.endRow.textContent = measuredViewport.endElement;
-                        this.metricElements.scrollPercent.textContent = `${measuredViewport.scrollPercentage.toFixed(decimalPlaces)}%`;
-                    } else {
-                        this.metricElements.visibleRows.textContent = Math.max(0, this.scroller.endElement - this.scroller.startElement + 1);
-                        this.metricElements.startRow.textContent = this.scroller.startElement;
-                        this.metricElements.endRow.textContent = this.scroller.endElement;
-                        this.metricElements.scrollPercent.textContent = `${this.scroller.scrollPercentage.toFixed(decimalPlaces)}%`;
-                    }
-                    
-                    this.metricElements.totalRows.textContent = this.data.length.toLocaleString();
-                    this.metricElements.currentRow.textContent = this.scroller.currentElement;
-                    this.metricElements.scrollOffset.textContent = `${Math.round(this.scroller.scrollOffset)}px`;
-                }
-                
-                this.metricElements.peakMemory.textContent = metrics.totalMemoryFormatted;
-                this.metricElements.dataMemory.textContent = metrics.dataSizeFormatted;
-                this.metricElements.virtualizationOverhead.textContent = metrics.virtualizationOverheadFormatted;
-                this.metricElements.domElements.textContent = this.scrollContent.children.length;
-                this.metricElements.avgLatency.textContent = `${metrics.averageScrollLatency}ms`;
-                this.metricElements.totalEvents.textContent = metrics.totalScrollEvents;
-                this.metricElements.eventsPerSec.textContent = metrics.scrollEventsPerSecond;
-            }
-
-            startMetricsTimer() {
-                this.metricsInterval = setInterval(() => {
-                    this.updateMetrics(this.lastMeasuredViewport);
-                }, 100);
-            }
-
-            async runBenchmark() {
-                this.runBenchmarkBtn.textContent = 'Running...';
-                this.runBenchmarkBtn.disabled = true;
-
-                try {
-                    const results = await this.benchmarkRunner.runBenchmarkSuite(
-                        this.scroller,
-                        (progress) => {
-                            this.runBenchmarkBtn.textContent = `Running... ${progress.current}/${progress.total}`;
-                        }
-                    );
-
-                    if (results && results.length > 0) {
-                        const bestFPS = Math.max(...results.map(r => r.fps));
-                        const lowestMemory = Math.min(...results.map(r => r.memoryUsage));
-                        const bestLatency = Math.min(...results.map(r => r.averageScrollLatency));
-                        const maxDataset = Math.max(...results.map(r => r.datasetSize));
-                        
-                        document.getElementById('benchmarkFPS').textContent = Math.round(bestFPS);
-                        document.getElementById('benchmarkMemory').textContent = Math.round(lowestMemory);
-                        document.getElementById('benchmarkLatency').textContent = `<${Math.round(bestLatency * 10) / 10}`;
-                        
-                        document.getElementById('benchmarkScalability').textContent = '∞';
-                    } else {
-                        document.getElementById('benchmarkFPS').textContent = '--';
-                        document.getElementById('benchmarkMemory').textContent = '--';
-                        document.getElementById('benchmarkLatency').textContent = '--';
-                        document.getElementById('benchmarkScalability').textContent = '--';
-                    }
-
-                } catch (error) {
-                    console.error('Benchmark failed:', error);
-                } finally {
-                    this.runBenchmarkBtn.textContent = 'Run Benchmark';
-                    this.runBenchmarkBtn.disabled = false;
-                }
-            }
-
-            exportData() {
-                this.benchmarkRunner.exportResults();
-            }
-
-            exportReport() {
-                const report = this.performanceMonitor.generatePerformanceReport();
-                const reportJSON = JSON.stringify(report, null, 2);
-                
-                const blob = new Blob([reportJSON], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `cerious-scroll-report-${Date.now()}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
-        }
-
-        // Initialize the demo app
-        window.addEventListener('DOMContentLoaded', () => {
-            new VanillaDemoApp();
-        });
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                demo.setTotal(total);
+            });
+            document.getElementById('var').addEventListener('change', (e) => {
+                variation = e.target.value;
+                document.getElementById('modeLabel').textContent = variation;
+                demo.refresh();
+            });
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) demo.jumpTo(i);
+            });
+            document.getElementById('topBtn').addEventListener('click', () => demo.scrollToPercentage(0));
+            document.getElementById('endBtn').addEventListener('click', () => demo.scrollToPercentage(100));
+        })();
     </script>
 </body>
 </html>

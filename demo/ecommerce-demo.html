@@ -1,538 +1,134 @@
 <!DOCTYPE html>
-<html lang="en" style="overflow: hidden; height: 100%;">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-Commerce Product Catalog - CeriousScroll Demo</title>
-    <script>
-        // Mobile detection for performance optimization
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-    </script>
+    <title>Product Catalog · Cerious-Scroll</title>
     <link rel="stylesheet" href="shared-styles.css">
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        body {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .demo-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 2rem;
-            color: white;
-            flex-shrink: 0;
-        }
-
-        .demo-title {
-            font-size: 2rem;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-        }
-
-        .demo-subtitle {
-            font-size: 1rem;
-            opacity: 0.9;
-        }
-
-        .controls {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin: 0 1rem 1rem 1rem;
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            align-items: center;
-            flex-shrink: 0;
-        }
-
-        .search-box {
-            flex: 1;
-            min-width: 200px;
-            padding: 0.5rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 6px;
-            font-size: 1rem;
-        }
-
-        .search-box:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .filter-group {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
-
-        .filter-btn {
-            padding: 0.5rem 1rem;
-            border: 2px solid #e2e8f0;
-            background: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .filter-btn:hover {
-            border-color: #667eea;
-            color: #667eea;
-        }
-
-        .filter-btn.active {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-
-        .stats {
-            display: flex;
-            gap: 2rem;
-            font-size: 0.9rem;
-            color: #64748b;
-        }
-
-        .product-card {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin: 1rem 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            display: flex;
-            gap: 1.5rem;
-            transition: all 0.3s;
-        }
-
-        .product-card:hover {
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-            transform: translateY(-2px);
-        }
-
-        .product-image {
-            width: 150px;
-            height: 150px;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 3rem;
-            flex-shrink: 0;
-        }
-
-        .product-details {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .product-category {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            color: #667eea;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-        }
-
-        .product-name {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #1e293b;
-            margin: 0;
-        }
-
-        .product-description {
-            color: #64748b;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        .product-features {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            margin-top: 0.5rem;
-        }
-
-        .feature-tag {
-            padding: 0.25rem 0.75rem;
-            background: #f1f5f9;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            color: #475569;
-        }
-
-        .product-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid #e2e8f0;
-        }
-
-        .product-price {
-            font-size: 1.75rem;
-            font-weight: bold;
-            color: #667eea;
-        }
-
-        .product-price-old {
-            font-size: 1rem;
-            text-decoration: line-through;
-            color: #94a3b8;
-            margin-left: 0.5rem;
-        }
-
-        .product-rating {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: #64748b;
-            font-size: 0.9rem;
-        }
-
-        .stars {
-            color: #fbbf24;
-        }
-
-        .add-to-cart-btn {
-            padding: 0.75rem 1.5rem;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .add-to-cart-btn:hover {
-            background: #5568d3;
-            transform: scale(1.05);
-        }
-
-        .add-to-cart-btn:active {
-            transform: scale(0.95);
-        }
-
-        .cart-indicator {
-            position: fixed;
-            top: 2rem;
-            right: 2rem;
-            background: white;
-            padding: 1rem 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-weight: 600;
-            z-index: 1000;
-        }
-
-        .cart-count {
-            background: #667eea;
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.9rem;
-        }
-
-        #viewport {
-            flex: 1;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #f8fafc;
-            position: relative;
-            margin: 0 1rem 1rem 1rem;
-            min-height: 0;
-        }
-
-        #scrollContent {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            pointer-events: none;
-            overflow: visible;
-        }
-
-        #scrollContent > * {
-            pointer-events: auto;
-        }
-
-        .product-card {
-            pointer-events: auto;
-        }
-
-        @media (max-width: 768px) {
-            .product-card {
-                flex-direction: column;
-            }
-
-            .product-image {
-                width: 100%;
-                height: 200px;
-            }
-
-            .controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-        }
-    </style>
 </head>
 <body>
-    <div class="demo-header">
-        <div class="demo-title">🛒 E-Commerce Product Catalog</div>
-        <div class="demo-subtitle">Smooth scrolling through 50,000+ products with CeriousScroll</div>
-    </div>
+    <header class="topbar" data-auto-topbar></header>
 
-    <div class="controls">
-        <input type="text" class="search-box" id="searchBox" placeholder="Search products...">
-        
-        <div class="filter-group">
-            <button class="filter-btn active" data-category="all">All</button>
-            <button class="filter-btn" data-category="electronics">Electronics</button>
-            <button class="filter-btn" data-category="fashion">Fashion</button>
-            <button class="filter-btn" data-category="home">Home</button>
-            <button class="filter-btn" data-category="sports">Sports</button>
-            <button class="filter-btn" data-category="books">Books</button>
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🛍️ Product Catalog</h1>
+                <p>50,000 products with ratings and add-to-cart.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <span class="stat">🛒 Cart: <strong id="cartCount">0</strong> <span id="cartLabel">items</span></span>
+                <span class="spacer"></span>
+                <button id="clearBtn" type="button" disabled>Clear cart</button>
+            </div>
+
+            <div class="demo-scroll shop-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>In cart: <strong id="cartCount2">0</strong></span>
+                <span>Click "Add to cart" on any product</span>
+            </div>
         </div>
-
-        <div class="stats">
-            <span>📦 <strong id="productCount">50,000</strong> products</span>
-        </div>
-    </div>
-
-    <div class="cart-indicator">
-        🛒 Cart: <span class="cart-count" id="cartCount">0</span>
-    </div>
-
-    <div id="viewport"></div>
+    </main>
 
     <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="demo-bootstrap.js"></script>
     <script>
-        // Handle bundle export format
-        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
-        
-        // Product data generator
-        const categories = [
-            { name: 'electronics', icon: '📱', items: ['Smartphone', 'Laptop', 'Tablet', 'Smartwatch', 'Headphones', 'Camera', 'Speaker', 'Monitor'] },
-            { name: 'fashion', icon: '👔', items: ['T-Shirt', 'Jeans', 'Dress', 'Jacket', 'Shoes', 'Bag', 'Watch', 'Sunglasses'] },
-            { name: 'home', icon: '🏠', items: ['Chair', 'Table', 'Lamp', 'Rug', 'Cushion', 'Curtain', 'Mirror', 'Plant'] },
-            { name: 'sports', icon: '⚽', items: ['Running Shoes', 'Yoga Mat', 'Dumbbells', 'Tennis Racket', 'Bicycle', 'Swimsuit', 'Basketball', 'Fitness Tracker'] },
-            { name: 'books', icon: '📚', items: ['Novel', 'Cookbook', 'Biography', 'Textbook', 'Magazine', 'Comic', 'Dictionary', 'Journal'] }
-        ];
+        (function () {
+            const SHOP_TOTAL = 50000;
+            const ADJ = ['Wireless', 'Ergonomic', 'Premium', 'Compact', 'Pro', 'Ultra', 'Smart', 'Eco', 'Vintage', 'Rugged'];
+            const NOUN = ['Headphones', 'Keyboard', 'Mouse', 'Monitor', 'Webcam', 'Desk Lamp', 'Backpack', 'Water Bottle', 'Notebook', 'Charger'];
+            const CATS = ['Electronics', 'Home & Office', 'Accessories', 'Outdoors', 'Audio', 'Computing'];
+            const EMOJI = ['🎧', '⌨️', '🖱️', '🖥️', '📷', '💡', '🎒', '🍶', '📓', '🔌'];
+            const GRADS = [
+                'linear-gradient(135deg,#667eea,#764ba2)',
+                'linear-gradient(135deg,#f093fb,#f5576c)',
+                'linear-gradient(135deg,#4facfe,#00f2fe)',
+                'linear-gradient(135deg,#43e97b,#38f9d7)',
+                'linear-gradient(135deg,#fa709a,#fee140)',
+                'linear-gradient(135deg,#30cfd0,#330867)',
+            ];
+            const { hash, randInt, pick } = window.demoUtils;
 
-        const adjectives = ['Premium', 'Deluxe', 'Professional', 'Classic', 'Modern', 'Vintage', 'Eco-Friendly', 'Luxury', 'Essential', 'Ultra'];
-        const features = ['Free Shipping', 'Fast Delivery', 'Bestseller', 'New Arrival', 'Limited Edition', 'Sale', 'Top Rated', 'Eco-Friendly'];
-
-        function generateProduct(index) {
-            const category = categories[index % categories.length];
-            const item = category.items[Math.floor(index / categories.length) % category.items.length];
-            const adjective = adjectives[index % adjectives.length];
-            
-            const price = (Math.random() * 500 + 20).toFixed(2);
-            const oldPrice = (parseFloat(price) * (1 + Math.random() * 0.3)).toFixed(2);
-            const rating = (Math.random() * 2 + 3).toFixed(1);
-            const reviews = Math.floor(Math.random() * 5000 + 50);
-            
-            // Variable length descriptions
-            const descLength = index % 3;
-            let description = `High-quality ${adjective.toLowerCase()} ${item.toLowerCase()} with excellent features.`;
-            if (descLength === 1) {
-                description += ` Perfect for everyday use and special occasions. Made with premium materials that ensure durability.`;
-            } else if (descLength === 2) {
-                description += ` Perfect for everyday use and special occasions. Made with premium materials that ensure durability. Features innovative design and superior craftsmanship. Backed by our satisfaction guarantee.`;
+            function makeProduct(index) {
+                const n = index % NOUN.length;
+                return {
+                    name: pick(ADJ, index, 1) + ' ' + NOUN[n],
+                    category: pick(CATS, index, 2),
+                    price: Math.round((hash(index, 3) * 280 + 9.99) * 100) / 100,
+                    rating: Math.round((3 + hash(index, 4) * 2) * 10) / 10,
+                    reviews: randInt(index, 12, 9800, 5),
+                    emoji: EMOJI[n],
+                    gradient: GRADS[index % GRADS.length],
+                    inStock: index % 11 !== 0,
+                    prime: index % 3 === 0,
+                };
             }
-            
-            const productFeatures = [];
-            const numFeatures = Math.floor(Math.random() * 4) + 2;
-            for (let i = 0; i < numFeatures; i++) {
-                productFeatures.push(features[(index + i) % features.length]);
+            function stars(rating) {
+                const full = Math.round(rating);
+                return '★★★★★'.slice(0, full) + '☆☆☆☆☆'.slice(0, 5 - full);
             }
-            
-            return {
-                id: index,
-                category: category.name,
-                icon: category.icon,
-                name: `${adjective} ${item}`,
-                description,
-                price,
-                oldPrice,
-                rating,
-                reviews,
-                features: productFeatures
-            };
-        }
-
-        // State management
-        let currentFilter = 'all';
-        let searchQuery = '';
-        let cartItems = 0;
-        const TOTAL_PRODUCTS = isMobile ? 5000 : 50000;
-
-        function matchesFilter(index) {
-            const product = generateProduct(index);
-            
-            // Category filter
-            if (currentFilter !== 'all' && product.category !== currentFilter) {
-                return false;
+            function escapeHtml(s) {
+                return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             }
-            
-            // Search filter
-            if (searchQuery) {
-                const query = searchQuery.toLowerCase();
-                return product.name.toLowerCase().includes(query) || 
-                       product.description.toLowerCase().includes(query);
-            }
-            
-            return true;
-        }
 
-        function getFilteredIndices() {
-            const indices = [];
-            for (let i = 0; i < TOTAL_PRODUCTS; i++) {
-                if (matchesFilter(i)) {
-                    indices.push(i);
+            const cart = new Set();
+
+            function updateCart() {
+                const n = cart.size;
+                document.getElementById('cartCount').textContent = n;
+                document.getElementById('cartCount2').textContent = n;
+                document.getElementById('cartLabel').textContent = n === 1 ? 'item' : 'items';
+                document.getElementById('clearBtn').disabled = n === 0;
+            }
+
+            function render(i, container) {
+                const p = makeProduct(i);
+                const row = document.createElement('div');
+                row.className = 'product';
+                let aside;
+                if (!p.inStock) {
+                    aside = '<div class="product__stock">Out of stock</div>';
+                } else {
+                    const inCart = cart.has(i);
+                    aside = '<button type="button" class="product__add' + (inCart ? ' in-cart' : '') + '" data-add="' + i + '">' +
+                        (inCart ? 'In cart ✓' : 'Add to cart') + '</button>';
                 }
+                row.innerHTML =
+                    '<div class="product__img" style="background:' + p.gradient + '">' + p.emoji + '</div>' +
+                    '<div class="product__body">' +
+                        '<div class="product__name">' + escapeHtml(p.name) + '</div>' +
+                        '<div class="product__cat">' + escapeHtml(p.category) + '</div>' +
+                        '<div class="product__rating">' + stars(p.rating) +
+                            ' <small>' + p.rating.toFixed(1) + ' · ' + p.reviews.toLocaleString() + ' reviews</small>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="product__aside">' +
+                        '<div class="product__price">$' + p.price.toFixed(2) + '</div>' +
+                        (p.prime ? '<div class="product__prime">✓ Prime</div>' : '') +
+                        aside +
+                    '</div>';
+                container.appendChild(row);
             }
-            return indices;
-        }
 
-        let filteredIndices = getFilteredIndices();
-
-        // Render function
-        function renderProduct(filteredIndex, element) {
-            const actualIndex = filteredIndices[filteredIndex];
-            const product = generateProduct(actualIndex);
-            
-            const stars = '⭐'.repeat(Math.floor(product.rating));
-            
-            element.innerHTML = `
-                <div class="product-card" data-product-id="${product.id}">
-                    <div class="product-image">${product.icon}</div>
-                    <div class="product-details">
-                        <div class="product-category">${product.category}</div>
-                        <h3 class="product-name">${product.name}</h3>
-                        <p class="product-description">${product.description}</p>
-                        <div class="product-features">
-                            ${product.features.map(f => `<span class="feature-tag">${f}</span>`).join('')}
-                        </div>
-                        <div class="product-footer">
-                            <div>
-                                <span class="product-price">$${product.price}</span>
-                                <span class="product-price-old">$${product.oldPrice}</span>
-                            </div>
-                            <div class="product-rating">
-                                <span class="stars">${stars}</span>
-                                <span>${product.rating} (${product.reviews.toLocaleString()})</span>
-                            </div>
-                            <button class="add-to-cart-btn" onclick="addToCart(${product.id})">
-                                Add to Cart
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Setup viewport
-        const viewport = document.getElementById('viewport');
-        viewport.innerHTML = '';
-        const scrollContent = document.createElement('div');
-        scrollContent.id = 'scrollContent';
-        viewport.appendChild(scrollContent);
-
-        // Initialize CeriousScroll
-        const scroller = new CeriousScrollClass(
-            viewport,
-            filteredIndices.length,
-            {
-                onScroll: () => {
-                    scroller.renderViewport(
-                        viewport.clientHeight,
-                        scrollContent,
-                        renderProduct
-                    );
-                }
-            }
-        );
-
-        // Initial render
-        scroller.jumpToElement(0);
-        scroller.renderViewport(viewport.clientHeight, scrollContent, renderProduct);
-
-        // Add to cart functionality
-        window.addToCart = function(productId) {
-            cartItems++;
-            document.getElementById('cartCount').textContent = cartItems;
-            
-            // Visual feedback
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = '✓ Added';
-            btn.style.background = '#10b981';
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.style.background = '';
-            }, 1000);
-        };
-
-        // Search functionality
-        let searchTimeout;
-        document.getElementById('searchBox').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                searchQuery = e.target.value;
-                filteredIndices = getFilteredIndices();
-                scroller.updateDataset(filteredIndices.length);
-                scroller.jumpToElement(0);
-                scrollContent.innerHTML = '';
-                scroller.renderViewport(viewport.clientHeight, scrollContent, renderProduct);
-                document.getElementById('productCount').textContent = filteredIndices.length.toLocaleString();
-            }, 300);
-        });
-
-        // Category filter
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentFilter = btn.dataset.category;
-                filteredIndices = getFilteredIndices();
-                scroller.updateDataset(filteredIndices.length);
-                scroller.jumpToElement(0);
-                scrollContent.innerHTML = '';
-                scroller.renderViewport(viewport.clientHeight, scrollContent, renderProduct);
-                document.getElementById('productCount').textContent = filteredIndices.length.toLocaleString();
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: SHOP_TOTAL,
+                render: render,
             });
-        });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === '/') {
-                e.preventDefault();
-                document.getElementById('searchBox').focus();
-            }
-        });
-
-        console.log('E-Commerce Demo initialized with', TOTAL_PRODUCTS.toLocaleString(), 'products');
-        console.log('Press "/" to focus search box');
+            document.getElementById('scroll').addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-add]');
+                if (!btn) return;
+                const i = parseInt(btn.dataset.add, 10);
+                if (cart.has(i)) cart.delete(i); else cart.add(i);
+                updateCart();
+                demo.refresh();
+            });
+            document.getElementById('clearBtn').addEventListener('click', () => {
+                cart.clear(); updateCart(); demo.refresh();
+            });
+        })();
     </script>
 </body>
 </html>

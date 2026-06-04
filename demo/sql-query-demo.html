@@ -3,922 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CeriousScroll - SQL Query Results Viewer</title>
-    <script>
-        // Mobile detection for performance optimization
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                        (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
-    </script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            overflow: hidden;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        .header {
-            background: #323233;
-            padding: 10px 16px;
-            border-bottom: 1px solid #2d2d30;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .header h1 {
-            font-size: 14px;
-            font-weight: 500;
-            color: #cccccc;
-        }
-        .stats {
-            display: flex;
-            gap: 20px;
-            font-size: 11px;
-        }
-        .stat {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .stat-label {
-            color: #858585;
-        }
-        .stat-value {
-            font-weight: 600;
-            color: #4fc1ff;
-        }
-        
-        .query-panel {
-            background: #252526;
-            border-bottom: 1px solid #2d2d30;
-            padding: 12px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .query-editor {
-            background: #1e1e1e;
-            border: 1px solid #3e3e42;
-            border-radius: 3px;
-            padding: 10px;
-            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-            font-size: 13px;
-            color: #d4d4d4;
-            resize: vertical;
-            min-height: 80px;
-            max-height: 200px;
-        }
-        .query-controls {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .query-controls label {
-            font-size: 11px;
-            color: #cccccc;
-        }
-        .query-controls select {
-            padding: 5px 10px;
-            background: #3c3c3c;
-            color: #cccccc;
-            border: 1px solid #3e3e42;
-            border-radius: 3px;
-            font-size: 12px;
-        }
-        .btn {
-            padding: 6px 16px;
-            background: #0e639c;
-            color: white;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: background 0.2s;
-        }
-        .btn:hover {
-            background: #1177bb;
-        }
-        .btn:disabled {
-            background: #3e3e42;
-            color: #858585;
-            cursor: not-allowed;
-        }
-        .btn-secondary {
-            background: #3c3c3c;
-            border: 1px solid #3e3e42;
-        }
-        .btn-secondary:hover {
-            background: #4c4c4c;
-        }
-        
-        .results-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background: #1e1e1e;
-        }
-        .results-header {
-            background: #2d2d30;
-            padding: 8px 16px;
-            border-bottom: 1px solid #3e3e42;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .results-info {
-            font-size: 12px;
-            color: #cccccc;
-        }
-        .results-actions {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .table-wrapper {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-            min-height: 0;
-            overflow: hidden;
-        }
-        .table-header {
-            display: flex;
-            background: #2d2d30;
-            border-bottom: 2px solid #0e639c;
-            flex-shrink: 0;
-            min-width: fit-content;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        .column-header {
-            padding: 8px 12px;
-            font-size: 11px;
-            font-weight: 600;
-            color: #cccccc;
-            text-transform: uppercase;
-            border-right: 1px solid #3e3e42;
-            min-width: 120px;
-            width: 150px;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            user-select: none;
-        }
-        .column-header:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-        .column-header .type-badge {
-            font-size: 9px;
-            padding: 2px 4px;
-            background: rgba(14, 99, 156, 0.3);
-            border-radius: 2px;
-            color: #4fc1ff;
-            font-weight: 500;
-        }
-        .column-header .sort-indicator {
-            margin-left: auto;
-            font-size: 10px;
-            color: #4fc1ff;
-        }
-        
-        .results-viewport {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-            min-width: 0;
-        }
-        /* Horizontal scroll wrapper inside the cerious-scroll container so
-         * the sibling vertical scrollbar strip stays pinned to the visible
-         * right edge while header + virtual rows shift together. */
-        .results-hscroll {
-            position: absolute;
-            inset: 0;
-            overflow-x: auto;
-            overflow-y: hidden;
-        }
-        .scroll-content {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: max-content;
-            min-width: 100%;
-        }
-        .result-row {
-            display: flex;
-            border-bottom: 1px solid #2d2d30;
-            min-height: 32px;
-            min-width: fit-content;
-        }
-        .result-row:hover {
-            background: rgba(255, 255, 255, 0.03);
-        }
-        .result-row.striped {
-            background: rgba(255, 255, 255, 0.02);
-        }
-        .result-row.striped:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-        .result-cell {
-            padding: 8px 12px;
-            font-size: 12px;
-            font-family: 'Monaco', 'Menlo', monospace;
-            color: #d4d4d4;
-            border-right: 1px solid #2d2d30;
-            min-width: 120px;
-            width: 150px;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            word-break: break-word;
-        }
-        .result-cell.null {
-            color: #858585;
-            font-style: italic;
-        }
-        .result-cell.number {
-            color: #b5cea8;
-            justify-content: flex-end;
-        }
-        .result-cell.string {
-            color: #ce9178;
-        }
-        .result-cell.boolean {
-            color: #569cd6;
-        }
-        .result-cell.date {
-            color: #4ec9b0;
-        }
-        
-        .status-bar {
-            background: #007acc;
-            padding: 4px 16px;
-            font-size: 11px;
-            color: white;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .loading-overlay.active {
-            display: flex;
-        }
-        .loading-content {
-            background: #2d2d30;
-            padding: 30px 50px;
-            border-radius: 4px;
-            text-align: center;
-            border: 1px solid #3e3e42;
-        }
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #3e3e42;
-            border-top-color: #0e639c;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: #858585;
-            font-size: 14px;
-        }
-        .empty-state svg {
-            width: 64px;
-            height: 64px;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-    </style>
+    <title>SQL Results · Cerious-Scroll</title>
+    <link rel="stylesheet" href="shared-styles.css">
 </head>
 <body>
-    <div class="header">
-        <h1>SQL Query Results Viewer</h1>
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-label">FPS:</span>
-                <span class="stat-value" id="fps">60</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Latency:</span>
-                <span class="stat-value" id="latency">1ms</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Rows:</span>
-                <span class="stat-value" id="rowCount">0</span>
-            </div>
-        </div>
-    </div>
+    <header class="topbar" data-auto-topbar></header>
 
-    <div class="query-panel">
-        <textarea class="query-editor" id="queryEditor" placeholder="Enter SQL query...">SELECT * FROM transactions ORDER BY created_at DESC LIMIT 100000</textarea>
-        <div class="query-controls">
-            <label>Sample Query:</label>
-            <select id="sampleQuery">
-                <option value="">-- Select a sample query --</option>
-                <option value="transactions">100K Transactions</option>
-                <option value="users">500K User Records</option>
-                <option value="logs">1M Application Logs</option>
-                <option value="orders">250K E-commerce Orders</option>
-            </select>
-            <button class="btn" id="executeBtn">Execute Query</button>
-            <button class="btn btn-secondary" id="clearBtn">Clear Results</button>
-            <div style="margin-left: auto; display: flex; gap: 8px;">
-                <button class="btn btn-secondary" id="exportCsvBtn" disabled>Export CSV</button>
-                <button class="btn btn-secondary" id="exportJsonBtn" disabled>Export JSON</button>
+    <main class="content">
+        <div class="demo-page sql-page">
+            <div class="demo-page__header">
+                <h1>🗄️ SQL Results</h1>
+                <p>200,000 rows returned — click a row to select it.</p>
             </div>
-        </div>
-    </div>
 
-    <div class="results-container">
-        <div class="results-header">
-            <div class="results-info" id="resultsInfo">No query executed</div>
-            <div class="results-actions">
-                <input type="text" id="searchInput" placeholder="Search results..." style="padding: 4px 8px; background: #3c3c3c; border: 1px solid #3e3e42; border-radius: 3px; color: #cccccc; font-size: 11px; width: 200px;">
+<pre class="sql-editor"><span class="kw">SELECT</span> id, customer, product, amount, status, created_at
+<span class="kw">FROM</span>   orders
+<span class="kw">WHERE</span>  amount &gt; 0
+<span class="kw">ORDER BY</span> created_at <span class="kw">DESC</span>;</pre>
+
+            <div class="demo-toolbar">
+                <span class="stat">✓ <strong>200,000</strong> rows · 0.024s</span>
+                <span class="spacer"></span>
+                <span class="stat">Selected row: <strong id="selectedLabel">—</strong></span>
             </div>
-        </div>
-        
-        <div class="table-wrapper">
-            <div class="table-header" id="tableHeader"></div>
-            <div class="results-viewport" id="resultsViewport">
-                <div class="empty-state">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                    </svg>
-                    <div>Execute a query to see results</div>
+
+            <div class="demo-scroll sql-scroll" id="scroll">
+                <div class="sql-h-scroll" id="hscroll">
+                    <div class="sql-head">
+                        <div class="sql-head__cell">id</div>
+                        <div class="sql-head__cell">customer</div>
+                        <div class="sql-head__cell">product</div>
+                        <div class="sql-head__cell">amount</div>
+                        <div class="sql-head__cell">status</div>
+                        <div class="sql-head__cell">date</div>
+                    </div>
+                    <div data-cerious-scroll-content class="sql-scroll-content"></div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <div class="status-bar">
-        <span id="statusText">Ready to execute query</span>
-        <span id="executionTime"></span>
-    </div>
-
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div id="loadingText">Executing query...</div>
-        </div>
-    </div>
+    </main>
 
     <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="demo-bootstrap.js"></script>
     <script>
-        const CeriousScrollClass = window.CeriousScroll?.CeriousScroll || CeriousScroll;
-        
-        class SQLQueryDemo {
-            constructor() {
-                this.data = [];
-                this.filteredData = [];
-                this.columns = [];
-                this.scroller = null;
-                this.sortColumn = null;
-                this.sortDirection = 'asc';
-                this.performanceMonitorId = null;
-                this.initializeEventListeners();
-            }
+        (function () {
+            const SQL_TOTAL = 200000;
+            const CUSTOMERS = ['Acme Co', 'Globex', 'Initech', 'Umbrella', 'Stark Ind', 'Wayne Ent', 'Soylent', 'Hooli', 'Pied Piper', 'Wonka'];
+            const PRODUCTS = ['Enterprise Plan', 'Pro Seat', 'API Credits', 'Storage 1TB', 'Support Pack', 'Add-on: SSO', 'Training', 'Migration'];
+            const STATUSES = ['paid', 'pending', 'refunded', 'failed'];
+            const { hash, randInt, pick } = window.demoUtils;
 
-            initializeEventListeners() {
-                document.getElementById('executeBtn').addEventListener('click', () => this.executeQuery());
-                document.getElementById('clearBtn').addEventListener('click', () => this.clearResults());
-                document.getElementById('exportCsvBtn').addEventListener('click', () => this.exportCSV());
-                document.getElementById('exportJsonBtn').addEventListener('click', () => this.exportJSON());
-                document.getElementById('searchInput').addEventListener('input', (e) => this.searchResults(e.target.value));
-                document.getElementById('sampleQuery').addEventListener('change', (e) => this.loadSampleQuery(e.target.value));
-            }
-
-            loadSampleQuery(type) {
-                const queries = {
-                    transactions: 'SELECT id, user_id, amount, currency, status, merchant, category, created_at, updated_at, description FROM transactions ORDER BY created_at DESC LIMIT 100000',
-                    users: 'SELECT id, email, first_name, last_name, country, city, signup_date, last_login, subscription_tier, total_spent, account_status FROM users LIMIT 500000',
-                    logs: 'SELECT id, timestamp, level, service, message, user_id, ip_address, method, endpoint, status_code, response_time FROM application_logs ORDER BY timestamp DESC LIMIT 1000000',
-                    orders: 'SELECT order_id, customer_id, order_date, total_amount, tax_amount, shipping_cost, discount, payment_method, shipping_address, order_status, items_count, tracking_number FROM orders ORDER BY order_date DESC LIMIT 250000'
+            function makeResult(index) {
+                const id = 100000 + index;
+                const amount = Math.round((hash(index, 1) * 4800 + 19) * 100) / 100;
+                const daysAgo = randInt(index, 0, 720, 2);
+                const date = new Date(Date.UTC(2026, 0, 1) - daysAgo * 86400000).toISOString().slice(0, 10);
+                return {
+                    id,
+                    customer: pick(CUSTOMERS, index, 3),
+                    product: pick(PRODUCTS, index, 4),
+                    amount,
+                    status: STATUSES[index % STATUSES.length],
+                    date,
                 };
-                
-                if (queries[type]) {
-                    document.getElementById('queryEditor').value = queries[type];
-                }
+            }
+            function escapeHtml(s) {
+                return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             }
 
-            async executeQuery() {
-                const executeBtn = document.getElementById('executeBtn');
-                const overlay = document.getElementById('loadingOverlay');
-                const loadingText = document.getElementById('loadingText');
-                const query = document.getElementById('queryEditor').value.trim();
-                
-                if (!query) return;
-                
-                executeBtn.disabled = true;
-                executeBtn.textContent = 'Executing...';
-                overlay.classList.add('active');
-                
-                const startTime = performance.now();
-                
-                // Parse query to determine type and row count
-                const limitMatch = query.match(/LIMIT\s+(\d+)/i);
-                const rowCount = limitMatch ? parseInt(limitMatch[1]) : 10000;
-                
-                // Warn on mobile for large datasets
-                if (isMobile && rowCount > 50000) {
-                    overlay.classList.remove('active');
-                    executeBtn.disabled = false;
-                    executeBtn.textContent = 'Execute Query';
-                    if (!confirm(`⚠️ Query returns ${rowCount.toLocaleString()} rows. This may cause performance issues on mobile. Continue?`)) {
-                        return;
-                    }
-                    executeBtn.disabled = true;
-                    executeBtn.textContent = 'Executing...';
-                    overlay.classList.add('active');
-                }
-                
-                loadingText.textContent = `Generating ${rowCount.toLocaleString()} rows...`;
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Determine query type
-                let dataType = 'transactions';
-                if (query.toLowerCase().includes('from users')) dataType = 'users';
-                else if (query.toLowerCase().includes('from application_logs')) dataType = 'logs';
-                else if (query.toLowerCase().includes('from orders')) dataType = 'orders';
-                
-                this.generateData(dataType, rowCount);
-                
-                loadingText.textContent = 'Rendering results...';
-                await new Promise(resolve => setTimeout(resolve, 50));
-                
-                this.filteredData = [...this.data];
-                this.renderResults();
-                
-                const executionTime = (performance.now() - startTime).toFixed(2);
-                
-                executeBtn.disabled = false;
-                executeBtn.textContent = 'Execute Query';
-                overlay.classList.remove('active');
-                
-                document.getElementById('resultsInfo').textContent = `${rowCount.toLocaleString()} rows returned`;
-                document.getElementById('rowCount').textContent = rowCount.toLocaleString();
-                document.getElementById('statusText').textContent = `Query executed successfully`;
-                document.getElementById('executionTime').textContent = `Execution time: ${executionTime}ms`;
-                document.getElementById('exportCsvBtn').disabled = false;
-                document.getElementById('exportJsonBtn').disabled = false;
-            }
+            let selected = null;
+            const host = document.getElementById('scroll');
+            const hScroll = document.getElementById('hscroll');
 
-            generateData(type, count) {
-                const generators = {
-                    transactions: this.generateTransactions.bind(this),
-                    users: this.generateUsers.bind(this),
-                    logs: this.generateLogs.bind(this),
-                    orders: this.generateOrders.bind(this)
-                };
-                
-                generators[type](count);
-            }
-
-            generateTransactions(count) {
-                this.columns = [
-                    { name: 'id', type: 'number' },
-                    { name: 'user_id', type: 'number' },
-                    { name: 'amount', type: 'number' },
-                    { name: 'currency', type: 'string' },
-                    { name: 'status', type: 'string' },
-                    { name: 'merchant', type: 'string' },
-                    { name: 'category', type: 'string' },
-                    { name: 'created_at', type: 'date' },
-                    { name: 'updated_at', type: 'date' },
-                    { name: 'description', type: 'string' }
-                ];
-                
-                const currencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD'];
-                const statuses = ['completed', 'pending', 'failed', 'refunded'];
-                const merchants = ['Amazon', 'Walmart', 'Target', 'Best Buy', 'Apple', 'Microsoft', 'Google'];
-                const categories = ['Electronics', 'Groceries', 'Clothing', 'Home', 'Entertainment', 'Travel'];
-                
-                this.data = Array.from({ length: count }, (_, i) => ({
-                    id: i + 1,
-                    user_id: Math.floor(Math.random() * 100000) + 1,
-                    amount: (Math.random() * 1000).toFixed(2),
-                    currency: currencies[Math.floor(Math.random() * currencies.length)],
-                    status: statuses[Math.floor(Math.random() * statuses.length)],
-                    merchant: merchants[Math.floor(Math.random() * merchants.length)],
-                    category: categories[Math.floor(Math.random() * categories.length)],
-                    created_at: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString(),
-                    updated_at: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-                    description: Math.random() > 0.8 ? 'Purchase from ' + merchants[Math.floor(Math.random() * merchants.length)] : null
-                }));
-            }
-
-            generateUsers(count) {
-                this.columns = [
-                    { name: 'id', type: 'number' },
-                    { name: 'email', type: 'string' },
-                    { name: 'first_name', type: 'string' },
-                    { name: 'last_name', type: 'string' },
-                    { name: 'country', type: 'string' },
-                    { name: 'city', type: 'string' },
-                    { name: 'signup_date', type: 'date' },
-                    { name: 'last_login', type: 'date' },
-                    { name: 'subscription_tier', type: 'string' },
-                    { name: 'total_spent', type: 'number' },
-                    { name: 'account_status', type: 'string' }
-                ];
-                
-                const firstNames = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Emma', 'Chris', 'Lisa'];
-                const lastNames = ['Smith', 'Johnson', 'Brown', 'Davis', 'Wilson', 'Moore', 'Taylor', 'Anderson'];
-                const countries = ['USA', 'Canada', 'UK', 'Germany', 'France', 'Japan', 'Australia'];
-                const cities = ['New York', 'Los Angeles', 'Chicago', 'London', 'Paris', 'Tokyo', 'Sydney'];
-                const tiers = ['free', 'basic', 'premium', 'enterprise'];
-                const statuses = ['active', 'inactive', 'suspended'];
-                
-                this.data = Array.from({ length: count }, (_, i) => ({
-                    id: i + 1,
-                    email: `user${i + 1}@example.com`,
-                    first_name: firstNames[Math.floor(Math.random() * firstNames.length)],
-                    last_name: lastNames[Math.floor(Math.random() * lastNames.length)],
-                    country: countries[Math.floor(Math.random() * countries.length)],
-                    city: cities[Math.floor(Math.random() * cities.length)],
-                    signup_date: new Date(Date.now() - Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString(),
-                    last_login: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-                    subscription_tier: tiers[Math.floor(Math.random() * tiers.length)],
-                    total_spent: (Math.random() * 5000).toFixed(2),
-                    account_status: statuses[Math.floor(Math.random() * statuses.length)]
-                }));
-            }
-
-            generateLogs(count) {
-                this.columns = [
-                    { name: 'id', type: 'number' },
-                    { name: 'timestamp', type: 'date' },
-                    { name: 'level', type: 'string' },
-                    { name: 'service', type: 'string' },
-                    { name: 'message', type: 'string' },
-                    { name: 'user_id', type: 'number' },
-                    { name: 'ip_address', type: 'string' },
-                    { name: 'method', type: 'string' },
-                    { name: 'endpoint', type: 'string' },
-                    { name: 'status_code', type: 'number' },
-                    { name: 'response_time', type: 'number' }
-                ];
-                
-                const levels = ['INFO', 'WARN', 'ERROR', 'DEBUG'];
-                const services = ['api-gateway', 'auth-service', 'payment-service', 'notification-service', 'user-service'];
-                const messages = ['Request processed', 'Authentication successful', 'Payment completed', 'Email sent', 'User updated'];
-                const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
-                const endpoints = ['/api/users', '/api/orders', '/api/payments', '/api/products', '/api/auth'];
-                const statusCodes = [200, 201, 400, 401, 403, 404, 500];
-                
-                this.data = Array.from({ length: count }, (_, i) => ({
-                    id: i + 1,
-                    timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-                    level: levels[Math.floor(Math.random() * levels.length)],
-                    service: services[Math.floor(Math.random() * services.length)],
-                    message: messages[Math.floor(Math.random() * messages.length)],
-                    user_id: Math.random() > 0.3 ? Math.floor(Math.random() * 10000) + 1 : null,
-                    ip_address: `${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`,
-                    method: methods[Math.floor(Math.random() * methods.length)],
-                    endpoint: endpoints[Math.floor(Math.random() * endpoints.length)],
-                    status_code: statusCodes[Math.floor(Math.random() * statusCodes.length)],
-                    response_time: Math.floor(Math.random() * 500) + 10
-                }));
-            }
-
-            generateOrders(count) {
-                this.columns = [
-                    { name: 'order_id', type: 'string' },
-                    { name: 'customer_id', type: 'number' },
-                    { name: 'order_date', type: 'date' },
-                    { name: 'total_amount', type: 'number' },
-                    { name: 'tax_amount', type: 'number' },
-                    { name: 'shipping_cost', type: 'number' },
-                    { name: 'discount', type: 'number' },
-                    { name: 'payment_method', type: 'string' },
-                    { name: 'shipping_address', type: 'string' },
-                    { name: 'order_status', type: 'string' },
-                    { name: 'items_count', type: 'number' },
-                    { name: 'tracking_number', type: 'string' }
-                ];
-                
-                const paymentMethods = ['Credit Card', 'PayPal', 'Debit Card', 'Apple Pay', 'Google Pay'];
-                const statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-                const addresses = ['123 Main St, New York, NY', '456 Oak Ave, Los Angeles, CA', '789 Pine Rd, Chicago, IL'];
-                
-                this.data = Array.from({ length: count }, (_, i) => ({
-                    order_id: `ORD-${String(i + 1).padStart(8, '0')}`,
-                    customer_id: Math.floor(Math.random() * 50000) + 1,
-                    order_date: new Date(Date.now() - Math.random() * 180 * 24 * 60 * 60 * 1000).toISOString(),
-                    total_amount: (Math.random() * 500 + 20).toFixed(2),
-                    tax_amount: (Math.random() * 50).toFixed(2),
-                    shipping_cost: (Math.random() * 20 + 5).toFixed(2),
-                    discount: Math.random() > 0.7 ? (Math.random() * 50).toFixed(2) : 0,
-                    payment_method: paymentMethods[Math.floor(Math.random() * paymentMethods.length)],
-                    shipping_address: addresses[Math.floor(Math.random() * addresses.length)],
-                    order_status: statuses[Math.floor(Math.random() * statuses.length)],
-                    items_count: Math.floor(Math.random() * 10) + 1,
-                    tracking_number: Math.random() > 0.2 ? `TRK${Math.random().toString(36).substr(2, 9).toUpperCase()}` : null
-                }));
-            }
-
-            renderResults() {
-                const viewport = document.getElementById('resultsViewport');
-                const header = document.getElementById('tableHeader');
-                
-                // Header may already be parented to a previous .results-hscroll
-                // wrapper from an earlier render — detach so the upcoming
-                // viewport.innerHTML clear doesn't destroy it.
-                if (header.parentElement) header.parentElement.removeChild(header);
-                
-                // Clear empty state
-                viewport.innerHTML = '';
-                
-                // Render column headers
-                header.innerHTML = '';
-                this.columns.forEach((col, index) => {
-                    const headerCell = document.createElement('div');
-                    headerCell.className = 'column-header';
-                    
-                    // Calculate width based on column type and name
-                    let width = 150;
-                    if (col.type === 'date') width = 200;
-                    else if (col.name.includes('description') || col.name.includes('address') || col.name.includes('message')) width = 300;
-                    else if (col.name === 'id' || col.name.includes('_id')) width = 100;
-                    
-                    headerCell.style.width = `${width}px`;
-                    col.width = width; // Store for use in row rendering
-                    
-                    headerCell.innerHTML = `
-                        <span>${col.name}</span>
-                        <span class="type-badge">${col.type}</span>
-                        ${this.sortColumn === col.name ? `<span class="sort-indicator">${this.sortDirection === 'asc' ? '↑' : '↓'}</span>` : ''}
-                    `;
-                    headerCell.addEventListener('click', () => this.sortBy(col.name));
-                    header.appendChild(headerCell);
-                });
-                
-                // Stop performance monitoring
-                if (this.performanceMonitorId) {
-                    cancelAnimationFrame(this.performanceMonitorId);
-                    this.performanceMonitorId = null;
-                }
-                
-                // Dispose of old scroller
-                if (this.scroller) {
-                    this.scroller.dispose();
-                    this.scroller = null;
-                }
-                
-                // Create horizontal scroll wrapper and move the header into it.
-                // Putting both the header and the virtual scroll content inside
-                // this wrapper means a single native overflow-x scroller shifts
-                // them together, while .results-viewport (the cerious-scroll
-                // container) keeps its visible width so the vertical scrollbar
-                // strip stays pinned to the right edge.
-                const hScroll = document.createElement('div');
-                hScroll.className = 'results-hscroll';
-                viewport.appendChild(hScroll);
-                hScroll.appendChild(header);
-
-                // Create scroll content container
-                const scrollContent = document.createElement('div');
-                scrollContent.className = 'scroll-content';
-                scrollContent.id = 'scrollContent';
-                hScroll.appendChild(scrollContent);
-
-                // Offset the absolutely-positioned virtual rows by the sticky
-                // header height so the first row isn't hidden underneath it.
-                const headerHeight = header.offsetHeight;
-                scrollContent.style.top = `${headerHeight}px`;
-                const getRowAreaHeight = () => Math.max(0, viewport.clientHeight - headerHeight);
-
-                // Initialize CeriousScroll
-                this.scroller = new CeriousScrollClass(viewport, this.filteredData.length, {
-                    touch: {
-                        enabled: true,
-                        // Forward horizontal swipes to the inner wrapper that
-                        // owns the native overflow-x scrollbar so the column
-                        // header and rows scroll together on mobile.
-                        getHorizontalScrollTarget: () => hScroll
-                    },
-                    onScroll: () => {
-                        this.scroller.renderViewport(
-                            getRowAreaHeight(),
-                            scrollContent,
-                            (index, element) => this.renderRow(index, element)
-                        );
-                    }
-                });
-                
-                // Initial render
-                this.scroller.jumpToElement(0);
-                scrollContent.innerHTML = '';
-                this.scroller.renderViewport(getRowAreaHeight(), scrollContent, 
-                    (index, element) => this.renderRow(index, element));
-                
-                // Start performance monitoring
-                this.startPerformanceMonitoring();
-            }
-
-            renderRow(index, container) {
-                container.innerHTML = '';
-                
+            function render(i, container) {
+                const r = makeResult(i);
                 const row = document.createElement('div');
-                row.className = 'result-row';
-                if (index % 2 === 1) row.classList.add('striped');
-                
-                const rowData = this.filteredData[index];
-                
-                this.columns.forEach(col => {
-                    const cell = document.createElement('div');
-                    cell.className = 'result-cell';
-                    cell.style.width = `${col.width || 150}px`;
-                    
-                    const value = rowData[col.name];
-                    
-                    if (value === null || value === undefined) {
-                        cell.classList.add('null');
-                        cell.textContent = 'NULL';
-                    } else {
-                        cell.classList.add(col.type);
-                        
-                        if (col.type === 'date') {
-                            cell.textContent = new Date(value).toLocaleString();
-                        } else if (col.type === 'number') {
-                            cell.textContent = typeof value === 'number' ? value.toLocaleString() : value;
-                        } else {
-                            cell.textContent = value;
-                        }
-                    }
-                    
-                    row.appendChild(cell);
-                });
-                
+                row.className = 'sql-row' + (selected === i ? ' selected' : '');
+                row.dataset.index = i;
+                row.innerHTML =
+                    '<div class="sql-cell id">' + r.id + '</div>' +
+                    '<div class="sql-cell">' + escapeHtml(r.customer) + '</div>' +
+                    '<div class="sql-cell">' + escapeHtml(r.product) + '</div>' +
+                    '<div class="sql-cell num">$' + r.amount.toLocaleString() + '</div>' +
+                    '<div class="sql-cell"><span class="sql-badge sql-' + r.status + '">' + r.status + '</span></div>' +
+                    '<div class="sql-cell">' + r.date + '</div>';
                 container.appendChild(row);
             }
 
-            sortBy(columnName) {
-                if (this.sortColumn === columnName) {
-                    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-                } else {
-                    this.sortColumn = columnName;
-                    this.sortDirection = 'asc';
-                }
-                
-                this.filteredData.sort((a, b) => {
-                    const aVal = a[columnName];
-                    const bVal = b[columnName];
-                    
-                    if (aVal === null || aVal === undefined) return 1;
-                    if (bVal === null || bVal === undefined) return -1;
-                    
-                    if (aVal < bVal) return this.sortDirection === 'asc' ? -1 : 1;
-                    if (aVal > bVal) return this.sortDirection === 'asc' ? 1 : -1;
-                    return 0;
-                });
-                
-                this.renderResults();
-            }
+            const demo = window.mountDemo({
+                host: host,
+                total: SQL_TOTAL,
+                render: render,
+                options: {
+                    touch: { enabled: true, getHorizontalScrollTarget: () => hScroll },
+                },
+            });
 
-            searchResults(query) {
-                if (!query.trim()) {
-                    this.filteredData = [...this.data];
-                } else {
-                    const lowerQuery = query.toLowerCase();
-                    this.filteredData = this.data.filter(row => {
-                        return Object.values(row).some(val => 
-                            val !== null && val !== undefined && String(val).toLowerCase().includes(lowerQuery)
-                        );
-                    });
-                }
-                
-                document.getElementById('resultsInfo').textContent = `${this.filteredData.length.toLocaleString()} rows ${query.trim() ? '(filtered)' : 'returned'}`;
-                this.renderResults();
-            }
-
-            clearResults() {
-                this.data = [];
-                this.filteredData = [];
-                this.columns = [];
-                
-                if (this.performanceMonitorId) {
-                    cancelAnimationFrame(this.performanceMonitorId);
-                    this.performanceMonitorId = null;
-                }
-                
-                if (this.scroller) {
-                    this.scroller.dispose();
-                    this.scroller = null;
-                }
-                
-                document.getElementById('resultsViewport').innerHTML = `
-                    <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                        </svg>
-                        <div>Execute a query to see results</div>
-                    </div>
-                `;
-                document.getElementById('tableHeader').innerHTML = '';
-                document.getElementById('resultsInfo').textContent = 'No query executed';
-                document.getElementById('rowCount').textContent = '0';
-                document.getElementById('statusText').textContent = 'Results cleared';
-                document.getElementById('executionTime').textContent = '';
-                document.getElementById('searchInput').value = '';
-                document.getElementById('exportCsvBtn').disabled = true;
-                document.getElementById('exportJsonBtn').disabled = true;
-            }
-
-            exportCSV() {
-                const csv = [
-                    this.columns.map(c => c.name).join(','),
-                    ...this.filteredData.map(row => 
-                        this.columns.map(col => {
-                            const val = row[col.name];
-                            if (val === null || val === undefined) return '';
-                            return typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val;
-                        }).join(',')
-                    )
-                ].join('\n');
-                
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `query_results_${Date.now()}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }
-
-            exportJSON() {
-                const json = JSON.stringify(this.filteredData, null, 2);
-                const blob = new Blob([json], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `query_results_${Date.now()}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }
-
-            startPerformanceMonitoring() {
-                let frames = 0;
-                let lastTime = performance.now();
-
-                const updateMetrics = () => {
-                    const now = performance.now();
-                    const delta = now - lastTime;
-                    
-                    if (delta >= 1000) {
-                        const fps = Math.round((frames * 1000) / delta);
-                        document.getElementById('fps').textContent = fps;
-                        document.getElementById('latency').textContent = 
-                            (delta / frames).toFixed(1) + 'ms';
-                        
-                        frames = 0;
-                        lastTime = now;
-                    }
-                    
-                    frames++;
-                    this.performanceMonitorId = requestAnimationFrame(updateMetrics);
-                };
-                
-                this.performanceMonitorId = requestAnimationFrame(updateMetrics);
-            }
-        }
-
-        // Initialize the demo
-        new SQLQueryDemo();
+            host.addEventListener('click', (e) => {
+                const row = e.target.closest('.sql-row');
+                if (!row) return;
+                const i = parseInt(row.dataset.index, 10);
+                selected = i;
+                document.getElementById('selectedLabel').textContent = makeResult(i).id;
+                demo.refresh();
+            });
+        })();
     </script>
 </body>
 </html>

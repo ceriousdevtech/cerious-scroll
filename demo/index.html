@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Vanilla JS Demos</title>
+    <meta name="description" content="Vanilla JS demos for cerious-scroll — high-performance virtual scrolling with O(1) memory.">
+    <link rel="stylesheet" href="shared-styles.css">
+  <script src="demo-bootstrap.js" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar data-gallery></header>
+
+    <main class="content">
+        <div class="gallery">
+            <p class="gallery__lead">
+                High-performance virtual scrolling across real-world UIs — every row is measured (never
+                estimated), with O(1) memory. Pick a demo:
+            </p>
+            <div class="gallery__grid" id="grid"></div>
+        </div>
+    </main>
+
+    <script>
+        const DEMOS = [
+            { href: 'comparison-demo.html',      emoji: '⚔️',   title: 'vs Clusterize.js',     blurb: 'Vanilla bake-off against Clusterize.js across 5 stress scenarios: dynamic heights, expanding rows, async images, millions of rows, and continuous updates.' },
+            { href: 'vanilla-js-demo.html',      emoji: '🧱',  title: 'Basic / Vanilla',       blurb: 'Configurable dataset size (up to 1,000,000), fixed/variable heights, jump-to-row and live stats.' },
+            { href: 'data-grid-demo.html',       emoji: '📊',  title: 'Data Grid',             blurb: 'Multi-column grid with sortable headers, live search, and Ctrl/Cmd multi-select.' },
+            { href: 'chat-messaging-demo.html',  emoji: '💬',  title: 'Chat Messages',         blurb: 'Variable-height message bubbles, sent/received styling, and auto-scroll on send.' },
+            { href: 'log-viewer-demo.html',      emoji: '📜',  title: 'Log Viewer',            blurb: 'System logs with level filtering, live search, and color-coded severities.' },
+            { href: 'code-viewer-demo.html',     emoji: '👨‍💻', title: 'Code Viewer',          blurb: 'Syntax-highlighted source with line numbers and find-in-file jump.' },
+            { href: 'ecommerce-demo.html',       emoji: '🛍️',  title: 'E-commerce',            blurb: 'Product catalog with ratings, prices, stock state, and an add-to-cart counter.' },
+            { href: 'finance-trading-demo.html', emoji: '📈',  title: 'Financial Trading',     blurb: 'Real-time stock ticker with streaming prices, % change, and sparklines.' },
+            { href: 'git-history-demo.html',     emoji: '🌿',  title: 'Git History',           blurb: 'Commit log with authors, branches, and click-to-expand changed files (variable height).' },
+            { href: 'sql-query-demo.html',       emoji: '🗄️',  title: 'SQL Results',           blurb: 'Query result viewer with column headers, status badges, and row selection.' },
+        ];
+        const grid = document.getElementById('grid');
+        grid.innerHTML = DEMOS.map((d) =>
+            '<a class="demo-card" href="' + d.href + '">' +
+                '<div class="demo-card__emoji">' + d.emoji + '</div>' +
+                '<div class="demo-card__title">' + d.title + '</div>' +
+                '<p class="demo-card__blurb">' + d.blurb + '</p>' +
+            '</a>'
+        ).join('');
+    </script>
+</body>
+</html>

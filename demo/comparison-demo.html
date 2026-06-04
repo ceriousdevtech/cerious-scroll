@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow: hidden; height: 100%;">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cerious Scroll vs Clusterize.js — Side-by-side stress test</title>
+  <link rel="stylesheet" href="shared-styles.css" />
+  <!-- Clusterize.js (the long-standing "DOM-clustering" virtual scroll lib). -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/clusterize.js@1.0.0/clusterize.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/clusterize.js@1.0.0/clusterize.min.js"></script>
+  <script src="../dist/cerious-scroll.bundle.js"></script>
+  <style>
+    :root {
+      --brand-1: #78f3d2;
+      --brand-2: #8cb7ff;
+      --ink: #f6f8fb;
+      --muted: #a7b1c2;
+      --line: rgba(255,255,255,.13);
+    }
+
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    body {
+      display: flex; flex-direction: column;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #080b12; color: var(--ink);
+    }
+
+    .cmp-header {
+      padding: 18px 24px 8px; flex-shrink: 0;
+    }
+    .cmp-header h1 { margin: 0 0 4px; font-size: 1.6rem; color: var(--ink); }
+    .cmp-header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .cmp-header a { color: var(--brand-1); text-decoration: none; }
+    .cmp-header a:hover { text-decoration: underline; }
+
+    .cmp-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+      padding: 12px 24px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.06);
+      flex-shrink: 0;
+    }
+    .cmp-toolbar label { font-weight: 600; font-size: 0.85rem; color: var(--muted); margin-right: 4px; }
+    .cmp-toolbar select, .cmp-toolbar button {
+      padding: 6px 10px; font-size: 0.85rem; border-radius: 6px;
+      border: 1px solid var(--line); background: rgba(255,255,255,.06); cursor: pointer;
+      font-family: inherit;
+    }
+    .cmp-toolbar button:hover { background: rgba(255,255,255,.11); border-color: var(--brand-1); }
+    .cmp-toolbar button.primary {
+      background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+      color: #061019; border-color: transparent; font-weight: 800;
+    }
+    .cmp-toolbar .spacer { flex: 1; }
+    .cmp-toolbar .fps {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700; padding: 4px 10px; border-radius: 6px;
+      background: rgba(255,255,255,.08);
+    }
+    .cmp-toolbar .scenario-desc {
+      flex-basis: 100%; margin-top: 4px; font-size: 0.85rem; color: var(--muted);
+    }
+
+    .cmp-stage {
+      flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+      padding: 16px 24px 24px; min-height: 0;
+    }
+    @media (max-width: 900px) { .cmp-stage { grid-template-columns: 1fr; } }
+
+    .cmp-side {
+      display: flex; flex-direction: column; min-height: 0;
+      border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+      background: rgba(255,255,255,.06); box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .cmp-side__head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-bottom: 1px solid var(--line); background: #11141d;
+      min-height: 44px; flex-wrap: nowrap; white-space: nowrap;
+      flex-shrink: 0; position: relative; z-index: 2;
+    }
+    .cmp-side__head .title { font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+    .cmp-side__head .badge {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.08); color: var(--muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .cmp-side--cerious .cmp-side__head {
+      background: #0f1a1a;
+    }
+    .cmp-side--cerious .badge {
+      background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+      color: #061019; font-weight: 800;
+    }
+    .cmp-side__stats {
+      margin-left: auto; display: flex; gap: 10px;
+      font-size: 0.78rem; color: var(--muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .cmp-side__stats .stat-num {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--ink); font-weight: 600;
+    }
+    .cmp-side__body { flex: 1; min-height: 0; position: relative; }
+
+    /* Clusterize wants a scrollable wrapper with overflow:auto. */
+    .clu-scroll {
+      position: absolute; inset: 0;
+      overflow-y: auto; overflow-x: hidden;
+      padding: 0;
+    }
+    .clu-list { padding: 0; margin: 0; list-style: none; }
+
+    /* Cerious surface */
+    .cs-host { position: absolute; inset: 0; }
+
+    .cmp-row {
+      display: flex; gap: 10px; padding: 10px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08); box-sizing: border-box;
+      background: transparent; cursor: pointer; align-items: flex-start;
+    }
+    .cmp-row.alt { background: rgba(255,255,255,.04); }
+    .cmp-row.hot { background: rgba(255, 200, 60, 0.12); }
+    .cmp-row__idx {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--muted); font-size: 0.78rem; min-width: 70px;
+    }
+    .cmp-row__body { flex: 1; min-width: 0; }
+    .cmp-row__title { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+    .cmp-row__text {
+      font-size: 0.82rem; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cmp-row__expand {
+      margin-top: 8px; padding: 10px; background: rgba(255,255,255,.04);
+      border-radius: 6px; font-size: 0.8rem; line-height: 1.5;
+    }
+    .cmp-row__img {
+      width: 80px; height: 80px; background: rgba(255,255,255,.08); border-radius: 4px;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 0.7rem;
+    }
+    .cmp-row__img.loaded {
+      background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: #061019;
+    }
+    .cmp-row__media {
+      margin-top: 8px; height: 140px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; font-weight: 600; box-sizing: border-box;
+    }
+    .cmp-row__media.pending {
+      background: repeating-linear-gradient(-45deg, rgba(255,255,255,.08), rgba(255,255,255,.08) 10px, rgba(255,255,255,.04) 10px, rgba(255,255,255,.04) 20px);
+      color: var(--muted);
+    }
+    .cmp-row__media.loaded {
+      background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: #061019;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+    }
+    /* Log-stream scenario row */
+    .cmp-row--log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem; line-height: 1.4; align-items: flex-start;
+      padding: 6px 12px; gap: 8px;
+    }
+    .cmp-row--log .log-ts { color: var(--muted); white-space: nowrap; }
+    .cmp-row--log .log-sev {
+      font-weight: 700; padding: 1px 6px; border-radius: 3px;
+      font-size: 0.7rem; letter-spacing: 0.4px;
+      flex-shrink: 0; min-width: 48px; text-align: center;
+    }
+    .log-sev.INFO  { background: rgba(140, 183, 255, 0.18); color: var(--accent-2); }
+    .log-sev.DEBUG { background: rgba(255,255,255,.08); color: var(--muted); }
+    .log-sev.WARN  { background: rgba(255, 200, 60, 0.18); color: #ffc83c; }
+    .log-sev.ERROR { background: rgba(255, 99, 99, 0.18); color: #ff6363; }
+    .cmp-row--log .log-msg { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cmp-row--log .log-stack {
+      grid-column: 1 / -1;
+      margin-top: 4px; padding: 6px 10px;
+      background: rgba(255,255,255,.04); border-left: 3px solid #ff6363;
+      color: var(--muted); font-size: 0.72rem;
+      white-space: pre; overflow: hidden;
+    }
+    .cmp-row--log.has-stack { display: grid; grid-template-columns: auto auto 1fr; row-gap: 4px; }
+    /* Spreadsheet scenario row */
+    .cmp-row--sheet { display: block; padding: 0; gap: 0; }
+    .sheet-row { height: 36px; box-sizing: border-box; width: 5400px; }
+    .sheet-scroll {
+      display: flex; height: 36px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .sheet-cell {
+      flex: 0 0 90px; height: 36px; padding: 0 8px;
+      display: flex; align-items: center; box-sizing: border-box;
+      border-right: 1px solid rgba(255,255,255,.08);
+      font-family: ui-monospace, Menlo, monospace; font-size: 0.78rem;
+      white-space: nowrap; color: var(--ink);
+    }
+    .sheet-cell--head {
+      background: #11141d; font-weight: 700; color: var(--muted);
+      position: sticky; left: 0;
+  border-right: 1px solid rgba(255,255,255,.18);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  z-index: 2;
+}
+    .sheet-expand {
+      height: 240px; padding: 14px; background: rgba(255,255,255,.04);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      font-size: 0.85rem; line-height: 1.5; color: var(--ink);
+      width: 5400px; box-sizing: border-box;
+    }
+    /* Spreadsheet h-scroll: each side puts the bar on an inner full-height
+       element so the OUTER container (which hosts the vertical scrollbar on
+       the cerious side) doesn't translate horizontally with the content. The
+       engine reads viewport height from [data-cerious-scroll-content] so the
+       bottom row stays clear of the gutter. */
+    .clu-scroll.is-spreadsheet { overflow-x: auto; }
+    .clu-scroll.is-spreadsheet .clu-list { min-width: 5400px; }
+    .cs-host.is-spreadsheet .scroll-viewport {
+      overflow-x: auto; overflow-y: clip;
+    }
+    .cs-host.is-spreadsheet .scroll-content { min-width: 5400px; }
+
+    .cmp-warn {
+      position: absolute; inset: auto 12px 12px auto;
+      font-size: 0.72rem; background: rgba(207, 34, 46, 0.92); color: #fff;
+      padding: 6px 9px; border-radius: 5px; max-width: 280px;
+      line-height: 1.35; pointer-events: none;
+    }
+    .cmp-side--cerious .cmp-warn { background: rgba(35, 134, 54, 0.92); color: #fff; }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="demo-bootstrap.js" defer></script>
+</head>
+<body>
+  <header class="topbar" data-auto-topbar></header>
+  <header class="cmp-header">
+    <h1>⚔️ Cerious Scroll vs Traditional Virtualization</h1>
+    <p>
+      Vanilla JS bake-off against
+      <a href="https://clusterize.js.org/" target="_blank" rel="noreferrer">Clusterize.js</a>.
+      Same dataset, same mutation, two engines.
+    </p>
+  </header>
+
+  <div class="cmp-toolbar">
+    <label for="scn">Scenario</label>
+    <select id="scn">
+      <option value="dynamic-height">1. Dynamic height</option>
+      <option value="expanding">2. Expanding rows</option>
+      <option value="async-images">3. Async images</option>
+      <option value="millions">4. Millions of rows</option>
+      <option value="continuous-updates">5. Continuous updates</option>
+      <option value="log-stream">6. 10M log stream 🔥</option>
+      <option value="spreadsheet">7. Spreadsheet 🔥</option>
+    </select>
+
+    <button id="resetBtn" type="button">Reset</button>
+    <button id="jumpBtn" type="button" hidden>Jump to row 9,000,000</button>
+
+    <span class="spacer"></span>
+    <span class="fps" id="fps">FPS —</span>
+    <span class="scenario-desc" id="scnDesc"></span>
+  </div>
+
+  <div class="cmp-stage">
+    <section class="cmp-side cmp-side--competitor">
+      <header class="cmp-side__head">
+        <span class="title">Clusterize.js</span>
+        <span class="badge">DOM clustering</span>
+        <span class="cmp-side__stats">
+          <span>rows <span class="stat-num" id="cluCount">0</span></span>
+        </span>
+      </header>
+      <div class="cmp-side__body">
+        <div id="cluScroll" class="clu-scroll">
+          <ul id="cluList" class="clu-list"></ul>
+        </div>
+        <div class="cmp-warn">
+          Pre-renders row HTML in fixed blocks. For 5M rows we cap the input at 200k or the browser OOMs — and even then the cluster math drifts on variable heights.
+        </div>
+      </div>
+    </section>
+
+    <section class="cmp-side cmp-side--cerious">
+      <header class="cmp-side__head">
+        <span class="title">Cerious Scroll</span>
+        <span class="badge">Vanilla JS</span>
+        <span class="cmp-side__stats">
+          <span>rows <span class="stat-num" id="csCount">0</span></span>
+        </span>
+      </header>
+      <div class="cmp-side__body">
+        <div id="csHost" class="cs-host">
+          <div class="scroll-viewport" style="height:100%;width:100%">
+            <div class="scroll-content"></div>
+          </div>
+        </div>
+        <div class="cmp-warn">No size cache — ResizeObserver tracks each row's real height live; sibling-driver scrollbar reaches all 5,000,000 rows.</div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    const CeriousScroll = window.CeriousScroll?.CeriousScroll || window.CeriousScroll;
+
+    // ---- Shared, lazy dataset --------------------------------------------
+    const TITLES = ['Quarterly report','Server uptime','Pull request merged','Build #4218','Deploy succeeded','Latency spike','New comment','Cache invalidated','Auth event','Memory pressure','Queue drained','User signed up'];
+    const TEXT_FRAGS = [
+      'lorem ipsum dolor sit amet consectetur adipiscing elit',
+      'sed do eiusmod tempor incididunt ut labore et dolore magna',
+      'duis aute irure dolor in reprehenderit in voluptate velit esse',
+      'excepteur sint occaecat cupidatat non proident sunt in culpa',
+    ];
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return () => {
+        a |= 0; a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    const rand = (i, salt = 0) => mulberry32((i + 1) * 2654435761 + salt * 40503)();
+    const pickIndices = (total, n, seed) => {
+      const out = [];
+      for (let k = 0; k < n; k++) out.push(Math.floor(rand(seed + k) * total));
+      return out;
+    };
+    const baseHeightFor = (i) => [56, 72, 96, 64, 120][i % 5];
+    const DYNAMIC_SCALES = [3, 5, 8, 10, 12, 15, 18, 6];
+    const imageRowHeight = (loaded) => loaded ? 160 : 0;
+
+    function makeDatasource(total, scenario) {
+      const overrides = new Map();
+      const subscribers = new Set();
+      const imageRequested = new Set();
+      let notifyScheduled = false;
+      const notify = () => {
+        if (notifyScheduled) return;
+        notifyScheduled = true;
+        queueMicrotask(() => {
+          notifyScheduled = false;
+          subscribers.forEach((cb) => cb());
+        });
+      };
+      if (scenario === 'dynamic-height') {
+        for (let i = 7; i < total; i += 22) {
+          const scale = DYNAMIC_SCALES[((i / 22) | 0) % DYNAMIC_SCALES.length];
+          overrides.set(i, { scale });
+        }
+      }
+      const hasImage = scenario === 'async-images';
+      const isLog = scenario === 'log-stream';
+      const isSheet = scenario === 'spreadsheet';
+      const getRow = (i) => {
+        if (isSheet) {
+          const cells = new Array(60);
+          for (let c = 0; c < 60; c++) {
+            const v = (i * 13 + c * 7) % 1000;
+            cells[c] = c === 0 ? ('R' + i) : (v + '.' + ((v * 3) % 100));
+          }
+          return Object.assign({
+            id: i, isSheet: true, cells,
+            baseHeight: 36, scale: 1, expanded: false,
+            hasImage: false, imageLoaded: false, hot: 0,
+          }, overrides.get(i) || {});
+        }
+        if (isLog) {
+          const sev = ['INFO','INFO','INFO','DEBUG','DEBUG','WARN','ERROR'][i % 7];
+          const hasStack = sev === 'ERROR' && (i % 3 === 0);
+          const baseHeight = 28;
+          return Object.assign({
+            id: i, isLog: true, sev,
+            ts: new Date(1700000000000 + i * 137).toISOString().slice(11, 23),
+            msg: TITLES[i % TITLES.length] + ': ' + TEXT_FRAGS[i % TEXT_FRAGS.length] + ' [event=' + i + ']',
+            hasStack,
+            baseHeight, scale: 1, expanded: false,
+            hasImage: false, imageLoaded: false, hot: 0,
+          }, overrides.get(i) || {});
+        }
+        const baseHeight = baseHeightFor(i);
+        const base = {
+          id: i,
+          title: TITLES[i % TITLES.length],
+          text: TEXT_FRAGS[i % TEXT_FRAGS.length] + ' #' + i,
+          baseHeight, scale: 1, expanded: false,
+          hasImage, imageLoaded: false, hot: 0,
+        };
+        const ov = overrides.get(i);
+        const row = ov ? Object.assign({}, base, ov) : base;
+        if (hasImage && !row.imageLoaded && !imageRequested.has(i)) {
+          imageRequested.add(i);
+          const delay = 200 + (i % 9) * 90;
+          setTimeout(() => {
+            overrides.set(i, Object.assign({}, overrides.get(i) || {}, { imageLoaded: true }));
+            notify();
+          }, delay);
+        }
+        return row;
+      };
+      const setOverride = (i, patch) => overrides.set(i, Object.assign({}, overrides.get(i) || {}, patch));
+      const rowHeight = (r) => {
+        if (r.isSheet) return r.expanded ? 36 + 240 : 36;
+        if (r.isLog) {
+          let h = r.baseHeight;
+          if (r.hasStack) h += 110;
+          if (r.expanded) h += 160;
+          return h;
+        }
+        const base = Math.round(r.baseHeight * r.scale);
+        if (r.expanded) return base + 200;
+        return r.hasImage ? base + imageRowHeight(r.imageLoaded) : base;
+      };
+      const subscribe = (cb) => { subscribers.add(cb); return () => subscribers.delete(cb); };
+      return { total, getRow, setOverride, rowHeight, subscribe };
+    }
+
+    // ---- Row HTML --------------------------------------------------------
+    function heightOf(row) {
+      if (row.isSheet) return row.expanded ? 36 + 240 : 36;
+      if (row.isLog) {
+        let h = row.baseHeight;
+        if (row.hasStack) h += 110;
+        if (row.expanded) h += 160;
+        return h;
+      }
+      const base = Math.round(row.baseHeight * row.scale);
+      if (row.expanded) return base + 200;
+      return row.hasImage ? base + imageRowHeight(row.imageLoaded) : base;
+    }
+
+    const STACK_TEMPLATE = [
+      '  at Object.handler (/srv/app/dist/handlers/order.js:142:18)',
+      '  at Layer.handle [as handle_request] (/srv/app/node_modules/express/lib/router/layer.js:95:5)',
+      '  at next (/srv/app/node_modules/express/lib/router/route.js:144:13)',
+      '  at Route.dispatch (/srv/app/node_modules/express/lib/router/route.js:114:3)',
+      '  at /srv/app/node_modules/express/lib/router/index.js:284:15',
+    ];
+    function logInner(row) {
+      const stack = row.hasStack
+        ? `<div class="log-stack">Error: ${row.msg}\n${STACK_TEMPLATE.join('\n')}</div>`
+        : '';
+      const expand = row.expanded
+        ? `<div class="log-stack">// expanded context for event ${row.id}\n// 8 most recent related events would render here.</div>`
+        : '';
+      return `<span class="log-ts">${row.ts}</span>\n        <span class="log-sev ${row.sev}">${row.sev}</span>\n        <span class="log-msg">${row.msg}</span>${stack}${expand}`;
+    }
+
+    function rowHTML(row) {
+      if (row.isSheet) {
+        const cells = row.cells.map((c, ci) => `<div class="sheet-cell${ci === 0 ? ' sheet-cell--head' : ''}">${c}</div>`).join('');
+        const expand = row.expanded ? `<div class="sheet-expand">Detail panel for R${row.id} — 240px tall. Cerious sees the new height the moment it appears.</div>` : '';
+        return `<li class="cmp-row cmp-row--sheet" data-id="${row.id}" style="height:${heightOf(row)}px"><div class="sheet-row"><div class="sheet-scroll">${cells}</div></div>${expand}</li>`;
+      }
+      if (row.isLog) {
+        const cls = 'cmp-row cmp-row--log' + (row.hasStack || row.expanded ? ' has-stack' : '') + (row.hot > 0 ? ' hot' : '');
+        return `<li class="${cls}" data-id="${row.id}" style="height:${heightOf(row)}px">${logInner(row)}</li>`;
+      }
+      const cls = 'cmp-row' + (row.id % 2 ? ' alt' : '') + (row.hot > 0 ? ' hot' : '');
+      const media = row.hasImage
+        ? `<div class="cmp-row__media ${row.imageLoaded ? 'loaded' : 'pending'}">${row.imageLoaded ? `🖼  asset-${row.id % 1000}.jpg` : '⏳ loading…'}</div>` : '';
+      const expand = row.expanded
+        ? `<div class="cmp-row__expand">Expanded detail panel — adds 200px of content. Click row again to collapse.<br>Generated lazily on demand.</div>` : '';
+      return `<li class="${cls}" data-id="${row.id}" style="height:${heightOf(row)}px">
+        <div class="cmp-row__idx">#${row.id.toLocaleString()}</div>
+        <div class="cmp-row__body">
+          <div class="cmp-row__title">${row.title}</div>
+          <div class="cmp-row__text">${row.text}</div>
+          ${media}
+          ${expand}
+        </div>
+      </li>`;
+    }
+
+    function rowDiv(row) {
+      const el = document.createElement('div');
+      if (row.isSheet) {
+        el.className = 'cmp-row cmp-row--sheet';
+        el.dataset.id = String(row.id);
+        el.style.height = heightOf(row) + 'px';
+        const cells = row.cells.map((c, ci) => `<div class="sheet-cell${ci === 0 ? ' sheet-cell--head' : ''}">${c}</div>`).join('');
+        const expand = row.expanded ? `<div class="sheet-expand">Detail panel for R${row.id} — 240px tall. Cerious sees the new height the moment it appears.</div>` : '';
+        el.innerHTML = `<div class="sheet-row"><div class="sheet-scroll">${cells}</div></div>${expand}`;
+        return el;
+      }
+      if (row.isLog) {
+        el.className = 'cmp-row cmp-row--log' + (row.hasStack || row.expanded ? ' has-stack' : '') + (row.hot > 0 ? ' hot' : '');
+        el.dataset.id = String(row.id);
+        el.style.height = heightOf(row) + 'px';
+        el.innerHTML = logInner(row);
+        return el;
+      }
+      el.className = 'cmp-row' + (row.id % 2 ? ' alt' : '') + (row.hot > 0 ? ' hot' : '');
+      el.dataset.id = String(row.id);
+      el.style.height = heightOf(row) + 'px';
+      const media = row.hasImage
+        ? `<div class="cmp-row__media ${row.imageLoaded ? 'loaded' : 'pending'}">${row.imageLoaded ? `🖼  asset-${row.id % 1000}.jpg` : '⏳ loading…'}</div>` : '';
+      el.innerHTML = `
+        <div class="cmp-row__idx">#${row.id.toLocaleString()}</div>
+        <div class="cmp-row__body">
+          <div class="cmp-row__title">${row.title}</div>
+          <div class="cmp-row__text">${row.text}</div>
+          ${media}
+          ${row.expanded ? `<div class="cmp-row__expand">Expanded detail panel — adds 200px of content. Click row again to collapse.<br>Generated lazily on demand.</div>` : ''}
+        </div>`;
+      return el;
+    }
+
+    // ---- Scenario wiring -------------------------------------------------
+    const SCENARIOS = {
+      'dynamic-height': {
+        total: 10_000,
+        desc: 'Mixed row heights including rows 500–1800px tall (taller than the viewport). Clusterize keeps its initial cluster layout — rows overflow, scrollbar drifts. Cerious re-measures live.',
+      },
+      'expanding': {
+        total: 10_000,
+        desc: 'Click any row on either side to expand/collapse. Clusterize\'s row HTML is pre-built so the cluster heights drift; Cerious reflows.',
+      },
+      'async-images': {
+        total: 5_000,
+        desc: 'Every row carries an image that loads asynchronously, growing the row by 160px when it lands. Clusterize\'s cluster math doesn\'t track the change; Cerious does.',
+      },
+      'millions': {
+        total: 5_000_000,
+        desc: '5,000,000 rows. Clusterize must pre-build an array of HTML strings — large memory + slow init. Cerious uses a lazy getItem — O(1) memory.',
+      },
+      'continuous-updates': {
+        total: 10_000,
+        desc: 'Mutate 50 random rows per tick (text + height). Watch the Clusterize scrollbar drift as the cluster cache lags the truth.',
+      },
+      'log-stream': {
+        total: 10_000_000,
+        cluCap: 50_000,
+        desc: '10,000,000 log lines with variable-height stack traces (ERROR rows). Real log viewers hit this routinely. Clusterize side is capped at 50,000 — pre-building 10M HTML strings would OOM. Cerious paginates lazily; the full 10M is navigable from the first frame.',
+      },
+      'spreadsheet': {
+        total: 50_000,
+        desc: '50,000 rows × 60 cells with native horizontal scroll inside each row. Click any row to expand a 240px detail panel. Clusterize pre-builds row HTML at fixed height — expand mutations require a full rebuild. Cerious reflows on click.',
+      },
+    };
+
+    // ---- Build/refresh both sides ----------------------------------------
+    let ds, cs, clusterize, liveId = null, dsUnsub = null;
+    let refreshScheduled = false;
+    const cluScrollEl = document.getElementById('cluScroll');
+    const csHostEl = document.getElementById('csHost');
+    const cluCountEl = document.getElementById('cluCount');
+    const csCountEl = document.getElementById('csCount');
+
+    function rebuildFor(scenario) {
+      stopLive();
+      if (dsUnsub) { dsUnsub(); dsUnsub = null; }
+      const conf = SCENARIOS[scenario];
+      ds = makeDatasource(conf.total, scenario);
+      cluCountEl.textContent = ds.total.toLocaleString();
+      csCountEl.textContent = ds.total.toLocaleString();
+      document.getElementById('scnDesc').textContent = conf.desc;
+
+      // Spreadsheet mode flips horizontal scrolling onto each side's outer
+      // container so the engine's clientHeight excludes the gutter and the
+      // bottom row clears the scrollbar.
+      cluScrollEl.classList.toggle('is-spreadsheet', scenario === 'spreadsheet');
+      csHostEl.classList.toggle('is-spreadsheet', scenario === 'spreadsheet');
+
+      // Subscribe to async ds updates (image loads, etc.) and throttle the
+      // Clusterize rebuild so we don't melt the browser when many images land.
+      dsUnsub = ds.subscribe(scheduleRefresh);
+
+      // -- Clusterize: must pre-build rows. We cap to a scenario-specific
+      //    ceiling so the browser doesn't OOM — and that itself is the point
+      //    of the "millions" / "log-stream" scenarios: Clusterize literally can't.
+      const capped = Math.min(ds.total, conf.cluCap ?? 200_000);
+      const rows = new Array(capped);
+      for (let i = 0; i < capped; i++) rows[i] = rowHTML(ds.getRow(i));
+      if (clusterize) clusterize.destroy(true);
+      clusterize = new Clusterize({
+        rows,
+        scrollElem: cluScrollEl,
+        contentElem: document.getElementById('cluList'),
+        rows_in_block: 50,
+        blocks_in_cluster: 4,
+        no_data_text: 'No rows.',
+      });
+      if (capped < ds.total) {
+        // Show the "can't fit millions" warning right in the toolbar message.
+        document.getElementById('scnDesc').textContent =
+          `${conf.desc}  ⚠ Clusterize side capped at ${capped.toLocaleString()} rows to avoid OOM.`;
+      }
+
+      // -- Cerious: lazy, no pre-build.
+      // Mark .scroll-viewport with [data-cerious-scroll-content] so the engine
+      // reads viewport height from it. It's sized height:100% of the host and
+      // owns overflow-x:auto in spreadsheet mode — so its clientHeight shrinks
+      // by the h-scrollbar gutter when the bar appears, matching the wrappers.
+      csHostEl.innerHTML = '<div class="scroll-viewport" data-cerious-scroll-content style="height:100%;width:100%"><div class="scroll-content"></div></div>';
+      const scrollContent = csHostEl.querySelector('.scroll-content');
+      let renderCs = () => {};
+      cs = new CeriousScroll(csHostEl, ds.total, {
+        keyboard: { enabled: true },
+        wheel: { enabled: true },
+        touch: { enabled: true },
+        onScroll: () => renderCs(),
+      });
+      renderCs = () => {
+        cs.renderViewport(csHostEl.clientHeight, scrollContent, (index, container) => {
+          const row = ds.getRow(index);
+          container.textContent = '';
+          container.appendChild(rowDiv(row));
+        });
+      };
+      cs._render = renderCs;
+      // After in-place row mutations (expand-on-click, async image grew the
+      // row), call scroller.refreshVisible() to re-run the renderer for every
+      // already-rendered row and re-measure each new height into the engine's
+      // cache. Without this, the engine skips the renderer for rows it
+      // considers already rendered and re-reads stale offsetHeight.
+      cs._refreshVisible = () => {
+        cs.refreshVisible((index, container) => {
+          const row = ds.getRow(index);
+          container.textContent = '';
+          container.appendChild(rowDiv(row));
+        });
+        renderCs();
+      };
+      renderCs();
+      // re-render on resize
+      new ResizeObserver(renderCs).observe(csHostEl);
+
+      if (scenario === 'continuous-updates') startLive();
+    }
+
+    function refreshBoth() {
+      // Clusterize: rebuild the rows it knows about.
+      if (clusterize) {
+        const conf = SCENARIOS[scnSel.value];
+        const capped = Math.min(ds.total, conf?.cluCap ?? 200_000);
+        const rows = new Array(capped);
+        for (let i = 0; i < capped; i++) rows[i] = rowHTML(ds.getRow(i));
+        clusterize.update(rows);
+      }
+      // Cerious: re-paint visible rows + clear cache + re-render so changed
+      // heights (expand/collapse, image loads) propagate.
+      if (cs && cs._refreshVisible) cs._refreshVisible();
+      else if (cs && cs._render) cs._render();
+    }
+
+    // Throttle clusterize rebuilds during async storms (image loads).
+    function scheduleRefresh() {
+      if (refreshScheduled) return;
+      refreshScheduled = true;
+      setTimeout(() => { refreshScheduled = false; refreshBoth(); }, 120);
+    }
+
+    function startLive() {
+      liveId = setInterval(() => {
+        const seed = (performance.now() | 0) & 0xffff;
+        pickIndices(ds.total, 50, seed).forEach((i, k) => {
+          const grow = (k & 1) === 0;
+          ds.setOverride(i, { scale: grow ? 1.6 : 1, hot: (ds.getRow(i).hot + 1) & 7 });
+        });
+        refreshBoth();
+      }, 150);
+    }
+    function stopLive() {
+      if (liveId !== null) { clearInterval(liveId); liveId = null; }
+    }
+
+    // ---- Click-to-expand on either side ---------------------------------
+    function onRowClick(e) {
+      const li = e.target.closest('[data-id]');
+      if (!li) return;
+      const id = Number(li.dataset.id);
+      if (!Number.isFinite(id)) return;
+      const r = ds.getRow(id);
+      ds.setOverride(id, { expanded: !r.expanded });
+      refreshBoth();
+    }
+    cluScrollEl.addEventListener('click', onRowClick);
+    csHostEl.addEventListener('click', onRowClick);
+
+    // ---- FPS meter ------------------------------------------------------
+    const fpsEl = document.getElementById('fps');
+    let last = performance.now(), frames = 0;
+    function fpsLoop(now) {
+      frames++;
+      const elapsed = now - last;
+      if (elapsed >= 500) {
+        const fps = Math.round((frames * 1000) / elapsed);
+        fpsEl.textContent = `${fps} FPS`;
+        fpsEl.style.color = fps >= 55 ? '#1a7f37' : fps >= 30 ? '#9a6700' : '#cf222e';
+        frames = 0; last = now;
+      }
+      requestAnimationFrame(fpsLoop);
+    }
+    requestAnimationFrame(fpsLoop);
+
+    // ---- Toolbar wiring -------------------------------------------------
+    const scnSel = document.getElementById('scn');
+    const jumpBtn = document.getElementById('jumpBtn');
+    scnSel.addEventListener('change', () => {
+      jumpBtn.hidden = scnSel.value !== 'log-stream';
+      rebuildFor(scnSel.value);
+    });
+    document.getElementById('resetBtn').addEventListener('click', () => rebuildFor(scnSel.value));
+    jumpBtn.addEventListener('click', () => {
+      const target = 9_000_000;
+      // Cerious: lazy, jumps to the real row instantly.
+      if (cs?.jumpToElement) {
+        cs.jumpToElement(target);
+        cs._render?.();
+      }
+      // Clusterize: only knows about its first cluCap rows. Best we can do is
+      // scroll its container to the bottom of what it pre-rendered — which
+      // visually proves the gap (it stops at row ~50,000 of 10,000,000).
+      if (cluScrollEl) {
+        cluScrollEl.scrollTop = cluScrollEl.scrollHeight;
+      }
+    });
+
+    // ---- Boot ----------------------------------------------------------
+    rebuildFor('dynamic-height');
+  </script>
+</body>
+</html>

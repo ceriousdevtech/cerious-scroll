@@ -69,6 +69,27 @@ export class CeriousScroll {
   private static readonly NEAR_END_THRESHOLD = 100;
   private static readonly OVERSCAN_BUFFER_SIZE = 5;
 
+  /**
+   * Measure the usable vertical rendering area inside `container`.
+   *
+   * Framework wrappers (Vue/React/Angular) create an inner
+   * `[data-cerious-scroll-content]` element sized to `height: 100%` of the
+   * container. When that inner element opts into horizontal scrolling
+   * (e.g. `overflow-x: auto` for a wide spreadsheet), its own
+   * `clientHeight` shrinks by the horizontal scrollbar's gutter, while the
+   * container's stays unchanged. Reading from the inner element first means
+   * the engine renders the right number of rows and the last row stays
+   * clear of the scrollbar.
+   */
+  private static measureViewportHeight(container: HTMLElement): number {
+    const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+    if (inner) {
+      const h = inner.clientHeight;
+      if (h > 0) return h;
+    }
+    return container.clientHeight || container.offsetHeight || 600;
+  }
+
   // ===== SCROLL STATE =====  
   currentElement = 0;
   scrollOffset = 0;
@@ -134,7 +155,7 @@ export class CeriousScroll {
     this.totalElements = Math.floor(totalElements);
     
     // Auto-detect viewport height from container
-    this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
+    this.viewportHeight = CeriousScroll.measureViewportHeight(container);
     this.windowHeight = this.viewportHeight; // Keep in sync
 
     // Create measurement-only height calculator - uses just-in-time measurement
@@ -397,6 +418,29 @@ export class CeriousScroll {
   }
 
   /**
+   * Re-invoke the renderer callback for every currently-rendered element and
+   * re-measure each one's height. Use after in-place row mutations whose new
+   * height the engine cannot otherwise observe — e.g. expand/collapse driven
+   * by external state, an async image that finished loading and grew its row.
+   *
+   * Without this, a follow-up renderViewport() call would skip the renderer
+   * for already-rendered indices and re-read the stale offsetHeight, so the
+   * mutation would silently no-op.
+   *
+   * Typical usage:
+   * ```
+   * scroller.refreshVisible(renderCallback);
+   * scroller.renderViewport(container.clientHeight, container, renderCallback);
+   * ```
+   */
+  refreshVisible(renderElement: ElementRenderer): void {
+    if (typeof renderElement !== 'function') {
+      throw new Error('CeriousScroll.refreshVisible: renderElement must be a function');
+    }
+    this.viewportRenderer.refreshVisible(renderElement);
+  }
+
+  /**
    * Cache a measured height for a specific element
    * @param index Element index
    * @param height Measured height in pixels
@@ -653,7 +697,7 @@ export class CeriousScroll {
    */
   handleViewportChange(container: HTMLElement): void {
     // Update viewport height from container
-    this.viewportHeight = container.clientHeight || container.offsetHeight || 600;
+    this.viewportHeight = CeriousScroll.measureViewportHeight(container);
     this.windowHeight = this.viewportHeight;
 
     // Update modules with new viewport height

@@ -5,6 +5,15 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-06-03
+
+### Added
+- **Smooth wheel scrolling** in `WheelController`. Wheel events are accumulated into a target offset and eased over ~150ms via rAF using a quad/linear blend (gentle for single notches, near-linear for sustained fast spins so motion stays constant-velocity instead of re-front-loading on every event). Per-frame step uses `Math.round` to avoid sub-pixel jitter on the easing tail; the loop short-circuits at the top boundary and resets cleanly when the engine refuses to advance. Disable via `wheel: { smooth: false }`.
+- **`measureViewportHeight()`** helper on `CeriousScroll`. The engine now reads viewport height from an inner `[data-cerious-scroll-content]` element when present, so a wrapper that hosts a horizontal scrollbar on the inner element transparently shrinks the engine's row budget by the gutter and the last row clears the bar without consumer math.
+
+### Changed
+- `WheelController` and `TouchController` prefer the inner `[data-cerious-scroll-content]` as the horizontal scroll target when its `scrollWidth > clientWidth`, so trackpad two-finger and shift+wheel forward to the same axis that hosts the visual h-scrollbar.
+
 ## [1.0.3] - 2026-06-03
 
 ### Added

@@ -34,125 +34,25 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Convert markdown to HTML
+      - name: Assemble site
         run: |
-          # Create docs HTML directory
-          mkdir -p _site/docs
-          mkdir -p _site/demo
-          mkdir -p _site/dist
-          
-          # Copy main index
+          mkdir -p _site/demo _site/dist _site/docs
+
+          # Landing page + demos
           cp index.html _site/
-          
-          # Copy demos
           cp demo/*.html _site/demo/
           cp demo/*.css _site/demo/
           cp demo/*.js _site/demo/
-          
-          # Copy built files
+
+          # Built library
           cp -r dist/* _site/dist/
-          
-          # Convert ARCHITECTURE.md to HTML
-          cat > _site/docs/ARCHITECTURE.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>CeriousScroll - Architecture Documentation</title>
-              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css">
-              <style>
-                  body { margin: 0; padding: 0; background: #f6f8fa; }
-                  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; }
-                  .header h1 { margin: 0; font-size: 2.5rem; }
-                  .header a { color: white; text-decoration: underline; opacity: 0.9; }
-                  .container { max-width: 980px; margin: 40px auto; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-                  .markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; }
-                  @media (max-width: 767px) { .markdown-body { padding: 15px; } }
-              </style>
-              <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-          </head>
-          <body>
-              <div class="header">
-                  <h1>CeriousScroll - Architecture Documentation</h1>
-                  <p><a href="../index.html">← Back to Home</a> | <a href="IMPLEMENTATION_GUIDE.html">Implementation Guide</a></p>
-              </div>
-              <div class="container">
-                  <div class="markdown-body" id="content"></div>
-              </div>
-              <script>
-                  fetch('../docs/ARCHITECTURE.md')
-                      .then(response => response.text())
-                      .then(text => {
-                          document.getElementById('content').innerHTML = marked.parse(text);
-                      });
-              </script>
-          </body>
-          </html>
-          EOF
-          
-          # Convert IMPLEMENTATION_GUIDE.md to HTML
-          cat > _site/docs/IMPLEMENTATION_GUIDE.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>CeriousScroll - Implementation Guide</title>
-              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css">
-              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-              <style>
-                  body { margin: 0; padding: 0; background: #f6f8fa; }
-                  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; }
-                  .header h1 { margin: 0; font-size: 2.5rem; }
-                  .header a { color: white; text-decoration: underline; opacity: 0.9; }
-                  .container { max-width: 980px; margin: 40px auto; padding: 40px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-                  .markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; }
-                  @media (max-width: 767px) { .markdown-body { padding: 15px; } }
-              </style>
-              <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-              <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-          </head>
-          <body>
-              <div class="header">
-                  <h1>CeriousScroll - Implementation Guide</h1>
-                  <p><a href="../index.html">← Back to Home</a> | <a href="ARCHITECTURE.html">Architecture Docs</a></p>
-              </div>
-              <div class="container">
-                  <div class="markdown-body" id="content"></div>
-              </div>
-              <script>
-                  marked.setOptions({
-                      highlight: function(code, lang) {
-                          if (lang && hljs.getLanguage(lang)) {
-                              return hljs.highlight(code, { language: lang }).value;
-                          }
-                          return hljs.highlightAuto(code).value;
-                      }
-                  });
-                  
-                  fetch('../docs/IMPLEMENTATION_GUIDE.md')
-                      .then(response => response.text())
-                      .then(text => {
-                          document.getElementById('content').innerHTML = marked.parse(text);
-                          document.querySelectorAll('pre code').forEach((block) => {
-                              hljs.highlightElement(block);
-                          });
-                      });
-              </script>
-          </body>
-          </html>
-          EOF
-          
-          # Copy markdown files for fetch
+
+          # Raw markdown docs (linked from the README on GitHub)
           cp docs/ARCHITECTURE.md _site/docs/
           cp docs/IMPLEMENTATION_GUIDE.md _site/docs/
-          
-          # Copy license files
+
+          # License + README
           cp LICENSE _site/
-          cp LICENSE-MIT _site/
-          
-          # Copy README
           cp README.md _site/
 
       - name: Upload artifact
