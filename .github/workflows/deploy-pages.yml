@@ -36,13 +36,13 @@ jobs:
 
       - name: Assemble site
         run: |
-          mkdir -p _site/demo _site/dist _site/docs
+          mkdir -p _site/dist _site/docs
 
-          # Landing page + demos
-          cp index.html _site/
-          cp demo/*.html _site/demo/
-          cp demo/*.css _site/demo/
-          cp demo/*.js _site/demo/
+          # Demo gallery (landing page), demo pages, and their assets now live
+          # at the package root (flattened from the old demo/ subdirectory).
+          cp *.html _site/
+          cp *.css _site/
+          cp *.js _site/
 
           # Built library
           cp -r dist/* _site/dist/
