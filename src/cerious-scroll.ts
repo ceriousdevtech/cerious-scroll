@@ -231,7 +231,6 @@ export class CeriousScroll {
       requestDisplayUpdate: () => this.updateDisplay(),
       syncScrollbar: () => {
         if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
-          this.nativeScrollbar.updateLastProgrammaticUpdate();
           this.nativeScrollbar.syncNativeScrollbar();
         }
       },
@@ -734,7 +733,6 @@ export class CeriousScroll {
     this.navigationEngine.reanchorBottom(this.viewportHeight);
 
     if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
-      this.nativeScrollbar.updateLastProgrammaticUpdate();
       this.nativeScrollbar.syncNativeScrollbar();
     }
 

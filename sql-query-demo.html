@@ -43,7 +43,7 @@
         </div>
     </main>
 
-    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="dist/cerious-scroll.bundle.js"></script>
     <script src="demo-bootstrap.js"></script>
     <script>
         (function () {
@@ -96,6 +96,7 @@
                 render: render,
                 options: {
                     touch: { enabled: true, getHorizontalScrollTarget: () => hScroll },
+                    wheel: { enabled: true, getHorizontalScrollTarget: () => hScroll },
                 },
             });
 

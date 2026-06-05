@@ -14,14 +14,14 @@ It is designed for data grids, chat applications, log viewers, financial dashboa
 
 ## Demo
 
-**[Live demos →](https://ceriousdevtech.github.io/cerious-scroll/demo/)** — basic virtual scroll, data grid, chat, log viewer, code viewer, e-commerce, finance ticker, git history, SQL results, and a side-by-side bake-off against Clusterize.js.
+**[Live demos →](https://ceriousdevtech.github.io/cerious-scroll/)** — basic virtual scroll, data grid, chat, log viewer, code viewer, e-commerce, finance ticker, git history, SQL results, and a side-by-side bake-off against Clusterize.js.
 
 To run locally:
 
 ```bash
 npm install
 npm run build
-npx http-server . -p 8080   # then open http://localhost:8080/demo/
+npx http-server . -p 8080   # then open http://localhost:8080/
 ```
 
 ---

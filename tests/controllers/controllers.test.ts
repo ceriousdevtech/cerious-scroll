@@ -127,6 +127,84 @@ describe('WheelController', () => {
       expect(vi.mocked(mockContainer.dispatchEvent).mock.calls.length).toBeLessThanOrEqual(2);
     });
   });
+
+  describe('Smooth scrolling (native feel)', () => {
+    // A stateful engine stub: the smooth follow checks whether the engine
+    // actually moved (boundary clamp), so the tracked position must advance as
+    // deltas are applied — otherwise the loop would treat every step as a
+    // pinned-edge no-op and bail after one frame.
+    function setupSmooth() {
+      let pos = 0;
+      const steps: number[] = [];
+      const scroll = vi.fn((dy: number) => {
+        pos += dy;
+        steps.push(dy);
+        return { element: 0, offset: pos };
+      });
+      const controller = new WheelController({
+        scroll,
+        calculateScrollPercentage: () => 0,
+        getCurrentElement: () => 0,
+        getScrollOffset: () => pos,
+      });
+      const container = createMockContainer();
+      controller.attach(container, undefined, {}); // smooth defaults to true
+      const handler = vi
+        .mocked(container.addEventListener)
+        .mock.calls.find((c) => c[0] === 'wheel')![1] as EventListener;
+      return { steps, handler };
+    }
+
+    // The exponential tail emits sub-pixel frames (0px steps) between the final
+    // 1px landings, so we pump until the full distance has been delivered rather
+    // than guessing an idle threshold. No overshoot is possible (the follow
+    // approaches from below), so the sum rises monotonically to exactly target.
+    async function pumpUntil(steps: number[], expectedTotal: number, maxFrames = 120): Promise<void> {
+      for (let i = 0; i < maxFrames; i++) {
+        if (steps.reduce((a, b) => a + b, 0) === expectedTotal) return;
+        await waitForAnimationFrame();
+      }
+    }
+
+    it('delivers a wheel notch over several decelerating frames with no end jump', async () => {
+      const { steps, handler } = setupSmooth();
+
+      handler(createMockWheelEvent(100));
+      await pumpUntil(steps, 100);
+
+      // Full distance delivered, exactly — no loss and no overshoot.
+      const total = steps.reduce((a, b) => a + b, 0);
+      expect(total).toBe(100);
+
+      // Spread across multiple frames rather than snapping in one.
+      expect(steps.length).toBeGreaterThanOrEqual(3);
+
+      // Monotonic in one direction (no overshoot/correction wobble).
+      expect(steps.every((s) => s > 0)).toBe(true);
+
+      // Front-loaded and decelerating: the largest move is the first frame, and
+      // the motion lands gently — the final step is small. This is the explicit
+      // guard against the old end-of-curve "dump" that produced a visible jump.
+      expect(Math.max(...steps)).toBe(steps[0]);
+      expect(steps[steps.length - 1]).toBeLessThanOrEqual(3);
+    });
+
+    it('accumulates rapid successive notches and still settles exactly on target', async () => {
+      const { steps, handler } = setupSmooth();
+
+      // Three notches in quick succession (before the follow settles).
+      handler(createMockWheelEvent(100));
+      handler(createMockWheelEvent(100));
+      handler(createMockWheelEvent(100));
+
+      await pumpUntil(steps, 300);
+
+      const total = steps.reduce((a, b) => a + b, 0);
+      expect(total).toBe(300); // every pixel of input delivered, none lost or doubled
+      expect(steps.every((s) => s > 0)).toBe(true);
+      expect(steps[steps.length - 1]).toBeLessThanOrEqual(3); // gentle landing
+    });
+  });
 });
 
 describe('TouchController', () => {

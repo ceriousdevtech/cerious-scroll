@@ -70,9 +70,6 @@ export interface WheelNavigationOptions {
    * Animate wheel deltas over multiple frames instead of applying them
    * instantly. Matches the smooth feel of native browser overflow scrolling,
    * where one wheel notch eases over ~150ms. Default: true.
-   *
-   * Back-compat: `smooth: false` is equivalent to `wheelBehavior: 'immediate'`.
-   * When `wheelBehavior` is set, it takes precedence over `smooth`.
    */
   smooth?: boolean;
 
@@ -82,18 +79,6 @@ export interface WheelNavigationOptions {
    * gentler. Default: 0.22 (~tracks native macOS feel).
    */
   smoothFactor?: number;
-
-  /**
-   * How wheel/trackpad input is applied to the scroll engine.
-   *
-   * - `'auto'` (default): classify each event as trackpad or mouse wheel. Trackpad
-   *   input is applied immediately (its OS already adds momentum, so layering
-   *   custom smoothing on top causes delayed overscroll). Mouse wheel input
-   *   is animated for smooth motion across each ~100px notch.
-   * - `'immediate'`: never smooth. Every event is applied synchronously.
-   * - `'smooth'`: always smooth, regardless of input device.
-   */
-  wheelBehavior?: 'auto' | 'immediate' | 'smooth';
 }
 
 /**

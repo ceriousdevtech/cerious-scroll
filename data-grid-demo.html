@@ -37,7 +37,7 @@
         </div>
     </main>
 
-    <script src="../dist/cerious-scroll.bundle.js"></script>
+    <script src="dist/cerious-scroll.bundle.js"></script>
     <script src="demo-bootstrap.js"></script>
     <script>
         (function () {
@@ -171,7 +171,10 @@
                 host: document.getElementById('scroll'),
                 total: Math.max(1, order.length),
                 render: render,
-                options: { touch: { enabled: true, getHorizontalScrollTarget: () => hScroll } },
+                options: {
+                    touch: { enabled: true, getHorizontalScrollTarget: () => hScroll },
+                    wheel: { enabled: true, getHorizontalScrollTarget: () => hScroll },
+                },
             });
             updateLabels();
 

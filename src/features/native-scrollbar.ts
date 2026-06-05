@@ -20,7 +20,11 @@ export class NativeScrollbar {
   private static readonly DEFAULT_SCROLLBAR_WIDTH = 17;
   private static readonly DEFAULT_Z_INDEX = 10;
   private static readonly ELEMENT_HEIGHT_MULTIPLIER = 10;
-  private static readonly PROGRAMMATIC_UPDATE_GRACE_PERIOD_MS = 50;
+  // Tolerance (px) for recognising the async echo of a programmatic scrollTop
+  // write. The browser may clamp/round our written value, so the echo's
+  // scrollTop can differ from the target by a sub-pixel; a small window
+  // absorbs that without misclassifying a genuine user drag.
+  private static readonly PROGRAMMATIC_SCROLL_TOLERANCE_PX = 2;
   private static readonly BOTTOM_THRESHOLD_PERCENTAGE = 99;
   private static readonly PERCENTAGE_MAX = 100;
   // Custom thumb tuning. Sibling-driver strip is fixed width; the thumb
@@ -52,14 +56,17 @@ export class NativeScrollbar {
     trackPx: number;
   } | null = null;
   private _syncingScrollbar = false;
-  private _lastProgrammaticUpdate = 0;
-  // Counter of pending programmatic scrollTop assignments. Each programmatic
-  // assignment is expected to produce one scroll event; the listener
-  // decrements and ignores. This handles the race deterministically without
-  // relying solely on a wall-clock window. The time grace below is kept as a
-  // safety net for browsers that may coalesce multiple assignments into a
-  // single scroll event (or fire none at all).
-  private _pendingProgrammaticEvents = 0;
+  // Last scrollTop value we wrote programmatically (wheel/touch/keyboard sync,
+  // reflow, resize). The scroll listener compares the live scrollTop against
+  // this: a match (within tolerance) means the event is the async echo of our
+  // own write and is ignored; a difference means the user moved the strip and
+  // we process it. This is robust to scroll-event coalescing — the browser may
+  // collapse many rapid programmatic writes into FEWER scroll events, so a
+  // per-write *counter* leaks a positive residual that then swallows the
+  // user's subsequent real drags (a "dead zone" until enough events drain it).
+  // Matching on the actual position carries no such residual. `null` means
+  // "no programmatic write to reconcile yet".
+  private _lastProgrammaticScrollTop: number | null = null;
   private _cachedScrollbarWidth: number | undefined = undefined;
   private _lastScrollTop: number = 0;
   private _lastRenderedElement: number = -1;
@@ -178,13 +185,6 @@ export class NativeScrollbar {
   }
 
   /**
-   * Update the last programmatic update timestamp
-   */
-  updateLastProgrammaticUpdate(): void {
-    this._lastProgrammaticUpdate = Date.now();
-  }
-
-  /**
    * Dynamically detect the scrollbar width for the current browser/environment
    * This accounts for different browsers, OS settings, zoom levels, and custom CSS
    * 
@@ -238,10 +238,11 @@ export class NativeScrollbar {
     //
     // The caller's reflow() re-syncs the thumb to the preserved logical position
     // via syncNativeScrollbar() (the container's clientHeight changed, so the
-    // pixel scrollTop for the same percentage changes). Reset the programmatic
-    // accounting so a resize can never eat the next genuine scroll.
+    // pixel scrollTop for the same percentage changes). Clear the programmatic
+    // marker so a resize can never eat the next genuine scroll; reflow's sync
+    // re-establishes it for the new pixel position.
     this._syncingScrollbar = false;
-    this._pendingProgrammaticEvents = 0;
+    this._lastProgrammaticScrollTop = null;
   }
 
   /**
@@ -285,16 +286,24 @@ export class NativeScrollbar {
     // On touch-primary devices the OS won't paint a scrollbar on this
     // sibling strip (the user's finger drags content, not the strip), so we
     // collapse the strip to zero width and draw our own overlay thumb on top
-    // of the content. On desktop the native OS scrollbar on the strip works
-    // and matches platform chrome — keep the original look.
+    // of the content. On desktop the strip carries the real native OS
+    // scrollbar, which already adapts to the platform AND the input device
+    // (e.g. macOS draws a thin auto-hiding overlay for a trackpad and a wider
+    // persistent bar for a mouse) and to the host's `color-scheme`.
+    //
+    // Crucially we keep the strip fully transparent and borderless: painting
+    // our own background/border over it (the previous `#f0f0f0` + `1px #ccc`)
+    // drew a fake light "track" that masked the native scrollbar — looking
+    // wrong on dark UIs and defeating the device adaptation. Leaving it bare
+    // lets the genuine OS scrollbar show through unchanged.
     const touch = NativeScrollbar.isTouchPrimary();
 
     this._scrollbarContainer = this.createNativeScrollbar(container, {
       width: touch ? '0px' : `${detectedWidth}px`,
       position: 'right',
       style: {
-        background: touch ? 'transparent' : '#f0f0f0',
-        borderLeft: touch ? 'none' : '1px solid #ccc',
+        background: 'transparent',
+        borderLeft: 'none',
         zIndex: String(NativeScrollbar.DEFAULT_Z_INDEX)
       }
     });
@@ -395,19 +404,25 @@ export class NativeScrollbar {
       // CeriousScroll constructor finishing).
       if (!this.scrollHandlers) return;
 
-      // Drain one pending programmatic event if any. This handles the common
-      // synchronous-dispatch case deterministically.
-      if (this._pendingProgrammaticEvents > 0) {
-        this._pendingProgrammaticEvents--;
+      const scrollTop = scrollbarContainer.scrollTop;
+
+      // Ignore the asynchronous echo of our own programmatic writes. We compare
+      // the live scrollTop against the last value we wrote rather than counting
+      // expected echoes: browsers coalesce rapid programmatic writes into fewer
+      // scroll events, so a counter accumulates a positive residual that later
+      // swallows the user's genuine drags (the wheel-then-drag "dead zone").
+      // A position match has no residual, and still distinguishes a user move
+      // (different scrollTop) from an echo (same scrollTop) even when a write
+      // and a user move coalesce into one event — the live scrollTop then holds
+      // the user's value, so it is correctly processed.
+      if (
+        this._lastProgrammaticScrollTop !== null &&
+        Math.abs(scrollTop - this._lastProgrammaticScrollTop) <=
+          NativeScrollbar.PROGRAMMATIC_SCROLL_TOLERANCE_PX
+      ) {
         return;
       }
 
-      // Time grace as a safety net for browsers that don't fire a scroll
-      // event for every programmatic assignment.
-      const timeSinceUpdate = Date.now() - this._lastProgrammaticUpdate;
-      if (timeSinceUpdate < NativeScrollbar.PROGRAMMATIC_UPDATE_GRACE_PERIOD_MS) return;
-      
-      const scrollTop = scrollbarContainer.scrollTop;
       const maxScroll = scrollbarContainer.scrollHeight - scrollbarContainer.clientHeight;
       
       // Update last scroll position
@@ -498,11 +513,13 @@ export class NativeScrollbar {
     this._scrollListener = scrollListener;
     scrollbarContainer.addEventListener('scroll', scrollListener);
 
-    // A brand-new element starts at scrollTop 0 with no in-flight programmatic
-    // assignments; clear any accounting tied to the element we just replaced so
-    // its stale pending count can't swallow real scrolls on this new one.
+    // A brand-new element starts at scrollTop 0. Seed the programmatic marker
+    // at 0 so a stray initial scroll event (the transient-0 read) is treated as
+    // our own and ignored, while any real user drag — which moves scrollTop off
+    // 0 — is still processed. This also drops any marker tied to the element we
+    // just replaced.
     this._syncingScrollbar = false;
-    this._pendingProgrammaticEvents = 0;
+    this._lastProgrammaticScrollTop = 0;
 
     this._scrollbarContainer = scrollbarContainer;
 
@@ -534,11 +551,12 @@ export class NativeScrollbar {
     // Prevent infinite loop by checking if we need to update
     if (Math.abs(container.scrollTop - targetScrollTop) > 1) {
       this._syncingScrollbar = true;
-      this._lastProgrammaticUpdate = Date.now();
-      this._pendingProgrammaticEvents++;
       container.scrollTop = targetScrollTop;
-      // Update lastScrollTop to match the new position
-      this._lastScrollTop = targetScrollTop;
+      // Record the value we actually wrote (read back, since the browser may
+      // clamp/round our target) so the scroll listener recognises — and
+      // ignores — the asynchronous echo this assignment triggers.
+      this._lastProgrammaticScrollTop = container.scrollTop;
+      this._lastScrollTop = this._lastProgrammaticScrollTop;
       this._syncingScrollbar = false;
     }
 

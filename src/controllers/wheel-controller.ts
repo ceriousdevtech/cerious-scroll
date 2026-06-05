@@ -14,90 +14,6 @@ interface WheelControllerDeps {
   getScrollOffset: () => number;
 }
 
-type WheelInputType = 'trackpad' | 'wheel';
-
-/**
- * Walk from `start` up to (but not past) `root`, returning the first element
- * whose computed `overflow-x` is `auto` or `scroll` and that actually overflows
- * horizontally. Used to find which element should receive a horizontal wheel
- * delta when the marked content node isn't itself the scrollable one.
- */
-function findHorizontalScrollTarget(start: HTMLElement, root: HTMLElement): HTMLElement | null {
-  let el: HTMLElement | null = start;
-  const stop = root.parentElement;
-  while (el && el !== stop) {
-    if (el.scrollWidth > el.clientWidth) {
-      const ox = getComputedStyle(el).overflowX;
-      if (ox === 'auto' || ox === 'scroll') return el;
-    }
-    el = el.parentElement;
-  }
-  return null;
-}
-
-/**
- * Heuristic classifier for distinguishing trackpad / free-scroll-mouse
- * gestures from ratcheted mouse-wheel notches. No browser API gives this
- * directly; we look at deltaMode, deltaY magnitude, and a short rolling
- * window of recent events.
- *
- * Rules (checked in order):
- *  1. Any horizontal component in the recent window  -> trackpad (mice rarely
- *     produce deltaX; trackpads do constantly).
- *  2. deltaMode != PIXEL (line/page units)           -> wheel (only mice emit
- *     non-pixel deltas in modern browsers).
- *  3. >= 5 events in the 120ms window                -> continuous input
- *     (trackpad OR free-scroll mouse wheel like the G502X). These have OS
- *     or hardware momentum already; layering our easing produces delayed
- *     overscroll, so treat as 'trackpad' (immediate-apply).
- *  4. Isolated event (only one in window)            -> wheel. A trackpad
- *     gesture cannot produce a single event in 120ms; it always streams.
- *     This catches small ratcheted notches (deltaY 30-50) that would
- *     otherwise fall through every magnitude check.
- *  5. |deltaY| >= 80                                 -> wheel (a single big
- *     ratcheted notch).
- *  6. Several small (<40px) deltas in the window     -> trackpad.
- *  7. Fallback                                       -> trackpad (safer to
- *     skip custom smoothing than to layer it on top of OS momentum).
- */
-class WheelClassifier {
-  private recent: { time: number; deltaX: number; deltaY: number }[] = [];
-
-  classify(e: WheelEvent): WheelInputType {
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-
-    this.recent.push({ time: now, deltaX: e.deltaX, deltaY: e.deltaY });
-    // Keep only events from the last 120ms.
-    const cutoff = now - 120;
-    while (this.recent.length > 0 && this.recent[0].time < cutoff) {
-      this.recent.shift();
-    }
-
-    const absY = Math.abs(e.deltaY);
-    const hasHorizontal = this.recent.some(x => Math.abs(x.deltaX) > 0);
-    const smallDeltaCount = this.recent.reduce(
-      (n, x) => n + (Math.abs(x.deltaY) > 0 && Math.abs(x.deltaY) < 40 ? 1 : 0),
-      0,
-    );
-
-    if (hasHorizontal) return 'trackpad';
-    if (e.deltaMode !== 0 /* DOM_DELTA_PIXEL */) return 'wheel';
-    // Continuous high-rate input: trackpad or free-scroll mouse (e.g. Logitech
-    // G502X with the wheel unlocked). Catch this BEFORE the magnitude check —
-    // a fast free-spin can produce |deltaY| > 80 per event, which would
-    // otherwise misclassify as a ratchet notch.
-    if (this.recent.length >= 5) return 'trackpad';
-    // Isolated event: trackpads always stream multiple events in 120ms,
-    // so a single event in the window is a ratchet notch. This catches
-    // small notches (Logitech mice often emit deltaY ~ 30-50) that would
-    // otherwise fail the magnitude check below.
-    if (this.recent.length === 1) return 'wheel';
-    if (absY >= 80) return 'wheel';
-    if (this.recent.length >= 4 && smallDeltaCount >= 3) return 'trackpad';
-    return 'trackpad';
-  }
-}
-
 export class WheelController {
   // GC optimization: Reuse event detail object to avoid allocations
   private readonly _eventDetail: {
@@ -119,7 +35,7 @@ export class WheelController {
     onScroll?: (result: ScrollResult) => void,
     wheelOptions?: WheelNavigationOptions
   ): () => void {
-    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor' | 'wheelBehavior'>> = {
+    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor'>> = {
       enabled: wheelOptions?.enabled !== false,
       emitViewportChangeEvent: wheelOptions?.emitViewportChangeEvent !== false,
       coalesceViewportChangeEvent: wheelOptions?.coalesceViewportChangeEvent === true,
@@ -127,16 +43,11 @@ export class WheelController {
       smoothFactor: typeof wheelOptions?.smoothFactor === 'number' && wheelOptions.smoothFactor > 0 && wheelOptions.smoothFactor <= 1
         ? wheelOptions.smoothFactor
         : 0.22,
-      // wheelBehavior takes precedence; if unset, derive from legacy `smooth`.
-      wheelBehavior: wheelOptions?.wheelBehavior
-        ?? (wheelOptions?.smooth === false ? 'immediate' : 'auto'),
     };
 
     if (!options.enabled) {
       return () => {};
     }
-
-    const classifier = new WheelClassifier();
 
     let rafId: number | null = null;
     let pendingPercentage = 0;
@@ -166,22 +77,17 @@ export class WheelController {
       // (Vue/React/Angular) put rows into [data-cerious-scroll-content] and
       // that's where overflow-x: auto lives for wide content (e.g.
       // spreadsheet). When present, horizontal wheel deltas are forwarded
-      // to whichever element actually owns the horizontal scroll so trackpad
-      // two-finger sideways and shift+wheel work; if the gesture is
-      // dominantly horizontal we skip the vertical engine scroll. We also
-      // use the inner element's clientHeight as the viewport so the engine
-      // accounts for the h-scrollbar gutter.
+      // to its scrollLeft so trackpad two-finger sideways and shift+wheel
+      // work; if the gesture is dominantly horizontal we skip the vertical
+      // engine scroll. We also use the inner element's clientHeight as the
+      // viewport so the engine accounts for the h-scrollbar gutter.
       const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
       const dx = event.deltaX;
       const dy = event.deltaY;
-      // Find the nearest ancestor (starting from the inner content node, or
-      // the container if no inner exists) that actually has horizontal
-      // overflow scrolling. Some demos put overflow-x:auto on
-      // [data-cerious-scroll-content] directly (comparison, wrappers); others
-      // put it on an ancestor with [data-cerious-scroll-content] as a
-      // non-scrolling child (standalone grid/sql demos). Walking the chain
-      // handles both layouts.
-      const hTarget = findHorizontalScrollTarget(inner ?? container, container);
+      const hTarget: HTMLElement =
+        inner && inner.scrollWidth > inner.clientWidth
+          ? inner
+          : (container.scrollWidth > container.clientWidth ? container : null!) as HTMLElement;
       if (hTarget && dx !== 0) {
         hTarget.scrollLeft += dx;
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -195,49 +101,24 @@ export class WheelController {
       const innerH = inner?.clientHeight ?? 0;
       const viewportHeight = innerH > 0 ? innerH : (container.clientHeight || container.offsetHeight);
 
-      // Decide whether to smooth this event. Trackpads have OS-level momentum
-      // already, so layering our easing on top causes delayed overscroll and
-      // a "sluggish" feel; apply trackpad deltas synchronously. Mouse-wheel
-      // notches land as single large events that snap when applied raw, so
-      // they benefit from our easing.
-      let smoothThisEvent: boolean;
-      if (options.wheelBehavior === 'immediate') {
-        smoothThisEvent = false;
-      } else if (options.wheelBehavior === 'smooth') {
-        smoothThisEvent = true;
-      } else {
-        smoothThisEvent = classifier.classify(event) === 'wheel';
-      }
-
-      if (!smoothThisEvent) {
-        // Cancel any in-flight smooth animation so a trackpad gesture
-        // arriving mid-flight isn't stacked on top of leftover momentum.
-        if (smoothRafId != null) {
-          cancelAnimationFrame(smoothRafId);
-          smoothRafId = null;
-          targetDy = 0;
-          animatedDy = 0;
-          animFromDy = 0;
-        }
+      if (!options.smooth) {
         const result = this.deps.scroll(dy, viewportHeight);
         emitChange(result);
         onScroll?.(result);
         return;
       }
 
-      // Smooth path: queue the delta into an animated easeOut from
-      // `animatedDy` toward `targetDy`. A mouse wheel notch lands as one
-      // large event (often ~100px). Applying it instantly is one
-      // browser-paint frame, which reads as a snap. Spreading the same
-      // distance across ~120ms with easeOutCubic matches the perceived
-      // smoothness of native overflow scrolling. New events extend the
-      // target so fast spinning compounds momentum.
+      // Smooth path: accumulate the delta into `targetDy` and let the
+      // animation loop ease `smoothedDy` toward it (see the loop below). A
+      // wheel notch arrives as one large event (~100px); applying it in a
+      // single paint reads as a snap, so we spread it over a short exponential
+      // follow that matches the feel of native inertial scrolling. Continuous
+      // spinning or trackpad flicking simply keeps growing the target, and the
+      // follow tracks it without stalling mid-gesture or hopping at the end.
       //
-      // Boundary short-circuit: if the engine is already pinned at the
-      // edge and the new delta pushes further into that edge, drop it
-      // immediately. Without this, queued no-op deltas accumulate during
-      // hold-at-boundary and cause a visible delay/jump when the user
-      // reverses direction.
+      // Boundary short-circuit: if the engine is already pinned at the top and
+      // the delta pushes further up, drop it so held-at-edge input can't build
+      // a queue that lurches when the user reverses direction.
       const atTop = this.deps.getCurrentElement() === 0 && this.deps.getScrollOffset() === 0;
       if (atTop && dy < 0 && targetDy <= 0) {
         return;
@@ -245,44 +126,45 @@ export class WheelController {
 
       targetDy += dy;
       smoothViewportHeight = viewportHeight;
-      // Adaptive duration: a single notch eases over SMOOTH_DURATION_MS,
-      // but fast spinning piles many notches into the queue. Without
-      // shortening the ease, the long tail keeps animating after the
-      // user stops the wheel ("ghost scroll"). Scale the duration down
-      // toward SMOOTH_DURATION_MIN_MS as the pending distance grows past
-      // a notch, so fast input flushes quickly while a slow tap still
-      // feels smooth — and total distance is never capped (unlike a hard
-      // queue limit, which made fast scrolls cover LESS than medium ones).
-      const pending = Math.abs(targetDy - animatedDy);
-      const NOTCH = 100;
-      const scale = Math.max(SMOOTH_DURATION_MIN_MS / SMOOTH_DURATION_MS, NOTCH / Math.max(NOTCH, pending));
-      animDuration = SMOOTH_DURATION_MS * scale;
-      // Reset the timeline when a fresh gesture starts (queue cleared or
-      // reversed direction), so a new notch always animates a full
-      // duration instead of finishing in 1-2 frames.
-      const now = performance.now();
+      // Start the loop on a fresh gesture. Seed `lastFrameTime` to now so the
+      // first frame's dt is the real inter-frame gap (not a huge value), and
+      // deliberately do NOT touch the clock on subsequent events — that is what
+      // lets continuous input accumulate without resetting the follow's
+      // progress (the old timeline reset stalled motion until input stopped,
+      // then released it as one burst).
       if (smoothRafId == null) {
-        animStart = now;
-        animFromDy = 0;
-        animatedDy = 0;
+        lastFrameTime = performance.now();
         smoothRafId = requestAnimationFrame(animateSmoothScroll);
-      } else {
-        // Re-base on remaining distance so easing restarts smoothly from
-        // current position toward the new target.
-        animStart = now;
-        animFromDy = animatedDy;
       }
     };
 
-    let targetDy = 0;        // total accumulated wheel distance (px)
-    let animatedDy = 0;      // amount already applied to engine
-    let animFromDy = 0;      // animation start position
-    let animStart = 0;       // timestamp animation started/restarted
-    let animDuration = 150;  // current ease duration (adaptive, see below)
-    const SMOOTH_DURATION_MS = 150;
-    const SMOOTH_DURATION_MIN_MS = 40;
+    // Smooth-scroll state. We model the rendered position as a value that
+    // exponentially chases an accumulating target — the principle behind native
+    // inertial scrolling: each frame closes a fixed fraction of the remaining
+    // gap, scaled by real elapsed time so the feel is frame-rate independent.
+    // New deltas grow the target without resetting any clock, so continuous
+    // input tracks closely and, when input stops, the position eases onto the
+    // target and snaps the sub-pixel remainder — no end-of-scroll jump.
+    let targetDy = 0;          // accumulated wheel distance to cover (float px)
+    let smoothedDy = 0;        // current eased position (float px)
+    let emittedDy = 0;         // whole px already handed to the engine
+    let lastFrameTime = 0;     // timestamp of the previous animation frame
     let smoothViewportHeight = 0;
     let smoothRafId: number | null = null;
+
+    const FRAME_MS = 1000 / 60;
+    // Time constant (ms) of the exponential follow, derived from the public
+    // `smoothFactor` (treated as its 60fps-equivalent per-frame catch-up
+    // fraction) so the option keeps its meaning while motion stays frame-rate
+    // independent. smoothFactor >= 1 ⇒ tau 0 ⇒ instant follow.
+    const tau =
+      options.smoothFactor >= 1 ? 0 : -FRAME_MS / Math.log(1 - options.smoothFactor);
+    // Below this remaining gap the motion is visually complete: snap and stop
+    // so the exponential tail can't dribble sub-pixel steps for hundreds of ms.
+    const SETTLE_PX = 0.5;
+    // Clamp the per-frame timestep so returning to a backgrounded tab (a single
+    // huge dt) can't collapse the whole glide into one jump.
+    const MAX_FRAME_MS = 50;
 
     const emitChange = (result: ScrollResult) => {
       if (options.emitViewportChangeEvent) {
@@ -310,60 +192,58 @@ export class WheelController {
 
     const animateSmoothScroll = () => {
       smoothRafId = null;
-      const elapsed = performance.now() - animStart;
-      const t = Math.min(1, elapsed / animDuration);
-      // When pending distance is large (fast/continuous spinning) use a
-      // LINEAR curve so motion stays constant-velocity — easeOut would
-      // re-front-load every time a new wheel event re-bases the ease,
-      // producing visible "skip on each notch" stutter. For a small
-      // single-notch motion easeOutQuad still gives the gentle settle
-      // that reads as smooth.
-      const linearBlend = Math.min(1, Math.abs(targetDy - animFromDy) / 400);
-      const easedQuad = 1 - (1 - t) * (1 - t);
-      const eased = easedQuad + (t - easedQuad) * linearBlend;
-      const desiredDy = animFromDy + (targetDy - animFromDy) * eased;
-      let step = desiredDy - animatedDy;
 
-      if (t >= 1) {
-        // Finish exactly on target to avoid sub-pixel residual.
-        step = targetDy - animatedDy;
+      const now = performance.now();
+      let dt = now - lastFrameTime;
+      lastFrameTime = now;
+      if (!(dt > 0)) dt = FRAME_MS;          // first frame / clock anomalies
+      if (dt > MAX_FRAME_MS) dt = MAX_FRAME_MS;
+
+      const gap = targetDy - smoothedDy;
+      // Frame-rate-independent exponential approach: close `alpha` of the gap
+      // this frame, where alpha rises toward 1 with elapsed time. Fast input
+      // keeps the gap large so steps stay big (tracks the finger/notch); when
+      // input stops the gap decays smoothly to zero.
+      if (Math.abs(gap) <= SETTLE_PX) {
+        smoothedDy = targetDy;               // snap the imperceptible remainder
+      } else {
+        const alpha = tau > 0 ? 1 - Math.exp(-dt / tau) : 1;
+        smoothedDy += gap * alpha;
       }
 
-      // Round step to whole pixels. The tail of the easing curve produces
-      // tiny per-frame deltas (sub-pixel); Math.floor/ceil there would
-      // strand most frames at 0 then land a 1-px correction, which reads
-      // as a jitter just before the animation completes. Math.round keeps
-      // the motion monotonic.
-      const intStep = Math.round(step);
+      // Hand the engine the whole-pixel delta accumulated since the last frame.
+      // Math.round (not floor/ceil) keeps the tail monotonic instead of
+      // stranding frames at 0 then landing a 1px correction.
+      const intStep = Math.round(smoothedDy) - emittedDy;
       if (intStep !== 0) {
         const prevElement = this.deps.getCurrentElement();
         const prevOffset = this.deps.getScrollOffset();
         const result = this.deps.scroll(intStep, smoothViewportHeight);
-        animatedDy += intStep;
+        emittedDy += intStep;
         emitChange(result);
         onScroll?.(result);
 
-        // Boundary clamp: engine refused to move → wipe the queue so the
-        // next wheel event (possibly in the reverse direction) starts from
-        // a clean baseline instead of replaying a residual animation.
+        // Boundary clamp: the engine refused to move (pinned at an edge), so
+        // wipe the gesture. A residual target would otherwise keep replaying
+        // against the edge and then lurch when the user reverses direction.
         if (
           this.deps.getCurrentElement() === prevElement &&
           this.deps.getScrollOffset() === prevOffset
         ) {
           targetDy = 0;
-          animatedDy = 0;
-          animFromDy = 0;
-          return;
+          smoothedDy = 0;
+          emittedDy = 0;
+          return; // loop stops; the next wheel event restarts it
         }
       }
 
-      if (t < 1 || animatedDy !== targetDy) {
+      if (Math.abs(targetDy - smoothedDy) > SETTLE_PX) {
         smoothRafId = requestAnimationFrame(animateSmoothScroll);
       } else {
-        // Animation complete: reset the queue.
+        // Settled on target — reset the gesture baseline for the next one.
         targetDy = 0;
-        animatedDy = 0;
-        animFromDy = 0;
+        smoothedDy = 0;
+        emittedDy = 0;
       }
     };
 
@@ -379,8 +259,8 @@ export class WheelController {
         smoothRafId = null;
       }
       targetDy = 0;
-      animatedDy = 0;
-      animFromDy = 0;
+      smoothedDy = 0;
+      emittedDy = 0;
       container.removeEventListener('wheel', handleWheel);
     };
   }

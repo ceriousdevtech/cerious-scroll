@@ -9,15 +9,16 @@ Once deployed, your GitHub Pages site will be available at:
 
 ```
 /
-├── index.html                      # Main landing page
+├── index.html                      # Demo gallery (landing page)
+├── vanilla-js-demo.html
+├── data-grid-demo.html
+├── chat-messaging-demo.html
+├── ... (all other demos)
+├── shared-styles.css               # Shared demo styling + topbar
+├── demo-bootstrap.js               # Vanilla mount helper
 ├── docs/
 │   ├── ARCHITECTURE.html          # Architecture documentation (auto-generated)
 │   └── IMPLEMENTATION_GUIDE.html  # Implementation guide (auto-generated)
-├── demo/
-│   ├── vanilla-js-demo.html
-│   ├── data-grid-demo.html
-│   ├── chat-messaging-demo.html
-│   └── ... (all other demos)
 └── dist/                          # Built library files
 ```
 
