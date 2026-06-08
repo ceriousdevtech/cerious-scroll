@@ -42,9 +42,18 @@
 
   function mountDemo(config) {
     const host = config.host;
-    const renderFn = config.render;
+    const userRender = config.render;
     if (!host) throw new Error('mountDemo: host element required');
-    if (typeof renderFn !== 'function') throw new Error('mountDemo: render() required');
+    if (typeof userRender !== 'function') throw new Error('mountDemo: render() required');
+
+    // Always hand the demo a CLEAN container. renderViewport() pools/clears new
+    // rows for us, but refreshVisible() re-renders already-populated rows in
+    // place — without clearing first, demos that append (the common pattern)
+    // stack a fresh copy on every refresh (doubling on each data update/click).
+    const renderFn = function (index, container) {
+      container.textContent = '';
+      return userRender(index, container);
+    };
 
     const contentEl = ensureContentElement(host);
 
