@@ -5,6 +5,21 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-06-08
+
+### Added
+- **Native table layout** (`layout: 'table'`). Rows render as real `<tr>`/`<td>` inside one shared `<table>` — native column alignment and real table semantics — while keeping O(1) virtualization (~25 DOM rows for millions). Row positioning is now behind a pluggable `RowPlacement` strategy: `AbsolutePlacement` (the original out-of-flow `<div>` model) remains the default and is unchanged; `TableFlowPlacement` shifts the visible window with a single `transform: translateY()` on the `<tbody>`. A `<thead>` built via the `table.header(thead)` hook is frozen automatically (only the `<tbody>` transforms), and the true-bottom tail rows are measured in a separate offscreen table (since flow rows can't be flung down by `top`). Still max-height-safe — no full-height spacer — verified at 1,000,000 rows.
+- **`table.autoSizeColumns`** option. Measures each column's content width once from the first rendered window (plus the header), then pins it via a generated `<colgroup>` + `table-layout: fixed`: columns are auto-sized to content but **stable** (no scroll jitter), with no manual widths.
+- **`table.columnWidths`** (explicit fixed widths) and `table.tableClassName` / `theadClassName` / `tbodyClassName` styling hooks.
+
+### Changed
+- **Wheel inertia is now trackpad-only.** Each wheel event is classified by the shape of its delta: line-mode or large pixel deltas are discrete mouse-wheel notches (applied instantly), small pixel deltas are trackpad input (eased). Magnitude is checked first, so free-spin / "hyperscroll" mice that emit large *fractional* pixel deltas are correctly treated as a wheel and stop the moment the wheel stops. `wheel: { smooth: false }` still forces instant input everywhere.
+- The engine's viewport height now re-syncs to the actual rendered area on **every** render (not only when the placement inset changes), so a header whose content mounts asynchronously (the framework wrappers) no longer leaves the last row one short.
+
+### Fixed
+- **Overlay scrollbars** (e.g. macOS trackpad, where the OS scrollbar reserves no layout width) no longer reserve a gutter — eliminating a dead, empty strip on the right edge. Classic fixed-width scrollbars still reserve their gutter as before.
+- **Bottom clamp** snaps to the exact measured true-bottom, so the last row lands flush against the viewport bottom for wheel, touch, scrollbar drag, and `handleScrollPercentage(100)` — previously it could stop one row short or leave a small gap on fractional-scale (Retina) displays.
+
 ## [1.0.5] - 2026-06-04
 
 ### Added

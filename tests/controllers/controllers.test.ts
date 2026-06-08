@@ -10,6 +10,7 @@ import { ResizeController } from '../../src/controllers/resize-controller.js';
 import {
   createMockContainer,
   createMockWheelEvent,
+  createMockTrackpadWheelEvent,
   createMockTouchEvent,
   createMockKeyboardEvent,
   waitForAnimationFrame,
@@ -166,15 +167,17 @@ describe('WheelController', () => {
       }
     }
 
-    it('delivers a wheel notch over several decelerating frames with no end jump', async () => {
+    it('delivers a trackpad delta over several decelerating frames with no end jump', async () => {
       const { steps, handler } = setupSmooth();
 
-      handler(createMockWheelEvent(100));
-      await pumpUntil(steps, 100);
+      // Trackpad input (pixel mode, small delta) takes the smooth path; a discrete
+      // mouse-wheel notch would instead apply instantly (covered separately).
+      handler(createMockTrackpadWheelEvent(90));
+      await pumpUntil(steps, 90);
 
       // Full distance delivered, exactly — no loss and no overshoot.
       const total = steps.reduce((a, b) => a + b, 0);
-      expect(total).toBe(100);
+      expect(total).toBe(90);
 
       // Spread across multiple frames rather than snapping in one.
       expect(steps.length).toBeGreaterThanOrEqual(3);
@@ -189,20 +192,43 @@ describe('WheelController', () => {
       expect(steps[steps.length - 1]).toBeLessThanOrEqual(3);
     });
 
-    it('accumulates rapid successive notches and still settles exactly on target', async () => {
+    it('accumulates rapid successive trackpad deltas and still settles exactly on target', async () => {
       const { steps, handler } = setupSmooth();
 
-      // Three notches in quick succession (before the follow settles).
-      handler(createMockWheelEvent(100));
-      handler(createMockWheelEvent(100));
-      handler(createMockWheelEvent(100));
+      // Three trackpad deltas in quick succession (before the follow settles).
+      handler(createMockTrackpadWheelEvent(90));
+      handler(createMockTrackpadWheelEvent(90));
+      handler(createMockTrackpadWheelEvent(90));
 
-      await pumpUntil(steps, 300);
+      await pumpUntil(steps, 270);
 
       const total = steps.reduce((a, b) => a + b, 0);
-      expect(total).toBe(300); // every pixel of input delivered, none lost or doubled
+      expect(total).toBe(270); // every pixel of input delivered, none lost or doubled
       expect(steps.every((s) => s > 0)).toBe(true);
       expect(steps[steps.length - 1]).toBeLessThanOrEqual(3); // gentle landing
+    });
+
+    it('applies a discrete mouse-wheel notch instantly even when smooth is on', async () => {
+      const { steps, handler } = setupSmooth();
+
+      // A large integer pixel delta is a mouse-wheel notch: it must land in one
+      // step (no inertial tail) so the list stops the instant the wheel stops.
+      handler(createMockWheelEvent(120)); // no deltaMode / large int px => wheel
+      await waitForAnimationFrame();
+
+      expect(steps).toEqual([120]);
+    });
+
+    it('treats a large FRACTIONAL pixel delta as a mouse wheel (free-spin wheels)', async () => {
+      const { steps, handler } = setupSmooth();
+
+      // Free-spin / hyperscroll mice emit big fractional pixel deltas. These must
+      // classify as a wheel (instant), not a trackpad — magnitude wins over the
+      // fractional value.
+      handler(createMockTrackpadWheelEvent(500.5)); // pixel mode, large, fractional
+      await waitForAnimationFrame();
+
+      expect(steps).toEqual([500.5]);
     });
   });
 });

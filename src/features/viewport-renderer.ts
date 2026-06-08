@@ -17,6 +17,7 @@
  */
 
 import { ElementRenderer, MeasuredViewportRange } from '../types/index.js';
+import { RowPlacement, AbsolutePlacement } from './row-placement.js';
 
 /**
  * Viewport Renderer for CeriousScroll
@@ -51,16 +52,6 @@ export class ViewportRenderer {
   private _renderedRowsArray: Array<{ index: number; height: number }> = [];
   private _bottomElementsToRenderArray: number[] = [];
   private _defensiveRemoveArray: number[] = [];
-  // GC-FRIENDLY: Cache common CSS values to avoid string allocations
-  private _styleCache = {
-    position: 'absolute',
-    left: '0px',
-    right: '0px',
-    visible: 'visible',
-    width: '100%'
-  };
-  // GC optimization: Reuse string buffer for style.top to avoid template literal allocations
-  private _topStyleBuffer = '';
   private bottomMeasurementVersion = 0;
   private trueBottomCache: {
     viewportHeight: number;
@@ -97,7 +88,10 @@ export class ViewportRenderer {
     // Optional: when rows are known to be uniform-height, return that height
     // so the renderer can skip the per-new-row `offsetHeight` read (each one
     // forces a synchronous layout and dominates fast-scroll frame time).
-    private getUniformHeightHint?: () => number | undefined
+    private getUniformHeightHint?: () => number | undefined,
+    // Placement strategy: decides how a row reaches its y-coordinate. Defaults
+    // to AbsolutePlacement (out-of-flow `top`), CeriousScroll's original model.
+    private placement: RowPlacement = new AbsolutePlacement()
   ) {}
 
   /**
@@ -186,6 +180,43 @@ export class ViewportRenderer {
   }
 
   /**
+   * Acquire a row element for a not-yet-rendered index: reuse a detached element
+   * from the pool (cleared + re-styled) or create a fresh one via the placement
+   * strategy. Updates lifecycle counters. The caller is responsible for setting
+   * `dataset.elementIndex`, attaching, positioning, and rendering content.
+   */
+  private acquireRow(): HTMLElement {
+    const pooled = this.recycledElements.pop();
+    if (pooled) {
+      this.reusedElementsTotal++;
+      this.lastFrameReused++;
+      pooled.textContent = '';
+      this.placement.initRow(pooled);
+      return pooled;
+    }
+    const created = this.placement.createRow();
+    this.createdElementsTotal++;
+    this.lastFrameCreated++;
+    return created;
+  }
+
+  /**
+   * Measure a freshly-rendered row and write the result into the height cache.
+   * Honors the uniform-height hint to skip the synchronous `offsetHeight` read,
+   * and bumps the bottom-measurement version when the index is in the watched
+   * tail range (keeps the true-bottom cache correct).
+   */
+  private measureNew(index: number, element: HTMLElement): number {
+    const hint = this.getUniformHeightHint?.();
+    const height = hint !== undefined ? hint : element.offsetHeight;
+    this.setMeasuredHeight(index, height);
+    if (this.shouldTrackIndexForBottom(index)) {
+      this.bumpBottomMeasurementVersion();
+    }
+    return height;
+  }
+
+  /**
    * Debug-only: renderer lifecycle counters.
    */
   get lifecycleStats(): {
@@ -260,20 +291,15 @@ export class ViewportRenderer {
     // MEMORY OPTIMIZATION: If we jumped far away from last position, clear all and rebuild
     // This prevents memory accumulation from DOM element references
     if (Math.abs(startElement - this.lastStartElement) > 100) {
-      container.innerHTML = '';
+      this.placement.clear(container);
       this.currentlyRendered.clear();
       // Keep the pool intact; we'll reuse its elements after a large jump.
     }
 
-    // Ensure container is visible and positioned
-    if (container.style.visibility === 'hidden') {
-      container.style.visibility = this._styleCache.visible;
-      container.style.position = this._styleCache.position;
-      container.style.left = this._styleCache.left;
-      container.style.top = this._styleCache.left; // 0px
-      container.style.width = this._styleCache.width;
-    }
-    
+    // Let the placement strategy prepare the container (visibility/positioning
+    // for absolute mode; wrapper/scaffold setup for a flow strategy).
+    this.placement.prepare(container);
+
     // STEP 1: Render overscan buffer ABOVE the viewport
     // We need to know the heights of buffer elements to position startElement correctly
     const bufferStart = Math.max(0, startElement - ViewportRenderer.OVERSCAN_BUFFER);
@@ -281,10 +307,10 @@ export class ViewportRenderer {
     
     for (let i = bufferStart; i < startElement; i++) {
       this._shouldBeVisibleSet.add(i);
-      
+
       let elementToRender: HTMLElement;
       let measuredHeight: number;
-      
+
       if (this.currentlyRendered.has(i)) {
         // Element already rendered - reuse it. Prefer the cached measurement
         // over a fresh offsetHeight read to avoid forcing a synchronous
@@ -293,54 +319,28 @@ export class ViewportRenderer {
         elementToRender = this.currentlyRendered.get(i)!;
         measuredHeight = this.measureReused(i, elementToRender);
       } else {
-        // Create or reuse from pool
-        const pooled = this.recycledElements.pop();
-        if (pooled) {
-          elementToRender = pooled;
-          this.reusedElementsTotal++;
-          this.lastFrameReused++;
-          elementToRender.textContent = '';
-        } else {
-          elementToRender = document.createElement('div');
-          this.createdElementsTotal++;
-          this.lastFrameCreated++;
-        }
-        
+        elementToRender = this.acquireRow();
         elementToRender.dataset.elementIndex = String(i);
-        elementToRender.style.position = this._styleCache.position;
-        elementToRender.style.left = this._styleCache.left;
-        elementToRender.style.right = this._styleCache.right;
-        
-        // Position will be set after we know all buffer heights
-        container.appendChild(elementToRender);
+
+        // Position will be set after we know all buffer heights.
+        this.placement.attach(container, elementToRender, i, 'window');
         renderElement(i, elementToRender);
-        
-        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
-        const hintTop = this.getUniformHeightHint?.();
-        if (hintTop !== undefined) {
-          measuredHeight = hintTop;
-        } else {
-          measuredHeight = elementToRender.offsetHeight;
-        }
-        this.setMeasuredHeight(i, measuredHeight);
-        
-        if (this.shouldTrackIndexForBottom(i)) {
-          this.bumpBottomMeasurementVersion();
-        }
-        
+        measuredHeight = this.measureNew(i, elementToRender);
+
         this.currentlyRendered.set(i, elementToRender);
       }
-      
+
       bufferAboveHeight += measuredHeight;
     }
-    
+
     // STEP 2: Position buffer elements above startElement
     let cumulativeTop = -offset - bufferAboveHeight;
+    // First rendered row's top (most-negative); a flow strategy shifts the whole
+    // window by this in commit() instead of positioning each row.
+    const firstRowTop = cumulativeTop;
     for (let i = bufferStart; i < startElement; i++) {
       const element = this.currentlyRendered.get(i)!;
-      this._topStyleBuffer = cumulativeTop + 'px';
-      element.style.top = this._topStyleBuffer;
-      element.style.position = this._styleCache.position;
+      this.placement.position(element, cumulativeTop, 'window');
 
       // Use cached measurement; offsetHeight read here would force a layout
       // for every buffer element on every scroll frame (and is re-cached on miss).
@@ -365,56 +365,20 @@ export class ViewportRenderer {
         // Element already rendered - reuse it. See note above on cached
         // offsetHeight reads.
         elementToRender = this.currentlyRendered.get(elementIndex)!;
-        elementToRender.style.position = this._styleCache.position;
-        this._topStyleBuffer = cumulativeTop + 'px';
-        elementToRender.style.top = this._topStyleBuffer;
-
+        this.placement.position(elementToRender, cumulativeTop, 'window');
         measuredHeight = this.measureReused(elementIndex, elementToRender);
       } else {
-        // Create or reuse from pool
-        const pooled = this.recycledElements.pop();
-        if (pooled) {
-          elementToRender = pooled;
-          this.reusedElementsTotal++;
-          this.lastFrameReused++;
-          elementToRender.textContent = '';
-        } else {
-          elementToRender = document.createElement('div');
-          this.createdElementsTotal++;
-          this.lastFrameCreated++;
-        }
-        
+        elementToRender = this.acquireRow();
         elementToRender.dataset.elementIndex = String(elementIndex);
-        elementToRender.style.position = this._styleCache.position;
-        this._topStyleBuffer = cumulativeTop + 'px';
-        elementToRender.style.top = this._topStyleBuffer;
-        elementToRender.style.left = this._styleCache.left;
-        elementToRender.style.right = this._styleCache.right;
-        
-        // Add to DOM
-        container.appendChild(elementToRender);
-        
-        // Render content
+
+        this.placement.attach(container, elementToRender, elementIndex, 'window');
+        this.placement.position(elementToRender, cumulativeTop, 'window');
         renderElement(elementIndex, elementToRender);
-        
-        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
-        const hintVis = this.getUniformHeightHint?.();
-        if (hintVis !== undefined) {
-          measuredHeight = hintVis;
-        } else {
-          measuredHeight = elementToRender.offsetHeight;
-        }
-        
-        // Cache the measurement
-        this.setMeasuredHeight(elementIndex, measuredHeight);
-        
-        if (this.shouldTrackIndexForBottom(elementIndex)) {
-          this.bumpBottomMeasurementVersion();
-        }
-        
+        measuredHeight = this.measureNew(elementIndex, elementToRender);
+
         this.currentlyRendered.set(elementIndex, elementToRender);
       }
-      
+
       // Track in rendered rows
       const entry = renderedRows[renderedRowsCount] ?? (renderedRows[renderedRowsCount] = { index: 0, height: 0 });
       entry.index = elementIndex;
@@ -440,51 +404,20 @@ export class ViewportRenderer {
         // Element already rendered - reuse it. See note above on cached
         // offsetHeight reads.
         elementToRender = this.currentlyRendered.get(i)!;
-        elementToRender.style.position = this._styleCache.position;
-        this._topStyleBuffer = cumulativeTop + 'px';
-        elementToRender.style.top = this._topStyleBuffer;
-
+        this.placement.position(elementToRender, cumulativeTop, 'window');
         measuredHeight = this.measureReused(i, elementToRender);
       } else {
-        // Create or reuse from pool
-        const pooled = this.recycledElements.pop();
-        if (pooled) {
-          elementToRender = pooled;
-          this.reusedElementsTotal++;
-          this.lastFrameReused++;
-          elementToRender.textContent = '';
-        } else {
-          elementToRender = document.createElement('div');
-          this.createdElementsTotal++;
-          this.lastFrameCreated++;
-        }
-        
+        elementToRender = this.acquireRow();
         elementToRender.dataset.elementIndex = String(i);
-        elementToRender.style.position = this._styleCache.position;
-        this._topStyleBuffer = cumulativeTop + 'px';
-        elementToRender.style.top = this._topStyleBuffer;
-        elementToRender.style.left = this._styleCache.left;
-        elementToRender.style.right = this._styleCache.right;
-        
-        container.appendChild(elementToRender);
+
+        this.placement.attach(container, elementToRender, i, 'window');
+        this.placement.position(elementToRender, cumulativeTop, 'window');
         renderElement(i, elementToRender);
-        
-        // Skip offsetHeight when rows are known-uniform; each read forces a layout.
-        const hintBot = this.getUniformHeightHint?.();
-        if (hintBot !== undefined) {
-          measuredHeight = hintBot;
-        } else {
-          measuredHeight = elementToRender.offsetHeight;
-        }
-        this.setMeasuredHeight(i, measuredHeight);
-        
-        if (this.shouldTrackIndexForBottom(i)) {
-          this.bumpBottomMeasurementVersion();
-        }
-        
+        measuredHeight = this.measureNew(i, elementToRender);
+
         this.currentlyRendered.set(i, elementToRender);
       }
-      
+
       cumulativeTop += measuredHeight;
     }
     
@@ -519,9 +452,7 @@ export class ViewportRenderer {
     this.currentlyRendered.forEach((element, index) => {
       if (!this._shouldBeVisibleSet.has(index)) {
         this._toRemoveArray.push(index);
-        if (element.parentNode === container) {
-          container.removeChild(element);
-        }
+        this.placement.detach(container, element);
         this.recycledElements.push(element);
       }
     });
@@ -545,58 +476,33 @@ export class ViewportRenderer {
         if (this.currentlyRendered.has(elemIndex)) {
           // Already in currentlyRendered (kept alive by PRE-STEP 6 marking it visible).
           bottomElement = this.currentlyRendered.get(elemIndex)!;
-          bottomElement.style.position = this._styleCache.position;
-          this._topStyleBuffer = cumulativeTop + 'px';
-          bottomElement.style.top = this._topStyleBuffer;
+          this.placement.position(bottomElement, cumulativeTop, 'bottom');
           bottomHeight = this.measureReused(elemIndex, bottomElement);
         } else {
-          // First time rendering this bottom boundary row — create or reuse from pool.
-          const pooled = this.recycledElements.pop();
-          if (pooled) {
-            bottomElement = pooled;
-            this.reusedElementsTotal++;
-            this.lastFrameReused++;
-            bottomElement.textContent = '';
-          } else {
-            bottomElement = document.createElement('div');
-            this.createdElementsTotal++;
-            this.lastFrameCreated++;
-          }
-          
+          // First time rendering this bottom boundary row.
+          bottomElement = this.acquireRow();
           bottomElement.dataset.elementIndex = String(elemIndex);
-          bottomElement.style.position = this._styleCache.position;
-          this._topStyleBuffer = cumulativeTop + 'px';
-          bottomElement.style.top = this._topStyleBuffer;
-          bottomElement.style.left = this._styleCache.left;
-          bottomElement.style.right = this._styleCache.right;
-          
-          container.appendChild(bottomElement);
-          renderElement(elemIndex, bottomElement);
 
-          // Skip offsetHeight when rows are known-uniform; each read forces a layout.
-          const hintBoundary = this.getUniformHeightHint?.();
-          if (hintBoundary !== undefined) {
-            bottomHeight = hintBoundary;
-          } else {
-            bottomHeight = bottomElement.offsetHeight;
-          }
-          this.setMeasuredHeight(elemIndex, bottomHeight);
-          
-          if (this.shouldTrackIndexForBottom(elemIndex)) {
-            this.bumpBottomMeasurementVersion();
-          }
-          
+          this.placement.attach(container, bottomElement, elemIndex, 'bottom');
+          this.placement.position(bottomElement, cumulativeTop, 'bottom');
+          renderElement(elemIndex, bottomElement);
+          bottomHeight = this.measureNew(elemIndex, bottomElement);
+
           this.currentlyRendered.set(elemIndex, bottomElement);
         }
-        
+
         cumulativeTop += bottomHeight;
-        
+
         if (elemIndex === datasetLastIndex) {
           this._lastRenderedElement = bottomElement;
         }
       }
     }
-    
+
+    // Finalize the frame: a flow strategy shifts the whole window here via a
+    // single transform; AbsolutePlacement is a no-op (rows carry their own top).
+    this.placement.commit(container, firstRowTop);
+
     const scrollPercentage = this.getCalculateScrollPercentage();
 
     // Trim renderedRows to the number of entries we populated.

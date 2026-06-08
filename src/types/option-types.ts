@@ -1,8 +1,23 @@
 /**
  * @fileoverview Configuration Option Types for CeriousScroll
- * 
+ *
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  */
+
+import type { TableFlowOptions } from '../features/row-placement.js';
+
+/**
+ * Row layout / placement mode.
+ *
+ * - `'absolute'` (default): each row is an out-of-flow `position: absolute`
+ *   element positioned by its own `top`. No GPU transforms. CeriousScroll's
+ *   original model.
+ * - `'table'`: rows render as real `<tr>`/`<td>` in one shared `<table>` and the
+ *   window is shifted with a single `transform: translateY()` on the `<tbody>`.
+ *   Enables native column synchronization (and a shared-column header) at the
+ *   cost of an opt-in GPU compositor layer. Pair with {@link CeriousScrollOptions.table}.
+ */
+export type RowLayoutMode = 'absolute' | 'table';
 
 /**
  * Configuration options for CeriousScroll keyboard navigation
@@ -99,4 +114,15 @@ export interface CeriousScrollOptions {
   observeContentChanges?: boolean;
   /** Callback invoked after each scroll event for rendering */
   onScroll?: () => void;
+  /**
+   * Row placement mode (default: `'absolute'`). Set to `'table'` to render rows
+   * as native `<tr>`/`<td>` in one shared `<table>` with auto-synced columns.
+   * @see RowLayoutMode
+   */
+  layout?: RowLayoutMode;
+  /**
+   * Options for `layout: 'table'` mode (header populator, class names). Ignored
+   * when `layout` is `'absolute'`.
+   */
+  table?: TableFlowOptions;
 }

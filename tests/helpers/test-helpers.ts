@@ -188,6 +188,23 @@ export function createMockWheelEvent(deltaY: number): WheelEvent {
 }
 
 /**
+ * A trackpad-shaped wheel event: pixel delta mode with a small per-event delta,
+ * which the WheelController classifies as a trackpad (continuous, inertial) so
+ * its smooth-easing path runs. Discrete mouse-wheel notches (large integer px or
+ * line mode) bypass smoothing and apply instantly.
+ */
+export function createMockTrackpadWheelEvent(deltaY: number): WheelEvent {
+  return {
+    deltaY,
+    deltaX: 0,
+    deltaMode: 0, // DOM_DELTA_PIXEL
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+    type: 'wheel',
+  } as unknown as WheelEvent;
+}
+
+/**
  * Create mock touch event
  */
 export function createMockTouchEvent(

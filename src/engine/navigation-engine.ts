@@ -128,13 +128,30 @@ export class NavigationEngine {
     let positionUpdated = false;
 
     if (shouldClamp && deltaY > 0) {
-      this.deps.updateScrollPosition(element, offset);
-      positionUpdated = true;
-      const correction = this.guardian.correctBottomOvershoot(element, offset);
-      if (correction) {
-        element = correction.element;
-        offset = correction.offset;
+      // If we've scrolled to or past the measured true bottom, snap to it
+      // EXACTLY so the last row sits flush against the viewport bottom. The
+      // damped overshoot correction below closes only a fraction of the gap per
+      // call, which leaves a residual gap when a wheel/touch burst ends near the
+      // bottom (most visible with a top inset / on fractional-scale displays).
+      const trueBottom = this.deps.getTrueBottomPosition?.();
+      const atOrPastBottom = !!trueBottom && (
+        element > trueBottom.element ||
+        (element === trueBottom.element && offset >= trueBottom.offset)
+      );
+      if (atOrPastBottom) {
+        element = trueBottom!.element;
+        offset = trueBottom!.offset;
         this.deps.updateScrollPosition(element, offset);
+        positionUpdated = true;
+      } else {
+        this.deps.updateScrollPosition(element, offset);
+        positionUpdated = true;
+        const correction = this.guardian.correctBottomOvershoot(element, offset);
+        if (correction) {
+          element = correction.element;
+          offset = correction.offset;
+          this.deps.updateScrollPosition(element, offset);
+        }
       }
     }
 
@@ -170,7 +187,15 @@ export class NavigationEngine {
 
     if (clamped >= 99.99) {
       this.deps.updateScrollPosition(this.totalElements - 1, 0);
-      return this.scroll(Number.MAX_SAFE_INTEGER, this.viewportHeight);
+      this.scroll(Number.MAX_SAFE_INTEGER, this.viewportHeight);
+      // scroll() corrects the bottom overshoot with smooth damping (~0.9), which
+      // leaves a fraction of the gap on a one-shot jump. Finish with a FULL
+      // re-anchor so the last row lands flush against the viewport bottom.
+      const anchored = this.reanchorBottom(this.viewportHeight);
+      if (anchored) return anchored;
+      this._scrollResult.element = this.deps.getCurrentElement();
+      this._scrollResult.offset = this.deps.getScrollOffset();
+      return this._scrollResult;
     }
 
     if (clamped <= 0.01) {

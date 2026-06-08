@@ -19,6 +19,7 @@ import {
 import { PerformanceCache } from './core/performance-cache.js';
 import { NativeScrollbar } from './features/native-scrollbar.js';
 import { ViewportRenderer } from './features/viewport-renderer.js';
+import { RowPlacement, AbsolutePlacement, TableFlowPlacement } from './features/row-placement.js';
 import { NavigationEngine } from './engine/navigation-engine.js';
 import { ViewportStateCalculator } from './core/viewport-state.js';
 import { WheelController } from './controllers/wheel-controller.js';
@@ -90,6 +91,18 @@ export class CeriousScroll {
     return container.clientHeight || container.offsetHeight || 600;
   }
 
+  /**
+   * Measure the scrollable viewport height, less any top inset the placement
+   * reserves (e.g. the `<thead>` in table mode). Subtracting the header keeps
+   * the row count, scroll percentage, and true-bottom math correct so the last
+   * row lands flush with the container bottom instead of behind the header.
+   */
+  private measureViewport(container: HTMLElement): number {
+    const raw = CeriousScroll.measureViewportHeight(container);
+    const inset = this.placement.getTopInset ? this.placement.getTopInset() : 0;
+    return Math.max(0, raw - inset);
+  }
+
   // ===== SCROLL STATE =====  
   currentElement = 0;
   scrollOffset = 0;
@@ -100,6 +113,7 @@ export class CeriousScroll {
   totalContentHeight = 0;
 
   // ===== MODULE INSTANCES =====
+  private placement: RowPlacement;
   private performanceCache: PerformanceCache;
   private nativeScrollbar: NativeScrollbar;
   private viewportRenderer: ViewportRenderer;
@@ -153,9 +167,16 @@ export class CeriousScroll {
     this.options = Object.freeze(frozenOptions);
 
     this.totalElements = Math.floor(totalElements);
-    
-    // Auto-detect viewport height from container
-    this.viewportHeight = CeriousScroll.measureViewportHeight(container);
+
+    // Select the row placement strategy. 'table' renders native <tr>/<td> in one
+    // shared <table> shifted by a single tbody transform; 'absolute' (default)
+    // is the original out-of-flow `top` model.
+    this.placement = this.options.layout === 'table'
+      ? new TableFlowPlacement(this.options.table)
+      : new AbsolutePlacement();
+
+    // Auto-detect viewport height from container (less any placement top inset).
+    this.viewportHeight = this.measureViewport(container);
     this.windowHeight = this.viewportHeight; // Keep in sync
 
     // Create measurement-only height calculator - uses just-in-time measurement
@@ -211,7 +232,8 @@ export class CeriousScroll {
       (index: number, height: number) => this.performanceCache.setMeasuredHeight(index, height),
       (index: number) => this.performanceCache.hasMeasuredHeight(index),
       (index: number) => this.performanceCache.getMeasuredHeight(index),
-      () => this.performanceCache.getUniformHeightHint()
+      () => this.performanceCache.getUniformHeightHint(),
+      this.placement
     );
 
     this.navigationEngine = new NavigationEngine({
@@ -471,7 +493,14 @@ export class CeriousScroll {
     if (!Number.isFinite(deltaY) || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
       return { element: this.currentElement, offset: this.scrollOffset };
     }
-    return this.navigationEngine.scroll(deltaY, viewportHeight);
+    // Callers (wheel/touch controllers, consumers) pass the raw container/content
+    // height. Subtract any placement top inset (e.g. the table header) so the
+    // boundary guardian compares the last row against the true scrollable area —
+    // otherwise it sees a phantom header-height overshoot at the bottom and
+    // clamps one row short, clipping the final row. Mirrors renderViewport.
+    const inset = this.placement.getTopInset ? this.placement.getTopInset() : 0;
+    const effectiveViewportHeight = Math.max(1, viewportHeight - inset);
+    return this.navigationEngine.scroll(deltaY, effectiveViewportHeight);
   }
 
   /**
@@ -577,7 +606,27 @@ export class CeriousScroll {
     if (typeof renderElement !== 'function') {
       throw new Error('CeriousScroll.renderViewport: renderElement must be a function');
     }
-    const range = this.viewportRenderer.renderViewport(windowHeight, container, renderElement);
+    // Subtract any placement top inset (e.g. the table header) from the area the
+    // renderer fills, so rows stop at the container bottom rather than running
+    // the header's height past it.
+    const insetBefore = this.placement.getTopInset ? this.placement.getTopInset() : 0;
+    const effectiveWindowHeight = Math.max(1, windowHeight - insetBefore);
+    const range = this.viewportRenderer.renderViewport(effectiveWindowHeight, container, renderElement);
+
+    // Re-sync the engine's viewport height to the area rows actually fill
+    // (`windowHeight` minus the current inset). We compare against the live
+    // viewportHeight, not just `insetBefore`, because the inset can change
+    // *between* renders — e.g. a framework wrapper mounts the <thead> content
+    // asynchronously after the engine first measured an empty header. Without
+    // this, the true-bottom math is off by the header height and the last row
+    // never quite renders.
+    const insetAfter = this.placement.getTopInset ? this.placement.getTopInset() : 0;
+    const syncedViewportHeight = Math.max(1, windowHeight - insetAfter);
+    if (syncedViewportHeight !== this.viewportHeight) {
+      this.viewportHeight = syncedViewportHeight;
+      this.windowHeight = syncedViewportHeight;
+      this.navigationEngine.updateConfig(this.totalElements, this.viewportHeight);
+    }
     // Refresh derived display state (scroll percentage, visible range) so it
     // reflects the heights just measured this pass. This keeps the percentage in
     // sync after a row's height changes in place and is re-measured (e.g. an
@@ -695,8 +744,8 @@ export class CeriousScroll {
    * @param container The container element with the scrollbar
    */
   handleViewportChange(container: HTMLElement): void {
-    // Update viewport height from container
-    this.viewportHeight = CeriousScroll.measureViewportHeight(container);
+    // Update viewport height from container (less any placement top inset).
+    this.viewportHeight = this.measureViewport(container);
     this.windowHeight = this.viewportHeight;
 
     // Update modules with new viewport height

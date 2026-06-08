@@ -144,10 +144,20 @@
       refresh: refresh,
       setTotal: setTotal,
       jumpTo: function (index) {
-        if (state.scroller) state.scroller.jumpToElement(Math.max(0, Math.min(state.total - 1, index | 0)));
+        if (!state.scroller) return;
+        state.scroller.jumpToElement(Math.max(0, Math.min(state.total - 1, index | 0)));
+        // jumpToElement updates engine state but does not emit onScroll, so the
+        // consumer must re-render and refresh stats after a programmatic move.
+        render();
+        emitViewport();
       },
       scrollToPercentage: function (pct) {
-        if (state.scroller) state.scroller.scrollToPercentage(pct);
+        if (!state.scroller) return;
+        // The scroller exposes handleScrollPercentage (not scrollToPercentage);
+        // it also doesn't emit onScroll, so render + emit here.
+        state.scroller.handleScrollPercentage(pct);
+        render();
+        emitViewport();
       },
       destroy: function () {
         ro.disconnect();

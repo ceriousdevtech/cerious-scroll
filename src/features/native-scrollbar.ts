@@ -68,6 +68,12 @@ export class NativeScrollbar {
   // "no programmatic write to reconcile yet".
   private _lastProgrammaticScrollTop: number | null = null;
   private _cachedScrollbarWidth: number | undefined = undefined;
+  // True when the platform uses OVERLAY scrollbars (macOS trackpad default,
+  // mobile): the OS paints a thin auto-hiding bar OVER content and reserves no
+  // layout width. Measured as a 0-width difference on a probe element. We must
+  // not reserve a gutter in that case, or it leaves a dead gap with no visible
+  // scrollbar. Cached alongside the width measurement.
+  private _cachedOverlayScrollbars: boolean | undefined = undefined;
   private _lastScrollTop: number = 0;
   private _lastRenderedElement: number = -1;
   private _lastRenderedOffset: number = -1;
@@ -203,10 +209,27 @@ export class NativeScrollbar {
     
     const scrollbarWidth = outer.offsetWidth - outer.clientWidth;
     document.body.removeChild(outer);
-    
-    // Cache the result and return (fallback if detection fails)
+
+    // A 0-width difference means the platform uses overlay scrollbars (they
+    // float over content and reserve no space). Record that so the gutter is
+    // skipped; the strip itself still gets a usable width (the default) so the
+    // OS can paint its overlay bar over the content's right edge on scroll.
+    this._cachedOverlayScrollbars = scrollbarWidth === 0;
+
+    // Cache the result and return (fallback if detection fails / overlay)
     this._cachedScrollbarWidth = scrollbarWidth || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
     return this._cachedScrollbarWidth;
+  }
+
+  /**
+   * Whether the platform uses overlay scrollbars (no reserved width). Triggers
+   * the measurement lazily if needed.
+   */
+  private hasOverlayScrollbars(): boolean {
+    if (this._cachedOverlayScrollbars === undefined) {
+      this.getScrollbarWidth(); // populates _cachedOverlayScrollbars
+    }
+    return this._cachedOverlayScrollbars ?? false;
   }
 
   /**
@@ -214,6 +237,7 @@ export class NativeScrollbar {
    */
   clearScrollbarWidthCache(): void {
     this._cachedScrollbarWidth = undefined;
+    this._cachedOverlayScrollbars = undefined;
   }
 
   /**
@@ -382,13 +406,18 @@ export class NativeScrollbar {
     }
 
     // Add padding to container to make room for scrollbar and prevent overlap.
-    // Skip on touch — the strip is zero-width and the overlay thumb floats
-    // over content, so the content should use the full container width.
+    // Skip on touch — the strip is zero-width and the overlay thumb floats over
+    // content. Also skip for platform OVERLAY scrollbars (e.g. macOS trackpad):
+    // they float over content and reserve no width, so reserving a gutter would
+    // leave a dead gap with no visible bar. The strip keeps a usable width so
+    // the OS still paints its overlay bar over the content's right edge.
+    const overlay = this.hasOverlayScrollbars();
+    const reserveGutter = !touch && !overlay;
     const scrollbarWidth = parseInt(width) || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
-    if (!touch && position === 'right') {
+    if (reserveGutter && position === 'right') {
       const currentPaddingRight = parseInt(getComputedStyle(container).paddingRight) || 0;
       container.style.paddingRight = `${Math.max(currentPaddingRight, scrollbarWidth + 2)}px`;
-    } else if (!touch && position === 'left') {
+    } else if (reserveGutter && position === 'left') {
       const currentPaddingLeft = parseInt(getComputedStyle(container).paddingLeft) || 0;
       container.style.paddingLeft = `${Math.max(currentPaddingLeft, scrollbarWidth + 2)}px`;
     }

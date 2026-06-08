@@ -44,6 +44,9 @@ npx http-server . -p 8080   # then open http://localhost:8080/
 - **Native Variable Height Support**  
   No pre-calculation required — automatic, on-demand measurement
 
+- **Native `<table>` Layout (opt-in)**  
+  `layout: 'table'` renders real `<tr>`/`<td>` rows in one shared table — frozen header, native column alignment, auto-sized columns — while staying O(1). See [Table Layout](#-table-layout-layout-table).
+
 - **Framework Agnostic**  
   Works with Vanilla JS, Angular, React, Vue, or any framework
 
@@ -53,8 +56,8 @@ npx http-server . -p 8080   # then open http://localhost:8080/
 - **Element-Based Positioning Algorithm**  
   Eliminates fragile pixel-math approaches
 
-- **No GPU Transforms**  
-  Pure DOM manipulation — no `translate3d` hacks
+- **No GPU Transforms (default mode)**  
+  The default `<div>` mode uses pure DOM positioning — no `translate3d` hacks. (The opt-in table layout uses a single `<tbody>` transform.)
 
 - **TypeScript Support**  
   Full type definitions included
@@ -125,6 +128,62 @@ container.addEventListener('cerious-viewport-change', () => {
 
 container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 ```
+
+---
+
+## 🧮 Table Layout (`layout: 'table'`)
+
+By default, rows are absolutely-positioned `<div>`s. Opt into **real HTML tables** — `<table>` / `<tr>` / `<td>` with native column alignment and a frozen header — by passing `layout: 'table'`:
+
+```javascript
+const scroller = new CeriousScroll(container, data.length, {
+  layout: 'table',
+  table: {
+    tableClassName: 'my-table',
+    // Build the header row once into the engine's <thead> (it stays frozen).
+    header: (thead) => {
+      thead.innerHTML = '<tr><th>ID</th><th>Name</th><th>Email</th></tr>';
+    },
+    // Measure column widths from the first window, then pin them: auto-sized
+    // but stable (no scroll jitter). Omit for plain `table-layout: auto`.
+    autoSizeColumns: true,
+  },
+});
+
+// renderElement now receives a real <tr> — fill it with <td>s:
+scroller.renderViewport(container.clientHeight, container, (index, tr) => {
+  const row = data[index];
+  tr.innerHTML = `<td>${row.id}</td><td>${row.name}</td><td>${row.email}</td>`;
+});
+```
+
+**How it works**
+
+- **One shared `<table>`.** The `<thead>` and the virtualized `<tbody>` live in the same table, so header and body columns align natively. The header is frozen automatically — only the `<tbody>` is transformed.
+- **Still O(1).** Only the visible window (~25 rows) is in the DOM regardless of dataset size. The window is shifted with a single `transform: translateY()` on the `<tbody>` — the one place table mode uses a GPU transform.
+- **Variable row heights** work exactly as in the default mode: each `<tr>` is measured, never estimated.
+
+**Column widths**
+
+- `table-layout: auto` (default) sizes columns to content, but widths can shift slightly as wide content scrolls into the window (only the visible rows are measurable).
+- `autoSizeColumns: true` measures column widths once from the first window and pins them — auto-sized **and** stable, with no manual widths.
+- Or pass explicit `columnWidths: ['120px', '', '200px']` (`''` lets that column take the remainder).
+
+**`table` options**
+
+| option | type | description |
+| --- | --- | --- |
+| `header` | `(thead) => void` | Populate the engine-created `<thead>` once (e.g. `thead.innerHTML = …`). It stays frozen. |
+| `autoSizeColumns` | `boolean` | Measure column widths once from the first window, then pin them (auto-sized + stable). |
+| `columnWidths` | `string[]` | Explicit fixed widths per column. `''`/`'auto'` distributes the remainder. |
+| `tableClassName` / `theadClassName` / `tbodyClassName` | `string` | Class hooks on the generated table elements. |
+
+**CSS notes**
+
+- Use `border-collapse: separate` — collapsed borders are painted by the (untransformed) `<table>` and would not move with the scrolling rows.
+- Give the `<thead>` an **opaque** background so rows translating up underneath don't show through it.
+
+> **Framework users:** the React, Vue, and Angular wrappers expose *declarative* headers (`tableHeader` prop / `#header` slot / `[ceriousScrollHeaderTemplate]`) that render into the engine's `<thead>`. See each wrapper's README.
 
 ---
 

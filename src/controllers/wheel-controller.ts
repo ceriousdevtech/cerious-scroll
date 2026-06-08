@@ -7,6 +7,33 @@
 
 import { ScrollResult, WheelNavigationOptions } from '../types/index.js';
 
+/**
+ * Minimum per-event pixel delta we treat as a discrete mouse-wheel notch.
+ * Mouse wheels emit large, quantized steps (commonly ~100-120px/notch);
+ * trackpads emit small, high-frequency, often fractional pixel deltas.
+ */
+const MOUSE_WHEEL_NOTCH_MIN_PX = 100;
+
+/**
+ * Heuristic: is this wheel event from a trackpad (continuous, inertial) rather
+ * than a discrete mouse-wheel notch? There is no definitive browser API, so we
+ * classify by the *magnitude* of the pixel delta:
+ *
+ * - `deltaMode` of line/page granularity is always a mouse wheel.
+ * - In pixel mode, only SMALL deltas are trackpad-like (worth easing); a large
+ *   step is a wheel notch and must apply instantly, like the OS.
+ *
+ * Magnitude is checked first on purpose: some mice (free-spin / "hyperscroll"
+ * wheels) emit large *fractional* pixel deltas, so a fractional value is NOT a
+ * reliable trackpad signal — a 500px step is a wheel notch whether or not it is
+ * a round number. Inertial smoothing must only apply to trackpads; a mouse wheel
+ * that keeps gliding after the user stops feels wrong, so we err toward "wheel".
+ */
+function isLikelyTrackpad(e: WheelEvent): boolean {
+  if (e.deltaMode !== 0) return false;                 // DOM_DELTA_LINE / _PAGE => wheel
+  return Math.abs(e.deltaY) < MOUSE_WHEEL_NOTCH_MIN_PX; // small px => trackpad, large => wheel
+}
+
 interface WheelControllerDeps {
   scroll: (deltaY: number, viewportHeight: number) => ScrollResult;
   calculateScrollPercentage: () => number;
@@ -101,7 +128,10 @@ export class WheelController {
       const innerH = inner?.clientHeight ?? 0;
       const viewportHeight = innerH > 0 ? innerH : (container.clientHeight || container.offsetHeight);
 
-      if (!options.smooth) {
+      // Apply inertial smoothing ONLY to trackpad input. Discrete mouse-wheel
+      // notches go through the instant path so they stop the moment the wheel
+      // stops — matching native OS behavior — even when `smooth` is enabled.
+      if (!options.smooth || !isLikelyTrackpad(event)) {
         const result = this.deps.scroll(dy, viewportHeight);
         emitChange(result);
         onScroll?.(result);

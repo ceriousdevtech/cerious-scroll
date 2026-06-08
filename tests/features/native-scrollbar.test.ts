@@ -113,3 +113,36 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
     expect(jumpToPosition).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('NativeScrollbar gutter reservation', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  function makeScrollbar() {
+    return new NativeScrollbar(
+      100, () => 0, () => 10, () => {}, null,
+      () => 100, () => 0, () => 0, () => ({ element: 99, offset: 0 }),
+      10000, undefined
+    );
+  }
+
+  it('does NOT reserve a gutter with overlay scrollbars (no dead gap)', () => {
+    // jsdom does no layout, so the probe measures 0 => overlay scrollbars.
+    const sb = makeScrollbar();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    sb.createNativeScrollbar(container);
+    expect(container.style.paddingRight === '' || container.style.paddingRight === '0px').toBe(true);
+  });
+
+  it('reserves a gutter when the platform has classic (fixed-width) scrollbars', () => {
+    const sb = makeScrollbar();
+    // Force the measured-metrics cache to a classic 17px scrollbar.
+    (sb as any)._cachedScrollbarWidth = 17;
+    (sb as any)._cachedOverlayScrollbars = false;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    sb.createNativeScrollbar(container);
+    expect(container.style.paddingRight).toBe('19px'); // 17 + 2
+  });
+});

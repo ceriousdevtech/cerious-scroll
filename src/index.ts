@@ -15,6 +15,8 @@ export { PerformanceCache } from './core/performance-cache.js';
 export { ViewportStateCalculator } from './core/viewport-state.js';
 export { NativeScrollbar } from './features/native-scrollbar.js';
 export { ViewportRenderer } from './features/viewport-renderer.js';
+export { AbsolutePlacement, TableFlowPlacement } from './features/row-placement.js';
+export type { RowPlacement, PlacementRegion, TableFlowOptions } from './features/row-placement.js';
 export { NavigationEngine } from './engine/navigation-engine.js';
 export { BoundaryGuardian } from './engine/boundary-guardian.js';
 export { KeyboardController } from './controllers/keyboard-controller.js';

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Native Table (&lt;tr&gt;/&lt;td&gt;) Demo</title>
+    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows — layout:'table' mode in cerious-scroll.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        /* ---- Native table mode styling ----
+         * Rows are real <tr> in one shared <table>, so columns auto-align and
+         * the <thead> shares the body's column widths — like any normal table. */
+        .cs-table {
+            /* separate (not collapse): collapsed borders are painted by the
+             * untransformed <table>, so they would NOT move with the scrolling
+             * <tbody>. Separate borders belong to the cells and travel with them. */
+            border-collapse: separate;
+            border-spacing: 0;
+            /* auto: columns size to their content natively — the <thead> lives in
+             * the SAME table as the body, so header and cells share one column
+             * layout with no fixed widths. (Columns can shift slightly as wide
+             * content scrolls into the window — inherent to a virtualized table.) */
+            table-layout: auto;
+            width: 100%;
+            font-size: 0.86rem;
+            color: var(--text, #e6edf3);
+            font-variant-numeric: tabular-nums;
+        }
+        /* This demo is vertical-only — don't let the content element reserve a
+         * horizontal scrollbar gutter. */
+        #scroll [data-cerious-scroll-content] { overflow-x: hidden; }
+        .cs-table thead th {
+            text-align: left;
+            padding: 10px 14px;
+            /* SOLID, opaque background (matching the grid demos' #11141d) so body
+             * rows translating up underneath never show through. The shared
+             * --panel token is rgba(...,.07) — translucent — and must NOT be used
+             * for a header that overlaps scrolling content. */
+            background: #11141d;
+            border-bottom: 2px solid var(--accent, #1f6feb);
+            font-weight: 650;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted, #8b949e);
+            white-space: nowrap;
+        }
+        /* Belt-and-suspenders: paint a solid layer on the whole header band and
+         * keep it above the transformed <tbody> regardless of stacking quirks. */
+        .cs-table thead {
+            background: #11141d;
+            position: relative;
+            z-index: 10;
+        }
+        .cs-table tbody td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--line, #21262d);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .cs-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+        .cs-table tbody tr:hover { background: rgba(31, 111, 235, 0.10); }
+
+        .cell-id { color: var(--muted, #8b949e); }
+        .cell-name { font-weight: 600; }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .badge--active   { background: rgba(35, 134, 54, 0.18);  color: #3fb950; }
+        .badge--idle     { background: rgba(187, 128, 9, 0.18);  color: #d29922; }
+        .badge--offline  { background: rgba(207, 34, 46, 0.16);  color: #f85149; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+    </style>
+    <script src="demo-bootstrap.js?v=20260608" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🧮 Native &lt;table&gt; mode</h1>
+                <p>Real &lt;tr&gt;/&lt;td&gt; rows via <code>layout: 'table'</code> — frozen header, auto-sized columns, single tbody transform.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label>Rows:
+                    <select id="size">
+                        <option value="1000">1,000</option>
+                        <option value="100000" selected>100,000</option>
+                        <option value="1000000">1,000,000</option>
+                    </select>
+                </label>
+                <span>Jump to
+                    <input id="jump" type="number" min="0" value="5000" style="width:90px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+                <button id="topBtn" type="button">Top</button>
+                <button id="endBtn" type="button">End</button>
+                <span class="stat" id="stat">scroll to see live stats</span>
+            </div>
+
+            <!-- The <thead> lives INSIDE the engine's table (built via the table.header
+                 hook below); it's naturally frozen because only the <tbody> transforms. -->
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">100,000</strong></span>
+                <span>Mode: <strong>layout: 'table'</strong></span>
+                <span id="domLabel">DOM &lt;tr&gt;: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260608"></script>
+    <script src="demo-bootstrap.js?v=20260608"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+            const FIRST = ['Ada', 'Linus', 'Grace', 'Alan', 'Margaret', 'Dennis', 'Barbara', 'Ken', 'Radia', 'Tim'];
+            const LAST = ['Lovelace', 'Torvalds', 'Hopper', 'Turing', 'Hamilton', 'Ritchie', 'Liskov', 'Thompson', 'Perlman', 'Berners-Lee'];
+            const STATUS = [
+                { key: 'active', label: 'Active' },
+                { key: 'idle', label: 'Idle' },
+                { key: 'offline', label: 'Offline' },
+            ];
+
+            function rowData(i) {
+                const first = FIRST[Math.floor(hash(i, 1) * FIRST.length)];
+                const last = LAST[Math.floor(hash(i, 2) * LAST.length)];
+                const status = STATUS[Math.floor(hash(i, 3) * STATUS.length)];
+                const score = Math.floor(hash(i, 4) * 10000);
+                return { first, last, status, score };
+            }
+
+            // Column labels only — no widths. table-layout:auto sizes columns to
+            // content, and the header (same table as the body) aligns natively.
+            const COLS = [
+                { label: 'ID',     cls: '' },
+                { label: 'NAME',   cls: '' },
+                { label: 'STATUS', cls: '' },
+                { label: 'EMAIL',  cls: '' },
+                { label: 'SCORE',  cls: 'num' },
+            ];
+
+            // The engine builds the <thead> inside its table and calls this once.
+            function header(thead) {
+                thead.innerHTML =
+                    '<tr>' + COLS.map(c => '<th class="' + c.cls + '">' + c.label + '</th>').join('') + '</tr>';
+            }
+
+            // render(index, rowEl) — rowEl is a real <tr>; fill it with <td>s.
+            function render(index, tr) {
+                const d = rowData(index);
+                tr.innerHTML =
+                    '<td class="cell-id">#' + index.toLocaleString() + '</td>' +
+                    '<td class="cell-name">' + d.first + ' ' + d.last + '</td>' +
+                    '<td><span class="badge badge--' + d.status.key + '">' + d.status.label + '</span></td>' +
+                    '<td>' + (d.first + '.' + d.last).toLowerCase() + '@example.com</td>' +
+                    '<td class="num">' + d.score.toLocaleString() + '</td>';
+            }
+
+            let total = 100000;
+
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: total,
+                render: render,
+                options: {
+                    layout: 'table',
+                    // Single shared table: header in <thead>. autoSizeColumns measures
+                    // column widths from the first window once, then pins them — auto
+                    // sized but stable (no manual widths, no scroll jitter).
+                    table: { tableClassName: 'cs-table', header: header, autoSizeColumns: true },
+                },
+                onViewport: (v) => {
+                    document.getElementById('stat').textContent =
+                        'top row ' + v.currentElement.toLocaleString() + ' · ' + v.percentage.toFixed(1) + '%';
+                    const trs = document.querySelectorAll('#scroll tbody tr').length;
+                    document.getElementById('domLabel').innerHTML = 'DOM &lt;tr&gt;: <strong>' + trs + '</strong>';
+                },
+            });
+
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                demo.setTotal(total);
+            });
+            // jumpToElement / handleScrollPercentage update engine state but don't
+            // fire onScroll, so re-render AND refresh the stat line after each
+            // programmatic move.
+            function refreshStat() {
+                const s = demo.scroller;
+                document.getElementById('stat').textContent =
+                    'top row ' + s.currentElement.toLocaleString() + ' · ' + s.scrollPercentage.toFixed(1) + '%';
+                const trs = document.querySelectorAll('#scroll tbody tr').length;
+                document.getElementById('domLabel').innerHTML = 'DOM &lt;tr&gt;: <strong>' + trs + '</strong>';
+            }
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) { demo.jumpTo(i); demo.render(); refreshStat(); }
+            });
+            document.getElementById('topBtn').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(0); demo.render(); refreshStat();
+            });
+            document.getElementById('endBtn').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(100); demo.render(); refreshStat();
+            });
+        })();
+    </script>
+</body>
+</html>
