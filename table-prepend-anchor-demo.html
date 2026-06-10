@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Native Table — Prepend &amp; Scroll Anchoring</title>
+    <meta name="description" content="Inject variable-height rows at the TOP of a native-table data stream (live telemetry / chat-history backfill) and watch the scroll position stay cleanly anchored.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        /* ---- Prepend / scroll-anchoring stress test ----
+         * New, variable-height rows are injected at the TOP of the stream
+         * (newest telemetry first / older chat history backfilled above). Because
+         * the data is index-addressed, prepending K rows shifts every existing
+         * row's index by +K. To keep the viewport from jumping we re-anchor the
+         * engine to the SAME logical row (currentElement += K) and re-sync the
+         * scrollbar — so the row you were reading stays exactly where it was. */
+        .cs-table {
+            border-collapse: separate;   /* borders travel with the transformed tbody */
+            border-spacing: 0;
+            table-layout: fixed;         /* + colgroup: stable columns while EVENT wraps */
+            width: 100%;
+            font-size: 0.86rem;
+            color: var(--text, #e6edf3);
+            font-variant-numeric: tabular-nums;
+        }
+        #scroll [data-cerious-scroll-content] { overflow-x: hidden; }
+
+        .cs-table thead th {
+            text-align: left;
+            padding: 10px 14px;
+            background: #11141d;          /* solid: body rows translate underneath */
+            border-bottom: 2px solid var(--accent, #1f6feb);
+            font-weight: 650;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted, #8b949e);
+            white-space: nowrap;
+        }
+        .cs-table thead { background: #11141d; position: relative; z-index: 10; }
+
+        .cs-table tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--line, #21262d);
+            vertical-align: top;
+        }
+        .cs-table td.col-time,
+        .cs-table td.col-level,
+        .cs-table td.col-seq { white-space: nowrap; }
+        .cs-table td.col-event { white-space: normal; word-break: break-word; }
+        .cs-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+        .cs-table tbody tr:hover { background: rgba(31, 111, 235, 0.06); }
+
+        /* Freshly injected rows get a persistent accent bar + NEW flag until the
+         * next batch arrives — makes "what just came in at the top" obvious so you
+         * can SEE that your viewport did NOT follow them (when anchoring). */
+        .cs-table tbody tr.is-new td:first-child { box-shadow: inset 3px 0 0 var(--accent, #1f6feb); }
+        .cs-table tbody tr.is-new { background: rgba(31, 111, 235, 0.07); }
+        .new-flag {
+            display: inline-block; margin-left: 6px; padding: 0 6px;
+            border-radius: 4px; font-size: 0.62rem; font-weight: 800; letter-spacing: .05em;
+            background: var(--accent, #1f6feb); color: #fff; vertical-align: middle;
+        }
+
+        .cell-time { color: #adbac7; font-variant-numeric: tabular-nums; }
+        .cell-ago  { display: block; margin-top: 2px; font-size: 0.7rem; color: #6e7681; }
+        .cell-seq  { color: #6e7681; font-variant-numeric: tabular-nums; }
+
+        .lvl {
+            display: inline-block; padding: 2px 8px; border-radius: 999px;
+            font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+        }
+        .lvl-info  { background: rgba(31,111,235,.18);  color: #6cb6ff; }
+        .lvl-warn  { background: rgba(219,109,40,.18);   color: #f0883e; }
+        .lvl-error { background: rgba(207,34,46,.18);    color: #ff7b72; }
+        .lvl-debug { background: rgba(110,118,129,.18);  color: #adbac7; }
+
+        .ev-title { font-weight: 600; margin: 0 0 4px; }
+        .ev-text  { margin: 0; line-height: 1.55; color: #c9d1d9; }
+        .ev-trace, .ev-json {
+            margin: 6px 0 0; padding: 9px 12px; background: #0d1117;
+            border: 1px solid var(--line, #21262d); border-radius: 6px;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.76rem;
+            line-height: 1.5; color: #adbac7; white-space: pre; overflow-x: auto;
+        }
+        .ev-trace .err { color: #ff7b72; }
+        .ev-trace .frame { color: #8b949e; }
+        .ev-json .k { color: #6cb6ff; }
+        .ev-json .s { color: #a5d6ff; }
+        .ev-list { margin: 4px 0 0; padding-left: 18px; }
+        .ev-list li { line-height: 1.5; margin: 2px 0; color: #c9d1d9; }
+
+        /* "N new above" pill — appears when anchored and rows arrived off-screen
+         * above you (classic chat/feed affordance). Click jumps to the top. */
+        /* Must carry the flex-height chain through to .demo-scroll (flex:1), or the
+         * scroll host collapses to 0px and renders nothing — the full-height gotcha. */
+        .scroll-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .new-above {
+            position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
+            z-index: 30; padding: 6px 14px; border-radius: 999px;
+            background: var(--accent, #1f6feb); color: #fff; font-size: 0.8rem; font-weight: 650;
+            border: none; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+            display: none;
+        }
+        .new-above.show { display: inline-block; }
+        .live-dot {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: #6e7681; margin-right: 6px; vertical-align: middle;
+        }
+        .live-dot.on { background: #f85149; animation: pulse 1.1s ease-in-out infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+        .anchor-readout { font-variant-numeric: tabular-nums; }
+    </style>
+    <script src="demo-bootstrap.js?v=20260609" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>📡 Native &lt;table&gt; · prepend &amp; scroll anchoring</h1>
+                <p>
+                    New, <strong>variable-height</strong> rows are injected at the <strong>top</strong> of the
+                    stream — like a live telemetry feed or a chat-history backfill. Scroll down a bit, then
+                    inject: with <em>anchoring</em> on, the row you're reading stays put while new rows pile up
+                    above; with <em>Follow newest</em> on, the view rides the top instead.
+                </p>
+            </div>
+
+            <div class="demo-toolbar">
+                <button id="inject1" type="button">Inject 1 ↑</button>
+                <button id="injectBurst" type="button">Backfill 25 ↑</button>
+                <button id="liveBtn" type="button"><span class="live-dot" id="liveDot"></span>Live feed</button>
+                <label title="When on, jump to the newest row on every inject instead of holding position">
+                    <input type="checkbox" id="follow"> Follow newest
+                </label>
+                <button id="topBtn" type="button">Top</button>
+                <span class="stat anchor-readout" id="stat">scroll down, then inject to test anchoring</span>
+            </div>
+
+            <div class="scroll-wrap">
+                <button class="new-above" id="newAbove" type="button">▲ new above</button>
+                <div class="demo-scroll" id="scroll"></div>
+            </div>
+
+            <div class="demo-footer">
+                <span>Stream length: <strong id="totalLabel">2,000</strong></span>
+                <span>Anchored top event: <strong id="anchorLabel">#–</strong></span>
+                <span id="rangeLabel">Row h: –</span>
+                <span id="domLabel">DOM &lt;tr&gt;: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260610"></script>
+    <script src="demo-bootstrap.js?v=20260609"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+            const h = (seq, s) => hash(seq, s * 131 + 17);
+            const pick = (arr, seq, s) => arr[Math.floor(h(seq, s) * arr.length)];
+            const rint = (seq, s, lo, hi) => lo + Math.floor(h(seq, s) * (hi - lo + 1));
+
+            // ---- Stream model ---------------------------------------------------
+            // Content is addressed by a stable monotonic `seq` (NOT by row index),
+            // so a row's content/height never changes when its index shifts on
+            // prepend. index i  ->  seq = topSeq - i  (index 0 = newest = topSeq).
+            let total = 2000;
+            let topSeq = total - 1;          // newest seq currently in the stream
+            let freshMinSeq = -1;            // seqs >= this are "just arrived" (NEW flag)
+            let newAbove = 0;                // rows injected above you while anchored
+            let live = null;                 // setInterval handle when the feed is running
+
+            const WORDS = ('connection retry timeout handshake payload buffer flush queue worker thread ' +
+                'heartbeat latency throughput cache miss evict gc pause socket reset backoff jitter ' +
+                'replica leader election quorum commit offset partition consumer lag rebalance').split(' ');
+            const words = (seq, s, n) => {
+                let o = []; for (let k = 0; k < n; k++) o.push(pick(WORDS, seq, s + k * 7 + 1));
+                const str = o.join(' '); return str.charAt(0).toUpperCase() + str.slice(1);
+            };
+            const SERVICES = ['api-gateway', 'auth-svc', 'billing', 'ingest', 'scheduler', 'edge-cache',
+                'search', 'notifier', 'media-tx', 'graph-db'];
+            const LEVELS = [
+                { key: 'info',  label: 'info' },  { key: 'info',  label: 'info' },
+                { key: 'debug', label: 'debug' }, { key: 'warn',  label: 'warn' },
+                { key: 'error', label: 'error' },
+            ];
+
+            // Manual HH:MM:SS (no toLocaleTimeString in the hot path). Treat seq as
+            // "seconds since stream epoch"; newest seq = most recent clock time.
+            const EPOCH = 9 * 3600 + 30 * 60; // 09:30:00 baseline for seq 0
+            function clock(seq) {
+                let t = EPOCH + seq;
+                const hh = Math.floor(t / 3600) % 24, mm = Math.floor(t / 60) % 60, ss = t % 60;
+                const p = (n) => (n < 10 ? '0' + n : '' + n);
+                return p(hh) + ':' + p(mm) + ':' + p(ss);
+            }
+
+            // 5 event "kinds" with very different heights, chosen per-seq.
+            const KINDS = ['metric', 'event', 'list', 'trace', 'json'];
+            function kindFor(seq) { return KINDS[Math.floor(h(seq, 1) * KINDS.length)]; }
+
+            function eventHtml(seq, kind) {
+                const svc = pick(SERVICES, seq, 2);
+                switch (kind) {
+                    case 'metric':
+                        return '<p class="ev-text"><strong>' + svc + '</strong> · cpu ' + rint(seq, 3, 1, 99) +
+                            '% · mem ' + (rint(seq, 4, 1, 64) / 8).toFixed(1) + 'GB · p99 ' + rint(seq, 5, 2, 800) + 'ms</p>';
+                    case 'event':
+                        return '<p class="ev-title">' + svc + '</p><p class="ev-text">' +
+                            words(seq, 6, rint(seq, 7, 6, 22)) + '.</p>';
+                    case 'list': {
+                        const n = rint(seq, 8, 3, 12);
+                        let li = ''; for (let k = 0; k < n; k++) li += '<li>' + words(seq, 20 + k, rint(seq, 30 + k, 3, 9)) + '</li>';
+                        return '<p class="ev-title">' + svc + ' · batch (' + n + ')</p><ul class="ev-list">' + li + '</ul>';
+                    }
+                    case 'trace': {
+                        const n = rint(seq, 9, 3, 14);
+                        let fr = '<span class="err">' + pick(['TimeoutError', 'ECONNRESET', 'NullPointer', 'AssertionError'], seq, 10) +
+                            ': ' + words(seq, 11, rint(seq, 12, 3, 8)) + '</span>\n';
+                        for (let k = 0; k < n; k++)
+                            fr += '<span class="frame">  at ' + svc + '.' + pick(WORDS, seq, 40 + k) + ' (' + svc + ':' + rint(seq, 50 + k, 10, 990) + ')</span>\n';
+                        return '<p class="ev-title">' + svc + ' crashed</p><pre class="ev-trace">' + fr + '</pre>';
+                    }
+                    case 'json': {
+                        const n = rint(seq, 13, 3, 10);
+                        let body = '{\n';
+                        for (let k = 0; k < n; k++)
+                            body += '  <span class="k">"' + pick(WORDS, seq, 60 + k) + '"</span>: <span class="s">"' + pick(WORDS, seq, 70 + k) + '"</span>' + (k < n - 1 ? ',' : '') + '\n';
+                        body += '}';
+                        return '<p class="ev-title">' + svc + ' · payload</p><pre class="ev-json">' + body + '</pre>';
+                    }
+                }
+            }
+
+            const COLS = [
+                { label: 'TIME',  cls: 'col-time' },
+                { label: 'LEVEL', cls: 'col-level' },
+                { label: 'EVENT', cls: 'col-event' },
+                { label: 'SEQ',   cls: 'col-seq' },
+            ];
+            function header(thead) {
+                thead.innerHTML = '<tr>' + COLS.map(c => '<th class="' + c.cls + '">' + c.label + '</th>').join('') + '</tr>';
+            }
+
+            function render(index, tr) {
+                const seq = topSeq - index;
+                const kind = kindFor(seq);
+                const lvl = (kind === 'trace') ? { key: 'error', label: 'error' } : pick(LEVELS, seq, 14);
+                const isNew = seq >= freshMinSeq && freshMinSeq >= 0;
+                tr.className = isNew ? 'is-new' : '';
+                const ago = topSeq - seq; // seconds "ago" relative to newest
+                tr.innerHTML =
+                    '<td class="col-time"><span class="cell-time">' + clock(seq) + '</span>' +
+                        '<span class="cell-ago">' + (ago === 0 ? 'now' : ago + 's ago') + '</span></td>' +
+                    '<td class="col-level"><span class="lvl lvl-' + lvl.key + '">' + lvl.label + '</span></td>' +
+                    '<td class="col-event">' + eventHtml(seq, kind) + (isNew ? '<span class="new-flag">NEW</span>' : '') + '</td>' +
+                    '<td class="col-seq"><span class="cell-seq">#' + seq.toLocaleString() + '</span></td>';
+            }
+
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: total,
+                render: render,
+                options: {
+                    layout: 'table',
+                    table: { tableClassName: 'cs-table', header: header, columnWidths: ['104px', '92px', 'auto', '104px'] },
+                },
+                onViewport: () => { refreshStat(); },
+            });
+
+            const $ = (id) => document.getElementById(id);
+            function atTop() { const s = demo.scroller; return s.currentElement === 0 && s.scrollOffset <= 0; }
+
+            function refreshStat() {
+                const s = demo.scroller;
+                const topSeqVisible = topSeq - s.currentElement;
+                $('stat').textContent = 'top event #' + topSeqVisible.toLocaleString() +
+                    ' · idx ' + s.currentElement.toLocaleString() + ' · ' + s.scrollPercentage.toFixed(1) + '%';
+                $('anchorLabel').textContent = '#' + topSeqVisible.toLocaleString();
+                const trs = $('scroll').querySelectorAll('tbody tr');
+                $('domLabel').innerHTML = 'DOM &lt;tr&gt;: <strong>' + trs.length + '</strong>';
+                let mn = Infinity, mx = 0;
+                trs.forEach(t => { const v = t.getBoundingClientRect().height; if (v > 0) { if (v < mn) mn = v; if (v > mx) mx = v; } });
+                $('rangeLabel').innerHTML = 'Row h: <strong>' + (mn === Infinity ? '–' : Math.round(mn) + '–' + Math.round(mx) + 'px') + '</strong>';
+                if (atTop()) { newAbove = 0; }
+                $('newAbove').classList.toggle('show', newAbove > 0);
+                $('newAbove').textContent = '▲ ' + newAbove + ' new above';
+            }
+
+            // ---- The actual prepend + anchor operation --------------------------
+            function prepend(k) {
+                const s = demo.scroller;
+                const anchorEl = s.currentElement;        // logical row at viewport top
+                const anchorOff = s.scrollOffset;          // partial scroll into that row
+                const wasAtTop = atTop();
+                const follow = $('follow').checked;
+
+                topSeq += k;                               // k new newest seqs enter the stream
+                total += k;
+                freshMinSeq = topSeq - k + 1;              // mark just-arrived batch as NEW
+
+                // Recreate at the new length. The height cache is index-keyed, and
+                // every row's index just shifted by +k, so the cache MUST be cleared
+                // (setTotal does this) and rows re-measured under the new mapping.
+                demo.setTotal(total);
+                const ns = demo.scroller;
+
+                if (follow) {
+                    ns.currentElement = 0; ns.scrollOffset = 0;   // ride the newest
+                } else {
+                    // Re-anchor to the SAME logical row: it moved from index anchorEl
+                    // to anchorEl + k. Keep the sub-row offset so there is zero jump.
+                    ns.currentElement = Math.min(anchorEl + k, total - 1);
+                    ns.scrollOffset = anchorOff;
+                    if (!wasAtTop) newAbove += k;                  // they piled up off-screen above
+                }
+                // Sync nav config + scrollbar thumb + display, and re-render via the
+                // engine's own onScroll hook (one consistent path).
+                ns.handleViewportChange(document.getElementById('scroll'));
+                $('totalLabel').textContent = total.toLocaleString();
+                refreshStat();
+            }
+
+            // Clear the NEW highlight a moment after a batch settles.
+            let freshTimer = null;
+            function scheduleFreshClear() {
+                if (freshTimer) clearTimeout(freshTimer);
+                freshTimer = setTimeout(() => { freshMinSeq = -1; demo.refresh(); demo.render(); refreshStat(); }, 1800);
+            }
+
+            $('inject1').addEventListener('click', () => { prepend(1); scheduleFreshClear(); });
+            $('injectBurst').addEventListener('click', () => { prepend(25); scheduleFreshClear(); });
+            $('topBtn').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(0); demo.render(); newAbove = 0; refreshStat();
+            });
+            $('newAbove').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(0); demo.render(); newAbove = 0; refreshStat();
+            });
+            $('follow').addEventListener('change', (e) => {
+                if (e.target.checked) { demo.scroller.handleScrollPercentage(0); demo.render(); newAbove = 0; refreshStat(); }
+            });
+
+            $('liveBtn').addEventListener('click', () => {
+                if (live) {
+                    clearInterval(live); live = null;
+                    $('liveDot').classList.remove('on');
+                } else {
+                    $('liveDot').classList.add('on');
+                    live = setInterval(() => { prepend(1 + Math.floor(Math.random() * 3)); scheduleFreshClear(); }, 1300);
+                }
+            });
+
+            // Start scrolled into the middle so the anchoring effect is visible
+            // immediately when the user injects.
+            requestAnimationFrame(() => {
+                demo.scroller.jumpToElement(40); demo.render(); refreshStat();
+            });
+        })();
+    </script>
+</body>
+</html>

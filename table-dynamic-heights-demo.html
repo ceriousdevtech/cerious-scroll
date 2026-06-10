@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Native Table — Wild Dynamic Heights</title>
+    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows whose heights vary wildly per row — layout:'table' mode stress test for variable-height measurement.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        /* ---- Native table mode with WILDLY variable row heights ----
+         * Every <tr> is a real table row, but each one carries different content:
+         * one-liners, huge wrapped paragraphs, long bullet lists, code blocks,
+         * tall banners, wrapping tag clouds. The engine MEASURES each row (never
+         * estimates), so the single <tbody> transform must stay pixel-correct no
+         * matter how unpredictable the heights are. This is the stress test. */
+        .cs-table {
+            /* separate (not collapse): collapsed borders are painted by the
+             * untransformed <table> and would NOT travel with the scrolling
+             * <tbody>. Separate borders belong to the cells and move with them. */
+            border-collapse: separate;
+            border-spacing: 0;
+            /* fixed + colgroup (via table:{ columnWidths }) keeps columns stable
+             * even as the variable-height content column wraps to very different
+             * line counts row-to-row. Without fixed layout the content column
+             * width would jitter as tall/short rows scroll through the window. */
+            table-layout: fixed;
+            width: 100%;
+            font-size: 0.86rem;
+            color: var(--text, #e6edf3);
+            font-variant-numeric: tabular-nums;
+        }
+        /* Vertical-only demo — no horizontal scrollbar gutter. */
+        #scroll [data-cerious-scroll-content] { overflow-x: hidden; }
+
+        .cs-table thead th {
+            text-align: left;
+            padding: 10px 14px;
+            /* SOLID, opaque background so body rows translating up underneath
+             * never show through the frozen header. */
+            background: #11141d;
+            border-bottom: 2px solid var(--accent, #1f6feb);
+            font-weight: 650;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted, #8b949e);
+            white-space: nowrap;
+        }
+        .cs-table thead {
+            background: #11141d;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* vertical-align:top so short cells (ID / kind / meta) sit at the TOP of a
+         * tall row instead of floating in the vertical center — makes the wild
+         * height differences obvious and easy to eyeball-verify. */
+        .cs-table tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--line, #21262d);
+            vertical-align: top;
+        }
+        /* Fixed-width side columns stay single-line; the content column wraps. */
+        .cs-table td.col-id,
+        .cs-table td.col-kind,
+        .cs-table td.col-meta { white-space: nowrap; }
+        .cs-table td.col-body { white-space: normal; word-break: break-word; }
+
+        .cs-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+        .cs-table tbody tr:hover { background: rgba(31, 111, 235, 0.06); }
+
+        .cell-id { color: var(--muted, #8b949e); font-variant-numeric: tabular-nums; }
+        .cell-h  { display: block; margin-top: 3px; font-size: 0.72rem; color: #6e7681; }
+
+        /* --- per-kind content styling (each produces very different heights) --- */
+        .kind-badge {
+            display: inline-block;
+            padding: 2px 9px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+        .kind-line    { background: rgba(110,118,129,.18); color: #adbac7; }
+        .kind-para    { background: rgba(31,111,235,.18);  color: #6cb6ff; }
+        .kind-wall    { background: rgba(163,113,247,.18); color: #d2a8ff; }
+        .kind-list    { background: rgba(35,134,54,.18);   color: #56d364; }
+        .kind-code    { background: rgba(219,109,40,.18);  color: #f0883e; }
+        .kind-banner  { background: rgba(207,34,46,.18);   color: #ff7b72; }
+        .kind-tags    { background: rgba(201,209,217,.14); color: #c9d1d9; }
+
+        .body-title { font-weight: 600; margin: 0 0 4px; }
+        .body-text  { margin: 0; line-height: 1.55; color: #c9d1d9; }
+        .body-text + .body-text { margin-top: 8px; }
+
+        .body-list { margin: 4px 0 0; padding-left: 20px; }
+        .body-list li { line-height: 1.5; margin: 2px 0; color: #c9d1d9; }
+
+        .body-code {
+            margin: 4px 0 0;
+            padding: 10px 12px;
+            background: #0d1117;
+            border: 1px solid var(--line, #21262d);
+            border-radius: 6px;
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 0.78rem;
+            line-height: 1.5;
+            color: #adbac7;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .body-code .kw { color: #ff7b72; }
+        .body-code .fn { color: #d2a8ff; }
+        .body-code .st { color: #a5d6ff; }
+        .body-code .cm { color: #6e7681; }
+
+        .body-banner {
+            margin: 4px 0 0;
+            border-radius: 8px;
+            border: 1px solid;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .body-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+        .body-tag {
+            padding: 3px 10px;
+            border-radius: 6px;
+            background: rgba(255,255,255,.05);
+            border: 1px solid var(--line, #21262d);
+            font-size: 0.78rem;
+            color: #c9d1d9;
+            white-space: nowrap;
+        }
+
+        .meta-k { color: #6e7681; }
+        .meta-v { color: #adbac7; }
+        .meta-row { display: block; margin: 1px 0; font-size: 0.8rem; }
+    </style>
+    <script src="demo-bootstrap.js?v=20260609" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🪜 Native &lt;table&gt; · wild dynamic heights</h1>
+                <p>
+                    Real &lt;tr&gt;/&lt;td&gt; rows via <code>layout: 'table'</code>, but every row has a
+                    <strong>different, unpredictable height</strong> — one-liners next to walls of text, long
+                    lists, code blocks, tall banners and wrapping tag clouds. Each row is <em>measured</em>,
+                    so the single &lt;tbody&gt; transform stays pixel-correct regardless.
+                </p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label>Rows:
+                    <select id="size">
+                        <option value="1000">1,000</option>
+                        <option value="100000" selected>100,000</option>
+                        <option value="1000000">1,000,000</option>
+                    </select>
+                </label>
+                <span>Jump to
+                    <input id="jump" type="number" min="0" value="5000" style="width:90px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+                <button id="topBtn" type="button">Top</button>
+                <button id="endBtn" type="button">End</button>
+                <button id="reshuffleBtn" type="button" title="Re-roll all row heights">Reshuffle heights</button>
+                <span class="stat" id="stat">scroll to see live stats</span>
+            </div>
+
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">100,000</strong></span>
+                <span>Mode: <strong>layout: 'table'</strong></span>
+                <span id="rangeLabel">Row h: –</span>
+                <span id="domLabel">DOM &lt;tr&gt;: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260610"></script>
+    <script src="demo-bootstrap.js?v=20260609"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+
+            // `seed` lets "Reshuffle heights" re-roll every row's content/height
+            // deterministically without changing the dataset size.
+            let seed = 1;
+            // h(i, s) — stable per (row, salt, seed); same inputs => same output,
+            // so the engine re-measures to identical heights across re-renders.
+            function h(i, s) { return hash(i, s * 97 + seed * 31 + 7); }
+            function pick(arr, i, s) { return arr[Math.floor(h(i, s) * arr.length)]; }
+            function rint(i, s, lo, hi) { return lo + Math.floor(h(i, s) * (hi - lo + 1)); }
+
+            const WORDS = ('lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod ' +
+                'tempor incididunt ut labore et dolore magna aliqua enim ad minim veniam quis ' +
+                'nostrud exercitation ullamco laboris nisi aliquip ex ea commodo consequat duis ' +
+                'aute irure reprehenderit voluptate velit esse cillum fugiat nulla pariatur ' +
+                'excepteur sint occaecat cupidatat non proident sunt culpa qui officia deserunt ' +
+                'mollit anim id est laborum virtual scrolling measures every row precisely').split(' ');
+
+            function words(i, s, n) {
+                let out = [];
+                for (let k = 0; k < n; k++) out.push(pick(WORDS, i, s + k * 13 + 1));
+                let str = out.join(' ');
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
+
+            const TITLES = ['Incident report', 'Release note', 'User feedback', 'Spec draft',
+                'Migration plan', 'Postmortem', 'Design review', 'Changelog entry', 'Support ticket',
+                'RFC', 'Audit finding', 'Bug repro', 'Performance note', 'Onboarding doc'];
+            const TAGS = ['urgent', 'backend', 'frontend', 'a11y', 'perf', 'flaky', 'regression',
+                'docs', 'security', 'ux', 'infra', 'mobile', 'i18n', 'analytics', 'wontfix',
+                'good-first-issue', 'needs-repro', 'breaking', 'enhancement', 'p0', 'p1', 'p2'];
+            const OWNERS = ['ada', 'linus', 'grace', 'alan', 'margaret', 'dennis', 'barbara', 'ken'];
+
+            const BANNER_COLORS = [
+                { bg: 'rgba(31,111,235,.12)',  bd: 'rgba(31,111,235,.5)',  fg: '#6cb6ff' },
+                { bg: 'rgba(35,134,54,.12)',   bd: 'rgba(63,185,80,.5)',   fg: '#56d364' },
+                { bg: 'rgba(207,34,46,.12)',   bd: 'rgba(248,81,73,.5)',   fg: '#ff7b72' },
+                { bg: 'rgba(163,113,247,.12)', bd: 'rgba(163,113,247,.5)', fg: '#d2a8ff' },
+                { bg: 'rgba(219,109,40,.12)',  bd: 'rgba(240,136,62,.5)',  fg: '#f0883e' },
+            ];
+
+            // 7 content "kinds", each producing a very different height. The kind is
+            // chosen per row from the hash, and the size *within* a kind also varies,
+            // so heights range from ~one line to many hundreds of px — unpredictably.
+            const KINDS = [
+                { key: 'line',   label: 'one-line',  cls: 'kind-line' },
+                { key: 'para',   label: 'paragraph', cls: 'kind-para' },
+                { key: 'wall',   label: 'wall',      cls: 'kind-wall' },
+                { key: 'list',   label: 'list',      cls: 'kind-list' },
+                { key: 'code',   label: 'code',      cls: 'kind-code' },
+                { key: 'banner', label: 'banner',    cls: 'kind-banner' },
+                { key: 'tags',   label: 'tags',      cls: 'kind-tags' },
+            ];
+
+            function bodyHtml(i, kind) {
+                const title = '<p class="body-title">' + pick(TITLES, i, 2) + ' #' + i.toLocaleString() + '</p>';
+                switch (kind.key) {
+                    case 'line':
+                        return '<p class="body-text">' + words(i, 5, rint(i, 6, 4, 9)) + '.</p>';
+                    case 'para': {
+                        const paras = rint(i, 7, 1, 3);
+                        let out = title;
+                        for (let p = 0; p < paras; p++)
+                            out += '<p class="body-text">' + words(i, 20 + p * 7, rint(i, 21 + p, 18, 46)) + '.</p>';
+                        return out;
+                    }
+                    case 'wall': {
+                        // The tall one: 3–7 dense paragraphs => can be many hundreds px.
+                        const paras = rint(i, 8, 3, 7);
+                        let out = title;
+                        for (let p = 0; p < paras; p++)
+                            out += '<p class="body-text">' + words(i, 40 + p * 11, rint(i, 41 + p, 40, 90)) + '.</p>';
+                        return out;
+                    }
+                    case 'list': {
+                        const n = rint(i, 9, 3, 16);
+                        let items = '';
+                        for (let k = 0; k < n; k++)
+                            items += '<li>' + words(i, 60 + k * 5, rint(i, 61 + k, 3, 12)) + '</li>';
+                        return title + '<ul class="body-list">' + items + '</ul>';
+                    }
+                    case 'code': {
+                        const n = rint(i, 10, 3, 18);
+                        let lines = '<span class="cm">// ' + pick(TITLES, i, 11).toLowerCase() + '</span>\n';
+                        for (let k = 0; k < n; k++) {
+                            const v = pick(WORDS, i, 70 + k);
+                            lines += '<span class="kw">const</span> ' + v + k + ' = <span class="fn">compute</span>(' +
+                                '<span class="st">"' + pick(WORDS, i, 80 + k) + '"</span>, ' + rint(i, 90 + k, 1, 999) + ');\n';
+                        }
+                        return title + '<pre class="body-code">' + lines + '</pre>';
+                    }
+                    case 'banner': {
+                        const px = rint(i, 12, 60, 320);     // wildly varying fixed-ish height
+                        const c = pick(BANNER_COLORS, i, 13);
+                        return '<div class="body-banner" style="height:' + px + 'px;background:' + c.bg +
+                            ';border-color:' + c.bd + ';color:' + c.fg + '">' +
+                            words(i, 14, rint(i, 15, 2, 6)) + ' · ' + px + 'px</div>';
+                    }
+                    case 'tags': {
+                        const n = rint(i, 16, 4, 24);
+                        let chips = '';
+                        for (let k = 0; k < n; k++)
+                            chips += '<span class="body-tag">#' + pick(TAGS, i, 100 + k) + '</span>';
+                        return title + '<div class="body-tags">' + chips + '</div>';
+                    }
+                }
+            }
+
+            function kindFor(i) { return KINDS[Math.floor(h(i, 1) * KINDS.length)]; }
+
+            const COLS = [
+                { label: 'ID',      cls: 'col-id' },
+                { label: 'KIND',    cls: 'col-kind' },
+                { label: 'CONTENT', cls: 'col-body' },
+                { label: 'META',    cls: 'col-meta' },
+            ];
+
+            function header(thead) {
+                thead.innerHTML =
+                    '<tr>' + COLS.map(c => '<th class="' + c.cls + '">' + c.label + '</th>').join('') + '</tr>';
+            }
+
+            // render(index, tr) — tr is a real <tr>; fill it with the four <td>s.
+            // The CONTENT cell is what drives the wild, unpredictable height.
+            function render(index, tr) {
+                const kind = kindFor(index);
+                const owner = pick(OWNERS, index, 3);
+                const meta =
+                    '<span class="meta-row"><span class="meta-k">@</span><span class="meta-v">' + owner + '</span></span>' +
+                    '<span class="meta-row"><span class="meta-k">v</span><span class="meta-v">' +
+                        rint(index, 4, 1, 9) + '.' + rint(index, 5, 0, 20) + '</span></span>';
+                tr.innerHTML =
+                    '<td class="col-id"><span class="cell-id">#' + index.toLocaleString() + '</span></td>' +
+                    '<td class="col-kind"><span class="kind-badge ' + kind.cls + '">' + kind.label + '</span></td>' +
+                    '<td class="col-body">' + bodyHtml(index, kind) + '</td>' +
+                    '<td class="col-meta">' + meta + '</td>';
+            }
+
+            let total = 100000;
+
+            const demo = window.mountDemo({
+                host: document.getElementById('scroll'),
+                total: total,
+                render: render,
+                options: {
+                    layout: 'table',
+                    table: {
+                        tableClassName: 'cs-table',
+                        header: header,
+                        // Fixed side columns; CONTENT column ('auto') takes the rest.
+                        // table-layout:fixed (CSS) + this colgroup keeps widths stable
+                        // while the content column wraps to wildly different heights.
+                        columnWidths: ['96px', '110px', 'auto', '110px'],
+                    },
+                },
+                onViewport: (v) => { refreshStat(); },
+            });
+
+            function refreshStat() {
+                const s = demo.scroller;
+                document.getElementById('stat').textContent =
+                    'top row ' + s.currentElement.toLocaleString() + ' · ' + s.scrollPercentage.toFixed(1) + '%';
+                const trs = document.querySelectorAll('#scroll tbody tr');
+                document.getElementById('domLabel').innerHTML = 'DOM &lt;tr&gt;: <strong>' + trs.length + '</strong>';
+                // Live min/max measured height of the currently-rendered rows — proves
+                // the window really does hold rows of wildly different heights.
+                let min = Infinity, max = 0;
+                trs.forEach(tr => {
+                    const hgt = tr.getBoundingClientRect().height;
+                    if (hgt > 0) { if (hgt < min) min = hgt; if (hgt > max) max = hgt; }
+                });
+                document.getElementById('rangeLabel').innerHTML =
+                    'Row h: <strong>' + (min === Infinity ? '–' : Math.round(min) + '–' + Math.round(max) + 'px') + '</strong>';
+            }
+
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                demo.setTotal(total);
+            });
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) { demo.jumpTo(i); demo.render(); refreshStat(); }
+            });
+            document.getElementById('topBtn').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(0); demo.render(); refreshStat();
+            });
+            document.getElementById('endBtn').addEventListener('click', () => {
+                demo.scroller.handleScrollPercentage(100); demo.render(); refreshStat();
+            });
+            document.getElementById('reshuffleBtn').addEventListener('click', () => {
+                seed++;          // re-roll every row's kind/size deterministically
+                demo.refresh();  // re-render visible rows in place AND re-measure heights
+                demo.render();   // apply the new layout (tbody transform + window)
+                refreshStat();
+            });
+        })();
+    </script>
+</body>
+</html>
