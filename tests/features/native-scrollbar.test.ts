@@ -112,6 +112,26 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
 
     expect(jumpToPosition).toHaveBeenCalledTimes(3);
   });
+
+  it('does NOT drop a genuine drag back to a previously-synced scrollTop (stale marker)', () => {
+    // Repro of the "drag to the top, eventually not row 0" bug: a programmatic
+    // sync records its scrollTop as the echo marker, but a scrollbar DRAG never
+    // refreshes that marker (it uses jumpToPosition(skipScrollbarSync)). So after
+    // the user drags away and then drags back to the synced value, the return was
+    // wrongly suppressed as our own echo — the engine never went back there.
+    const { sb, jumpToPosition, setPercentage, fireScroll, userScrollTo } = setup();
+
+    setPercentage(50);
+    sb.syncNativeScrollbar(); // writes scrollTop = 455, marker := 455
+    fireScroll();             // the echo of that write — correctly ignored
+    expect(jumpToPosition).not.toHaveBeenCalled();
+
+    userScrollTo(800);        // user drags away (processed) — invalidates the marker
+    jumpToPosition.mockClear();
+
+    userScrollTo(455);        // drags back to the old synced value: MUST be processed
+    expect(jumpToPosition).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('NativeScrollbar gutter reservation', () => {

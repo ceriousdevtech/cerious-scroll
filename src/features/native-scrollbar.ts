@@ -452,6 +452,18 @@ export class NativeScrollbar {
         return;
       }
 
+      // This event is a genuine user move (it did NOT match the programmatic
+      // marker). Invalidate the marker now. It is only ever set by
+      // syncNativeScrollbar (a programmatic write) and is NEVER refreshed by a
+      // scrollbar drag — the drag path calls jumpToPosition(skipScrollbarSync).
+      // So once the user drags away from a synced position the marker goes
+      // stale, and a later drag that lands back on that exact value — most
+      // visibly scrollTop 0 at the very top — would be wrongly dropped as our
+      // own echo, leaving the engine a few rows short of row 0. The real echo of
+      // a programmatic write is still caught above, because it fires before any
+      // user move reaches this line.
+      this._lastProgrammaticScrollTop = null;
+
       const maxScroll = scrollbarContainer.scrollHeight - scrollbarContainer.clientHeight;
       
       // Update last scroll position

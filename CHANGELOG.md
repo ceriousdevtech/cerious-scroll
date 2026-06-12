@@ -5,6 +5,11 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-06-11
+
+### Fixed
+- **Dragging the scrollbar thumb could stop a few rows short of where it pointed** — most visibly, dragging to the very top would "eventually" land on row ~70 instead of row 0. The native scrollbar ignores the asynchronous *echo* of its own programmatic `scrollTop` writes by matching against a saved marker (introduced in 1.0.x to fix the "wheel-then-drag dead zone"). That marker was only ever refreshed by programmatic syncs and **never by a scrollbar drag** (drags go through `jumpToPosition(skipScrollbarSync)`), so once you dragged away from a synced position it went stale — and a later drag back to that exact `scrollTop` (`scrollTop: 0` at the top being the obvious case) was wrongly dropped as the engine's own echo, leaving the position a few rows off. The marker is now invalidated the moment a genuine user move is processed; the real echo of a programmatic write still arrives first and is still suppressed, so `scrollTop: 0` now always resolves to row 0. No change to the wheel/touch/keyboard paths.
+
 ## [1.0.6] - 2026-06-08
 
 ### Added
