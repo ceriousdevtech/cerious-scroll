@@ -21,8 +21,6 @@ export class PerformanceCache {
   private static readonly CACHE_PRUNE_THRESHOLD = 250; // Prune when we exceed this
 
   // ===== CACHE STATE =====
-  private _cachedTotalHeight: number | undefined = undefined;
-  private _cachedTotalElements: number | undefined = undefined;
   private _isUniformHeight: boolean | undefined = undefined;
   private _uniformHeightValue: number | undefined = undefined;
   private _measuredHeights = new Map<number, number>();
@@ -62,26 +60,11 @@ export class PerformanceCache {
       height = 1;
     }
 
-    const wasAlreadyMeasured = this._measuredHeights.has(index);
-    const oldHeight = wasAlreadyMeasured ? this._measuredHeights.get(index)! : 1;
-    
     this._measuredHeights.set(index, height);
     this._lastAccessedIndex = index;
-    
+
     // Prune old cache entries to prevent memory growth
     this._pruneOldCacheEntries();
-    
-    if (this._cachedTotalHeight !== undefined) {
-      const heightDifference = height - oldHeight;
-      if (Number.isFinite(heightDifference)) {
-        this._cachedTotalHeight += heightDifference;
-      } else {
-        // Should never happen given validation above, but never let a bad
-        // value poison the cache silently.
-        this._cachedTotalHeight = undefined;
-        this._cachedTotalElements = undefined;
-      }
-    }
 
     if (this._isUniformHeight === undefined && this._measuredHeights.size >= 10) {
       // GC optimization: Use iterator-based approach instead of Array.from
@@ -185,37 +168,6 @@ export class PerformanceCache {
   }
 
   /**
-   * Calculate total height of all content in the dataset
-   * 
-   * @param totalElements Number of elements to calculate height for
-   * @returns Total height in pixels
-   */
-  calculateTotalContentHeight(totalElements: number): number {
-    // Check cache validity
-    if (this._cachedTotalHeight !== undefined && this._cachedTotalElements === totalElements) {
-      return this._cachedTotalHeight;
-    }
-
-    // Use measured heights where available, fallback to default height for unmeasured
-    let totalHeight = 0;
-    
-    for (let i = 0; i < totalElements; i++) {
-      if (this._measuredHeights.has(i)) {
-        // Use actual measured height
-        totalHeight += this._measuredHeights.get(i)!;
-      } else {
-        // Use minimal placeholder - will be corrected when measured
-        totalHeight += 1;
-      }
-    }
-
-    // Cache the calculated result
-    this._cachedTotalHeight = totalHeight;
-    this._cachedTotalElements = totalElements;
-    return totalHeight;
-  }
-
-  /**
    * Get cumulative height up to a specific row.
    *
    * @param row Row index to calculate cumulative height for
@@ -305,8 +257,6 @@ export class PerformanceCache {
    * Call this method when row heights change or dataset is modified
    */
   invalidateCache(): void {
-    this._cachedTotalHeight = undefined;
-    this._cachedTotalElements = undefined;
     this._isUniformHeight = undefined;
     this._uniformHeightValue = undefined;
     // Keep measured heights since they are real measurements
@@ -331,9 +281,7 @@ export class PerformanceCache {
       isUniformHeight: this._isUniformHeight,
       uniformHeightValue: this._uniformHeightValue,
       cacheWindowSize: 0,
-      cacheWindowStart: 0,
-      cachedTotalHeight: this._cachedTotalHeight,
-      cachedTotalElements: this._cachedTotalElements
+      cacheWindowStart: 0
     };
   }
 }

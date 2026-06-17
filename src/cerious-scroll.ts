@@ -110,7 +110,6 @@ export class CeriousScroll {
   viewportTop = 0;
   startElement = 0;
   endElement = 0;
-  totalContentHeight = 0;
 
   // ===== MODULE INSTANCES =====
   private placement: RowPlacement;
@@ -311,8 +310,7 @@ export class CeriousScroll {
     
     // Now set scrollHandlers on nativeScrollbar via the typed setter
     this.nativeScrollbar.setScrollHandlers(this.navigationEngine);
-    
-    this.totalContentHeight = 0;
+
     this.updateDisplay();
 
     // Optional debug hook for automated harnesses (e.g., Playwright) and field diagnostics.
@@ -675,16 +673,6 @@ export class CeriousScroll {
     
     const percentage = (currentPosition / totalPositions) * 100;
     return Math.max(0, Math.min(100, percentage));
-  }
-
-  /**
-   * Calculate total height of all content in the dataset
-   * 
-   * @param totalElements Number of elements to calculate height for
-   * @returns Total height in pixels
-   */
-  calculateTotalContentHeight(totalElements: number): number {
-    return this.performanceCache.calculateTotalContentHeight(totalElements);
   }
 
   /**

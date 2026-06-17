@@ -291,9 +291,18 @@ export class ViewportRenderer {
     // MEMORY OPTIMIZATION: If we jumped far away from last position, clear all and rebuild
     // This prevents memory accumulation from DOM element references
     if (Math.abs(startElement - this.lastStartElement) > 100) {
+      // Salvage the live window into the recycle pool BEFORE tearing it down, so
+      // the rebuild below reuses these elements instead of allocating a fresh
+      // window on every far jump (Step 5 recycles evicted rows the same way;
+      // this shortcut previously skipped that and leaked the whole window).
+      // clear() only detaches the nodes from the DOM — the references we push
+      // here stay valid, and the rebuild pops them straight back, so the pool
+      // stays bounded at ~one window.
+      this.currentlyRendered.forEach((element) => {
+        this.recycledElements.push(element);
+      });
       this.placement.clear(container);
       this.currentlyRendered.clear();
-      // Keep the pool intact; we'll reuse its elements after a large jump.
     }
 
     // Let the placement strategy prepare the container (visibility/positioning
