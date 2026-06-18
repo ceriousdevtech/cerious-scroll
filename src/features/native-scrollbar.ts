@@ -27,6 +27,14 @@ export class NativeScrollbar {
   private static readonly PROGRAMMATIC_SCROLL_TOLERANCE_PX = 2;
   private static readonly BOTTOM_THRESHOLD_PERCENTAGE = 99;
   private static readonly PERCENTAGE_MAX = 100;
+  // Window (ms) after a genuine user scroll on the strip during which an
+  // engine→scrollbar sync defers to the user. On desktop the user drags the
+  // REAL native OS scrollbar (no custom thumb / `_thumbDrag` on non-touch), so
+  // the only signal that they are mid-drag is the stream of non-echo scroll
+  // events the drag produces. Native drag events fire ~per frame, so a window
+  // comfortably wider than a frame bridges the gaps for the whole gesture and
+  // then lapses on release. See `syncNativeScrollbar`.
+  private static readonly USER_SCROLL_DEFER_MS = 150;
   // Custom thumb tuning. Sibling-driver strip is fixed width; the thumb
   // floats over the right edge of the host container and is visually
   // independent of that strip width.
@@ -67,6 +75,13 @@ export class NativeScrollbar {
   // Matching on the actual position carries no such residual. `null` means
   // "no programmatic write to reconcile yet".
   private _lastProgrammaticScrollTop: number | null = null;
+  // Timestamp (ms) of the last GENUINE user scroll on the strip — i.e. a scroll
+  // event that was NOT the echo of our own programmatic write. On desktop the
+  // user drags the real native OS scrollbar (there is no custom thumb, so
+  // `_thumbDrag` stays null), and the only evidence they are mid-drag is this
+  // stream of real scroll events. `syncNativeScrollbar` reads it to defer
+  // engine→scrollbar writes while the user is driving. See USER_SCROLL_DEFER_MS.
+  private _lastUserScrollTs = 0;
   private _cachedScrollbarWidth: number | undefined = undefined;
   // True when the platform uses OVERLAY scrollbars (macOS trackpad default,
   // mobile): the OS paints a thin auto-hiding bar OVER content and reserves no
@@ -150,6 +165,13 @@ export class NativeScrollbar {
   private static isTouchPrimary(): boolean {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
     return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  }
+
+  /** Monotonic-ish timestamp in ms, with a fallback for non-DOM environments. */
+  private static _now(): number {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
   }
 
   constructor(
@@ -464,6 +486,12 @@ export class NativeScrollbar {
       // user move reaches this line.
       this._lastProgrammaticScrollTop = null;
 
+      // Record that the user is actively driving the strip (native-scrollbar
+      // drag, track click, or custom-thumb drag — all land here as non-echo
+      // events). syncNativeScrollbar uses this to defer engine→scrollbar writes
+      // for the duration of the gesture.
+      this._lastUserScrollTs = NativeScrollbar._now();
+
       const maxScroll = scrollbarContainer.scrollHeight - scrollbarContainer.clientHeight;
       
       // Update last scroll position
@@ -582,6 +610,24 @@ export class NativeScrollbar {
   syncNativeScrollbar(scrollbarContainer?: HTMLElement): void {
     const container = scrollbarContainer || this._scrollbarContainer;
     if (!container || this._syncingScrollbar) return;
+
+    // Defer to a user who is actively driving the scrollbar. While they drag,
+    // THEY own the scroll position — the drag moves scrollTop and the scroll
+    // listener maps it to the engine. An engine→scrollbar sync here (e.g. a live
+    // feed appending rows mid-drag, which re-anchors via jumpToElement) would
+    // write scrollTop out from under the drag: it yanks the thumb, and re-arms
+    // the programmatic-echo marker so the drag's own moves get swallowed as
+    // echoes — the "thumb freezes / bounces while a row is appended" bug.
+    //
+    // Two signals, because the drag target differs by platform: the touch
+    // custom-thumb sets `_thumbDrag`; the desktop native OS scrollbar sets none,
+    // so we fall back to "a genuine strip scroll happened within the last frame
+    // or two" (USER_SCROLL_DEFER_MS). Either way the next scroll event (or the
+    // gesture's end) re-syncs from the final position.
+    if (this._thumbDrag ||
+        NativeScrollbar._now() - this._lastUserScrollTs < NativeScrollbar.USER_SCROLL_DEFER_MS) {
+      return;
+    }
 
     const percentage = this.getScrollPercentage();
     if (!Number.isFinite(percentage)) return;

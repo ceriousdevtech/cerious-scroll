@@ -152,6 +152,15 @@
       render: render,
       refresh: refresh,
       setTotal: setTotal,
+      // Grow/shrink the dataset IN PLACE — no teardown, unlike setTotal(). Use
+      // for a live append/prepend feed: setTotal() recreates the scroller (and
+      // the scrollbar the user may be dragging), which freezes the drag.
+      updateTotal: function (n) {
+        if (!state.scroller) return;
+        const next = Math.max(1, Math.floor(n));
+        state.total = next;
+        state.scroller.updateTotalElements(next);
+      },
       jumpTo: function (index) {
         if (!state.scroller) return;
         state.scroller.jumpToElement(Math.max(0, Math.min(state.total - 1, index | 0)));

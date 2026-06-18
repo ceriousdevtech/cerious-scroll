@@ -572,6 +572,39 @@ export class CeriousScroll {
   }
 
   /**
+   * Grow or shrink the dataset in place — WITHOUT recreating the scroller.
+   *
+   * Propagates the new element count to every subsystem (navigation bounds,
+   * scrollbar track height, renderer, height cache) while leaving the DOM, the
+   * scrollbar strip, and any in-progress native-scrollbar drag intact. This is
+   * the supported path for a live append/prepend feed: recreating the scroller
+   * per inject tears down the scrollbar the user may be dragging (the thumb
+   * freezes the moment a row arrives), and a fixed-size sliding window makes the
+   * bottom a moving tail that bounces. Growing the count in place keeps the
+   * oldest row at a stable index, so the bottom holds steady.
+   *
+   * Heights are cached by index. If existing rows move to new indices (a
+   * prepend shifts every index by +k), clear the height cache (clearAllCaches)
+   * before re-rendering. This call neither moves the scroll position nor
+   * re-renders — adjust currentElement and call recalculate()/render() after.
+   *
+   * @param totalElements New element count (finite integer >= 1)
+   */
+  updateTotalElements(totalElements: number): void {
+    if (!Number.isFinite(totalElements) || totalElements < 1) {
+      throw new Error('CeriousScroll.updateTotalElements: totalElements must be >= 1 (finite integer required)');
+    }
+    const next = Math.floor(totalElements);
+    if (next === this.totalElements) return;
+
+    this.totalElements = next;
+    this.performanceCache.setTotalElements(next);
+    this.navigationEngine.updateConfig(next, this.viewportHeight);
+    this.viewportRenderer.updateTotalElements(next);
+    this.nativeScrollbar.updateNativeScrollbarHeight(next);
+  }
+
+  /**
    * Reset scroll position to the beginning
    */
   reset(): void {
@@ -727,8 +760,27 @@ export class CeriousScroll {
   // ===== NATIVE SCROLLBAR INTEGRATION =====
 
   /**
+   * Re-sync the native scrollbar thumb to the engine's current scroll position.
+   *
+   * Call this after an in-place content change that altered the scroll geometry
+   * but went through neither a scroll event nor jumpToElement — most importantly
+   * after updateTotalElements() + a re-render. Growing the dataset lengthens the
+   * scrollbar track, so a thumb that was at the bottom is left stranded above it
+   * until something re-syncs; this is that step. Run it AFTER the rows have been
+   * re-rendered and re-measured, so the percentage reflects the new heights.
+   *
+   * Honors an active user drag: the underlying sync defers while the user is
+   * driving the scrollbar (see NativeScrollbar), so this is a no-op mid-drag.
+   */
+  syncScrollbar(): void {
+    if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
+      this.nativeScrollbar.syncNativeScrollbar();
+    }
+  }
+
+  /**
    * Handle viewport changes that might affect scrollbar width
-   * 
+   *
    * @param container The container element with the scrollbar
    */
   handleViewportChange(container: HTMLElement): void {

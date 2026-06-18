@@ -134,6 +134,43 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
   });
 });
 
+describe('NativeScrollbar defers engine→scrollbar sync to an active user scroll', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+  afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); });
+
+  it('does NOT write scrollTop while the user is actively scrolling the strip', () => {
+    // Repro of the "thumb freezes / bounces when a row is appended mid-drag":
+    // a live feed re-anchors the engine and calls syncNativeScrollbar, which
+    // would write scrollTop out from under the user's in-progress drag.
+    const { sb, strip, setPercentage, userScrollTo } = setup();
+
+    userScrollTo(300);                 // user drags the strip (stamps the marker)
+    expect((strip as any).scrollTop).toBe(300);
+
+    setPercentage(90);                 // engine re-anchored elsewhere by the append
+    sb.syncNativeScrollbar();          // must defer to the user, not yank to 90%
+
+    expect((strip as any).scrollTop).toBe(300);
+  });
+
+  it('resumes syncing once the user-scroll window lapses', () => {
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValue(1000);
+    const { sb, strip, setPercentage, userScrollTo } = setup();
+
+    userScrollTo(300);                 // _lastUserScrollTs := 1000
+
+    now.mockReturnValue(1100);         // +100ms: still inside the 150ms window
+    setPercentage(90);
+    sb.syncNativeScrollbar();
+    expect((strip as any).scrollTop).toBe(300); // deferred
+
+    now.mockReturnValue(2000);         // +1s: window lapsed, user has let go
+    sb.syncNativeScrollbar();
+    expect((strip as any).scrollTop).toBeCloseTo(819, 0); // 90% of maxScroll 910
+  });
+});
+
 describe('NativeScrollbar gutter reservation', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
   afterEach(() => { document.body.innerHTML = ''; });

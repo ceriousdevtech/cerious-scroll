@@ -512,7 +512,49 @@ describe('CeriousScroll Integration Tests', () => {
       
       // Should show all elements
       expect(viewport.endElement).toBe(9);
-      
+
+      scroller.dispose();
+    });
+  });
+
+  describe('updateTotalElements (in-place dataset growth)', () => {
+    it('grows the element count in place and propagates new bounds', () => {
+      const container = createMockContainer(600, 800);
+      const scroller = new CeriousScroll(container, 1000, {
+        attachScrollbar: false,
+        observeContentChanges: false,
+      });
+
+      expect(scroller.totalElements).toBe(1000);
+      // An index beyond the current count is rejected (cache bound).
+      expect(() => scroller.setMeasuredHeight(1500, 40)).toThrow();
+      // Jumping past the end clamps to the old last row.
+      expect(scroller.jumpToElement(1999).element).toBe(999);
+
+      scroller.updateTotalElements(2000);
+
+      expect(scroller.totalElements).toBe(2000);
+      // Bounds propagated to the height cache and the navigation engine.
+      expect(() => scroller.setMeasuredHeight(1500, 40)).not.toThrow();
+      expect(scroller.jumpToElement(1999).element).toBe(1999);
+
+      scroller.dispose();
+    });
+
+    it('is a no-op for an unchanged count and validates its argument', () => {
+      const container = createMockContainer();
+      const scroller = new CeriousScroll(container, 500, {
+        attachScrollbar: false,
+        observeContentChanges: false,
+      });
+
+      scroller.updateTotalElements(500);
+      expect(scroller.totalElements).toBe(500);
+
+      expect(() => scroller.updateTotalElements(0)).toThrow();
+      expect(() => scroller.updateTotalElements(Number.NaN)).toThrow();
+      expect(scroller.totalElements).toBe(500);
+
       scroller.dispose();
     });
   });
