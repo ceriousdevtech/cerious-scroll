@@ -54,11 +54,21 @@ function setup() {
   Object.defineProperty(strip, 'scrollHeight', { configurable: true, get: () => 1010 });
   Object.defineProperty(strip, 'clientHeight', { configurable: true, get: () => 100 });
 
-  const setPercentage = (p: number) => { percentage = p; };
-  const fireScroll = () => strip.dispatchEvent(new Event('scroll'));
-  const userScrollTo = (top: number) => { (strip as any).scrollTop = top; fireScroll(); };
+  // The scroll listener now coalesces its map+render onto requestAnimationFrame.
+  // Drive that deterministically: queue rAF callbacks and flush them on demand
+  // (a flush = one frame boundary). vi.unstubAllGlobals() in afterEach restores.
+  const rafCbs: Array<() => void> = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: () => void) => { rafCbs.push(cb); return rafCbs.length; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  const flushRaf = () => { const cbs = rafCbs.splice(0); cbs.forEach((cb) => cb()); };
 
-  return { sb, container, strip, jumpToPosition, setPercentage, fireScroll, userScrollTo };
+  const setPercentage = (p: number) => { percentage = p; };
+  // Raw scroll event — does NOT advance a frame (use to test coalescing).
+  const fireScroll = () => strip.dispatchEvent(new Event('scroll'));
+  // A user drag step that lands in its own frame: move, fire, render.
+  const userScrollTo = (top: number) => { (strip as any).scrollTop = top; fireScroll(); flushRaf(); };
+
+  return { sb, container, strip, jumpToPosition, setPercentage, fireScroll, userScrollTo, flushRaf };
 }
 
 describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
@@ -67,6 +77,7 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
   });
   afterEach(() => {
     document.body.innerHTML = '';
+    vi.unstubAllGlobals();
   });
 
   it('ignores the echo scroll event of its own programmatic write', () => {
@@ -103,14 +114,33 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
     expect(jumpToPosition).toHaveBeenCalledTimes(1);
   });
 
-  it('processes every distinct user drag position (no accumulating dead zone)', () => {
+  it('processes every distinct user drag position across frames (no accumulating dead zone)', () => {
     const { jumpToPosition, userScrollTo } = setup();
 
+    // Each userScrollTo lands in its own frame (it flushes the coalescing rAF),
+    // so all three positions are processed — no swallowed drags.
     userScrollTo(200);
     userScrollTo(400);
     userScrollTo(600);
 
     expect(jumpToPosition).toHaveBeenCalledTimes(3);
+  });
+
+  it('coalesces multiple scroll events within one frame into a single render', () => {
+    const { strip, jumpToPosition, fireScroll, flushRaf } = setup();
+
+    // Three scroll events before the frame boundary (a fast native-scrollbar
+    // drag): nothing renders synchronously...
+    (strip as any).scrollTop = 200; fireScroll();
+    (strip as any).scrollTop = 400; fireScroll();
+    (strip as any).scrollTop = 600; fireScroll();
+    expect(jumpToPosition).not.toHaveBeenCalled();
+
+    // ...and the single coalesced render lands on the LATEST position only.
+    flushRaf();
+    expect(jumpToPosition).toHaveBeenCalledTimes(1);
+    // 600/910 maxScroll → 65.9% → 0.659 × trueBottom(99) ≈ element 65.
+    expect(jumpToPosition.mock.calls[0][0]).toBe(65);
   });
 
   it('does NOT drop a genuine drag back to a previously-synced scrollTop (stale marker)', () => {
@@ -136,7 +166,7 @@ describe('NativeScrollbar programmatic/user scroll disambiguation', () => {
 
 describe('NativeScrollbar defers engine→scrollbar sync to an active user scroll', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
-  afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); });
+  afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('does NOT write scrollTop while the user is actively scrolling the strip', () => {
     // Repro of the "thumb freezes / bounces when a row is appended mid-drag":

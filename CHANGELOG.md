@@ -5,6 +5,14 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-06-24
+
+### Changed
+- **Native-scrollbar drags now render once per animation frame.** A fast drag on the native scrollbar can fire several `scroll` events within a single frame; each one previously ran the full map-to-position-and-render synchronously, doing 2–3× the work per frame and dropping frames. The cheap, must-stay-synchronous bookkeeping (echo rejection, the user-scroll timestamp, thumb visuals) still runs on every event, but the expensive map + viewport render is now coalesced to one run on the next frame at the latest `scrollTop` — matching the wheel path's rAF cadence. The full viewport is still rendered every frame (no extra blank rows), at the cost of at most ~1 frame of added latency. A pending frame is cancelled on detach, and an rAF fallback keeps the coalescing working in non-DOM/SSR environments.
+
+### Fixed
+- **Eliminated per-row layout thrash during fast scrollbar drags.** `ViewportRenderer.measureNew` no longer forces a synchronous `offsetHeight` read for a row whose height is already cached (or covered by the uniform-height hint). Content is index-addressed and any remap clears the cache (`clearAllCaches`/`recalculate`), so the cached value is the correct height — reusing it skips the read-after-write layout that dominated fast-drag frames. New rows with no cached height are still measured exactly as before.
+
 ## [1.0.7] - 2026-06-11
 
 ### Fixed
