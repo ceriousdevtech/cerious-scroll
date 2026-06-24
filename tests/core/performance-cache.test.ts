@@ -106,50 +106,6 @@ describe('PerformanceCache', () => {
     });
   });
 
-  describe('Total Content Height Calculation', () => {
-    let cache: PerformanceCache;
-
-    beforeEach(() => {
-      const heights = createElementHeights(100, 50);
-      const calculator = createMockHeightCalculator(heights);
-      cache = new PerformanceCache(calculator);
-    });
-
-    it('should calculate total height with no measurements', () => {
-      // Without measurements, should use minimal placeholders (1px each)
-      const total = cache.calculateTotalContentHeight(10);
-      expect(total).toBe(10); // 10 elements * 1px
-    });
-
-    it('should calculate total height with some measurements', () => {
-      cache.setMeasuredHeight(0, 50);
-      cache.setMeasuredHeight(1, 60);
-      cache.setMeasuredHeight(2, 70);
-      
-      const total = cache.calculateTotalContentHeight(10);
-      // 3 measured (50+60+70=180) + 7 unmeasured (7*1=7) = 187
-      expect(total).toBe(187);
-    });
-
-    it('should cache total height calculations', () => {
-      cache.setMeasuredHeight(0, 50);
-      const total1 = cache.calculateTotalContentHeight(10);
-      const total2 = cache.calculateTotalContentHeight(10);
-      
-      expect(total1).toBe(total2);
-    });
-
-    it('should update cached total when heights change', () => {
-      cache.setMeasuredHeight(0, 50);
-      const total1 = cache.calculateTotalContentHeight(10);
-      
-      cache.setMeasuredHeight(0, 100);
-      const total2 = cache.calculateTotalContentHeight(10);
-      
-      expect(total2).toBe(total1 + 50); // Difference of 50
-    });
-  });
-
   describe('Cumulative Height Calculation', () => {
     let cache: PerformanceCache;
     let calculator: (index: number) => number;
@@ -283,31 +239,22 @@ describe('PerformanceCache', () => {
       cache.setMeasuredHeight(1, 80);
     });
 
-    it('should invalidate caches but keep measured heights', () => {
-      cache.calculateTotalContentHeight(10);
+    it('should invalidate derived caches but keep measured heights', () => {
       cache.invalidateCache();
-      
+
       const stats = cache.getCacheStats();
-      expect(stats.cachedTotalHeight).toBeUndefined();
+      expect(stats.isUniformHeight).toBeUndefined();
       expect(stats.measuredElements).toBe(2); // Measured heights preserved
     });
 
     it('should clear all caches including measured heights', () => {
       cache.clearAllCaches();
-      
+
       expect(cache.hasMeasuredHeight(0)).toBe(false);
       expect(cache.hasMeasuredHeight(1)).toBe(false);
-      
+
       const stats = cache.getCacheStats();
       expect(stats.measuredElements).toBe(0);
-    });
-
-    it('should recalculate after invalidation', () => {
-      const total1 = cache.calculateTotalContentHeight(10);
-      cache.invalidateCache();
-      const total2 = cache.calculateTotalContentHeight(10);
-      
-      expect(total2).toBe(total1);
     });
   });
 
@@ -319,12 +266,9 @@ describe('PerformanceCache', () => {
       
       cache.setMeasuredHeight(0, 100);
       cache.setMeasuredHeight(1, 80);
-      cache.calculateTotalContentHeight(10);
-      
+
       const stats = cache.getCacheStats();
       expect(stats.measuredElements).toBe(2);
-      expect(stats.cachedTotalElements).toBe(10);
-      expect(stats.cachedTotalHeight).toBeGreaterThan(0);
     });
   });
 

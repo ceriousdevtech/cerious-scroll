@@ -166,6 +166,13 @@
             // Content is addressed by a stable monotonic `seq` (NOT by row index),
             // so a row's content/height never changes when its index shifts on
             // prepend. index i  ->  seq = topSeq - i  (index 0 = newest = topSeq).
+            //
+            // The dataset GROWS as events arrive (total += k), but in place via
+            // demo.updateTotal — NOT setTotal, which recreates the whole scroller.
+            // Recreating mid-drag would destroy the scrollbar the user is dragging
+            // (the drag froze the moment a live row arrived). Growing in place
+            // keeps the drag alive AND keeps the oldest event pinned at the bottom
+            // index, so scrolling to the bottom stays steady instead of bouncing.
             let total = 2000;
             let topSeq = total - 1;          // newest seq currently in the stream
             let freshMinSeq = -1;            // seqs >= this are "just arrived" (NEW flag)
@@ -290,6 +297,10 @@
             }
 
             // ---- The actual prepend + anchor operation --------------------------
+            // Grow the stream in place and re-anchor. The element count grows by k
+            // (no recreate → an in-progress scrollbar drag survives, and the oldest
+            // event keeps a stable bottom index). Mirrors recalculate() in the
+            // React/Vue/Angular wrappers for the re-render half.
             function prepend(k) {
                 const s = demo.scroller;
                 const anchorEl = s.currentElement;        // logical row at viewport top
@@ -301,24 +312,31 @@
                 total += k;
                 freshMinSeq = topSeq - k + 1;              // mark just-arrived batch as NEW
 
-                // Recreate at the new length. The height cache is index-keyed, and
-                // every row's index just shifted by +k, so the cache MUST be cleared
-                // (setTotal does this) and rows re-measured under the new mapping.
-                demo.setTotal(total);
-                const ns = demo.scroller;
+                // Grow the dataset IN PLACE — no teardown, so a native-scrollbar
+                // drag in progress is not destroyed. Every existing event's index
+                // shifted by +k (k newer events took indices 0..k-1), so the
+                // index-keyed height cache is stale and must be cleared.
+                demo.updateTotal(total);
+                s.clearAllCaches();
 
                 if (follow) {
-                    ns.currentElement = 0; ns.scrollOffset = 0;   // ride the newest
+                    s.jumpToElement(0);                    // ride the newest
                 } else {
-                    // Re-anchor to the SAME logical row: it moved from index anchorEl
-                    // to anchorEl + k. Keep the sub-row offset so there is zero jump.
-                    ns.currentElement = Math.min(anchorEl + k, total - 1);
-                    ns.scrollOffset = anchorOff;
-                    if (!wasAtTop) newAbove += k;                  // they piled up off-screen above
+                    // Re-anchor to the SAME logical row: it moved from index
+                    // anchorEl to anchorEl + k. Keep the sub-row offset for zero jump.
+                    s.jumpToElement(Math.min(anchorEl + k, total - 1));
+                    s.scrollOffset = anchorOff;
+                    if (!wasAtTop) newAbove += k;          // they piled up off-screen above
                 }
-                // Sync nav config + scrollbar thumb + display, and re-render via the
-                // engine's own onScroll hook (one consistent path).
-                ns.handleViewportChange(document.getElementById('scroll'));
+
+                // refresh re-runs render() per visible row (content slid to new
+                // seqs) and re-measures; render repositions. Synchronous → 1 paint.
+                demo.refresh();
+                demo.render();
+                // The track just got longer (k more rows). Re-sync the thumb to
+                // the engine position AFTER the re-measure, or a thumb parked at
+                // the bottom rides up on the first append. Defers if mid-drag.
+                s.syncScrollbar();
                 $('totalLabel').textContent = total.toLocaleString();
                 refreshStat();
             }

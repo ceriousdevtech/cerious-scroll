@@ -1,6 +1,6 @@
 {
   "name": "@ceriousdevtech/cerious-scroll",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "High-performance virtual scrolling library with O(1) memory usage, supporting millions of elements",
   "type": "module",
   "main": "dist/index.js",
