@@ -89,6 +89,22 @@ describe('PerformanceCache', () => {
       expect(cache.hasMeasuredHeight(290)).toBe(true);
     });
 
+    it('should pin tail measurements so true-bottom heights survive a top-of-list prune', () => {
+      cache.setTotalElements(10000);
+      for (let i = 0; i < 250; i++) {
+        cache.setMeasuredHeight(i, 40);
+      }
+      for (let i = 9920; i < 10000; i++) {
+        cache.setMeasuredHeight(i, 40);
+      }
+      // Measuring near the top must not evict the pinned tail
+      for (let i = 0; i < 80; i++) {
+        cache.setMeasuredHeight(i, 40);
+      }
+      expect(cache.hasMeasuredHeight(9999)).toBe(true);
+      expect(cache.hasMeasuredHeight(9920)).toBe(true);
+    });
+
     it('should remove far elements during pruning', () => {
       // Add many measured heights at index 0-299
       for (let i = 0; i < 300; i++) {

@@ -53,7 +53,7 @@ export class TouchController {
     const resolveHorizontalTarget = (): HTMLElement | null => {
       const explicit = getHorizontalTarget?.();
       if (explicit) return explicit;
-      const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      const inner = getInner();
       if (inner && inner.scrollWidth > inner.clientWidth) return inner;
       if (container.scrollWidth > container.clientWidth) return container;
       return null;
@@ -62,6 +62,22 @@ export class TouchController {
     const originalTouchAction = container.style.touchAction;
     const styleId = 'cerious-touch-action-style';
     let addedStyleElement: HTMLStyleElement | null = null;
+    let cachedInner: HTMLElement | null = null;
+
+    const getInner = (): HTMLElement | null => {
+      if (cachedInner && cachedInner.isConnected) return cachedInner;
+      cachedInner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      return cachedInner;
+    };
+
+    const raf = (cb: () => void): number => {
+      if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb);
+      return setTimeout(cb, 16) as unknown as number;
+    };
+    const caf = (handle: number): void => {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(handle);
+      else clearTimeout(handle);
+    };
 
     if (!document.getElementById(styleId)) {
       addedStyleElement = document.createElement('style');
@@ -85,6 +101,14 @@ export class TouchController {
     let velocity = 0;
     let momentumAnimationId: number | null = null;
     let activeTouchId: number | null = null;
+    // Coalesce vertical engine scroll + render to one rAF, matching the native
+    // scrollbar path. Touchmove can fire 2–4× per frame on 120/240Hz displays;
+    // applying every event did that many full viewport renders. Deltas are
+    // accumulated so the finger distance is preserved; touchend flushes so
+    // momentum starts from the final position.
+    let pendingDeltaY = 0;
+    let pendingViewportHeight = 0;
+    let scrollRafId: number | null = null;
 
     // Axis-lock state. Until the gesture exceeds `axisLockThreshold` we don't
     // know whether the user intends a vertical or horizontal scroll. We
@@ -118,9 +142,30 @@ export class TouchController {
     };
 
     const getViewportHeight = () => {
-      const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      const inner = getInner();
       const h = inner?.clientHeight ?? 0;
       return h > 0 ? h : (container.clientHeight || container.offsetHeight);
+    };
+
+    const emitVerticalScroll = (result: ScrollResult) => {
+      this._eventDetail.percentage = this.deps.calculateScrollPercentage();
+      this._eventDetail.currentElement = this.deps.getCurrentElement();
+      this._eventDetail.scrollOffset = this.deps.getScrollOffset();
+      this._eventDetail.result = result;
+
+      container.dispatchEvent(new CustomEvent('cerious-viewport-change', {
+        detail: this._eventDetail
+      }));
+      onScroll?.(result);
+    };
+
+    const flushPendingScroll = () => {
+      scrollRafId = null;
+      const dy = pendingDeltaY;
+      pendingDeltaY = 0;
+      if (dy === 0) return;
+      const result = this.deps.scroll(dy, pendingViewportHeight);
+      emitVerticalScroll(result);
     };
 
     const handleTouchStart = (event: TouchEvent) => {
@@ -134,9 +179,14 @@ export class TouchController {
       event.stopPropagation();
 
       if (momentumAnimationId !== null) {
-        cancelAnimationFrame(momentumAnimationId);
+        caf(momentumAnimationId);
         momentumAnimationId = null;
       }
+      if (scrollRafId !== null) {
+        caf(scrollRafId);
+        scrollRafId = null;
+      }
+      pendingDeltaY = 0;
 
       if (activeTouchId === null && event.touches.length > 0) {
         const touch = event.touches[0];
@@ -250,17 +300,11 @@ export class TouchController {
       }
 
       if (Math.abs(deltaY) > 0) {
-        const result = this.deps.scroll(deltaY, getViewportHeight());
-        // GC optimization: Reuse event detail object instead of creating new one
-        this._eventDetail.percentage = this.deps.calculateScrollPercentage();
-        this._eventDetail.currentElement = this.deps.getCurrentElement();
-        this._eventDetail.scrollOffset = this.deps.getScrollOffset();
-        this._eventDetail.result = result;
-
-        container.dispatchEvent(new CustomEvent('cerious-viewport-change', {
-          detail: this._eventDetail
-        }));
-        onScroll?.(result);
+        pendingDeltaY += deltaY;
+        pendingViewportHeight = getViewportHeight();
+        if (scrollRafId === null) {
+          scrollRafId = raf(flushPendingScroll);
+        }
       }
 
       lastTouchY = currentY;
@@ -296,6 +340,15 @@ export class TouchController {
         } catch {
           // Ignore release failures (already released or not captured)
         }
+      }
+
+      // Apply any coalesced move before momentum so the flick starts from the
+      // finger's final position rather than a frame behind.
+      if (scrollRafId !== null) {
+        caf(scrollRafId);
+        flushPendingScroll();
+      } else if (pendingDeltaY !== 0) {
+        flushPendingScroll();
       }
 
       activeTouchId = null;
@@ -381,10 +434,15 @@ export class TouchController {
 
     const handleTouchCancel = () => {
       activeTouchId = null;
+      if (scrollRafId !== null) {
+        caf(scrollRafId);
+        scrollRafId = null;
+      }
+      pendingDeltaY = 0;
       onScroll?.({ element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() });
 
       if (momentumAnimationId !== null) {
-        cancelAnimationFrame(momentumAnimationId);
+        caf(momentumAnimationId);
         momentumAnimationId = null;
       }
     };
@@ -401,9 +459,14 @@ export class TouchController {
       container.removeEventListener('touchcancel', handleTouchCancel, true);
 
       if (momentumAnimationId !== null) {
-        cancelAnimationFrame(momentumAnimationId);
+        caf(momentumAnimationId);
         momentumAnimationId = null;
       }
+      if (scrollRafId !== null) {
+        caf(scrollRafId);
+        scrollRafId = null;
+      }
+      pendingDeltaY = 0;
 
       container.style.touchAction = originalTouchAction;
       container.removeAttribute('data-cerious-touch');

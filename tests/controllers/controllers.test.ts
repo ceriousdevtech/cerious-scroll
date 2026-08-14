@@ -307,7 +307,7 @@ describe('TouchController', () => {
       expect(touchStart.stopPropagation).toHaveBeenCalled();
     });
 
-    it('should handle touchmove and call scroll', () => {
+    it('should handle touchmove and call scroll', async () => {
       controller.attach(mockContainer);
       
       const touchStart = createMockTouchEvent('touchstart', [{ identifier: 1, clientY: 100 }]);
@@ -322,12 +322,13 @@ describe('TouchController', () => {
       
       startHandler(touchStart);
       moveHandler(touchMove);
+      await waitForAnimationFrame();
       
       // Delta = 100 - 50 = 50 pixels down
       expect(mockScroll).toHaveBeenCalledWith(50, mockContainer.clientHeight);
     });
 
-    it('should invoke onScroll callback', () => {
+    it('should invoke onScroll callback', async () => {
       const onScroll = vi.fn();
       controller.attach(mockContainer, onScroll);
       
@@ -343,11 +344,12 @@ describe('TouchController', () => {
       
       startHandler(touchStart);
       moveHandler(touchMove);
+      await waitForAnimationFrame();
       
       expect(onScroll).toHaveBeenCalled();
     });
 
-    it('should emit viewport-change event', () => {
+    it('should emit viewport-change event', async () => {
       controller.attach(mockContainer);
       
       const touchStart = createMockTouchEvent('touchstart', [{ identifier: 1, clientY: 100 }]);
@@ -362,10 +364,31 @@ describe('TouchController', () => {
       
       startHandler(touchStart);
       moveHandler(touchMove);
+      await waitForAnimationFrame();
       
       expect(mockContainer.dispatchEvent).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'cerious-viewport-change' })
       );
+    });
+
+    it('coalesces multiple touchmoves in one frame into a single scroll', async () => {
+      controller.attach(mockContainer);
+
+      const startHandler = vi.mocked(mockContainer.addEventListener).mock.calls.find(
+        call => call[0] === 'touchstart'
+      )?.[1] as EventListener;
+      const moveHandler = vi.mocked(mockContainer.addEventListener).mock.calls.find(
+        call => call[0] === 'touchmove'
+      )?.[1] as EventListener;
+
+      startHandler(createMockTouchEvent('touchstart', [{ identifier: 1, clientY: 100 }]));
+      moveHandler(createMockTouchEvent('touchmove', [{ identifier: 1, clientY: 80 }]));
+      moveHandler(createMockTouchEvent('touchmove', [{ identifier: 1, clientY: 50 }]));
+      await waitForAnimationFrame();
+
+      // 100→80 (20) + 80→50 (30) = 50, applied once
+      expect(mockScroll).toHaveBeenCalledTimes(1);
+      expect(mockScroll).toHaveBeenCalledWith(50, mockContainer.clientHeight);
     });
   });
 

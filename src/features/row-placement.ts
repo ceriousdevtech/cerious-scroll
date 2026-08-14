@@ -101,6 +101,12 @@ export interface RowPlacement {
   commit(container: HTMLElement, firstRowTop: number): void;
 
   /**
+   * Optional: drop a cached {@link getTopInset} value (container resize, header
+   * content change). No-op for placements without a top inset.
+   */
+  invalidateTopInset?(): void;
+
+  /**
    * Optional: vertical space at the top of the container that is NOT part of the
    * scrollable viewport (e.g. a header row that sits above the rows). The host
    * subtracts this from the measured viewport height so scroll math and
@@ -161,11 +167,13 @@ export class AbsolutePlacement implements RowPlacement {
   }
 
   position(el: HTMLElement, top: number, _region: PlacementRegion): void {
-    // Keep position set every frame (matches original reuse path which re-set it
-    // defensively) and write the cumulative top.
-    el.style.position = this._style.position;
+    // createRow/initRow already set position:absolute. Rewriting it every
+    // frame for every visible row was wasted style invalidation. Only write
+    // `top` when the pixel value actually changed (reflow-without-scroll).
     this._topBuffer = top + 'px';
-    el.style.top = this._topBuffer;
+    if (el.style.top !== this._topBuffer) {
+      el.style.top = this._topBuffer;
+    }
   }
 
   detach(container: HTMLElement, el: HTMLElement): void {
@@ -262,6 +270,7 @@ export class TableFlowPlacement implements RowPlacement {
   // autoSizeColumns: pinned after the first window is measured; reset on clear()
   // of the dataset so a data reset re-measures.
   private _columnsSized = false;
+  private _cachedTopInset: number | undefined;
 
   // Reused buffers to avoid per-frame allocations.
   private _transformBuffer = '';
@@ -362,6 +371,7 @@ export class TableFlowPlacement implements RowPlacement {
   clear(_container: HTMLElement): void {
     if (this.tbodyMain) this.tbodyMain.textContent = '';
     if (this.tbodyMeasure) this.tbodyMeasure.textContent = '';
+    this._cachedTopInset = undefined;
   }
 
   createRow(): HTMLElement {
@@ -475,9 +485,18 @@ export class TableFlowPlacement implements RowPlacement {
     // to an integer). On fractional-scale displays (Retina) a rounded inset
     // throws off the body-area height by up to ~1px, which accumulates into the
     // true-bottom anchor and clips the last row. getBoundingClientRect is exact.
+    // Cache the result: scroll() and renderViewport() used to force a layout on
+    // every wheel/touch event. Don't cache 0 — an async header may still mount.
+    if (this._cachedTopInset !== undefined) return this._cachedTopInset;
     if (!this.thead) return 0;
     const h = this.thead.getBoundingClientRect().height;
-    return h > 0 ? h : this.thead.offsetHeight;
+    const inset = h > 0 ? h : this.thead.offsetHeight;
+    if (inset > 0) this._cachedTopInset = inset;
+    return inset;
+  }
+
+  invalidateTopInset(): void {
+    this._cachedTopInset = undefined;
   }
 
   /**

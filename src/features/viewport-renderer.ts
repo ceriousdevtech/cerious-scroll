@@ -51,6 +51,7 @@ export class ViewportRenderer {
   // GC optimization: reuse arrays/objects created every renderViewport call.
   private _renderedRowsArray: Array<{ index: number; height: number }> = [];
   private _bottomElementsToRenderArray: number[] = [];
+  private _bufferHeightArray: number[] = [];
   private _defensiveRemoveArray: number[] = [];
   private bottomMeasurementVersion = 0;
   private trueBottomCache: {
@@ -333,6 +334,8 @@ export class ViewportRenderer {
     // We need to know the heights of buffer elements to position startElement correctly
     const bufferStart = Math.max(0, startElement - ViewportRenderer.OVERSCAN_BUFFER);
     let bufferAboveHeight = 0;
+    const bufferHeights = this._bufferHeightArray;
+    bufferHeights.length = 0;
     
     for (let i = bufferStart; i < startElement; i++) {
       this._shouldBeVisibleSet.add(i);
@@ -359,6 +362,7 @@ export class ViewportRenderer {
         this.currentlyRendered.set(i, elementToRender);
       }
 
+      bufferHeights.push(measuredHeight);
       bufferAboveHeight += measuredHeight;
     }
 
@@ -370,11 +374,7 @@ export class ViewportRenderer {
     for (let i = bufferStart; i < startElement; i++) {
       const element = this.currentlyRendered.get(i)!;
       this.placement.position(element, cumulativeTop, 'window');
-
-      // Use cached measurement; offsetHeight read here would force a layout
-      // for every buffer element on every scroll frame (and is re-cached on miss).
-      const height = this.measureReused(i, element);
-      cumulativeTop += height;
+      cumulativeTop += bufferHeights[i - bufferStart];
     }
     
     // STEP 3: Render visible elements incrementally until viewport is filled
@@ -452,28 +452,39 @@ export class ViewportRenderer {
     
     const endElement = Math.min(elementIndex - 1, this.totalElements - 1);
 
-    // PRE-STEP 6: Compute bottom boundary indices and add them to _shouldBeVisibleSet
-    // BEFORE Step 5 runs the cleanup. This prevents the cleanup from evicting bottom
-    // boundary elements from currentlyRendered, which previously forced them to be
-    // fully re-created (160+ appendChild calls) on every scroll frame.
+    // PRE-STEP 6: Compute bottom boundary indices. These exist only so true-bottom
+    // math has real measured heights for the tail. Once those heights are cached
+    // (and pinned by PerformanceCache), keeping ~50 extra DOM nodes — and
+    // repositioning them every frame — is wasted work, so we drop them from the
+    // live set and let Step 5 recycle them.
     const datasetLastIndex = this.totalElements - 1;
     const bottomElementsToRender = this._bottomElementsToRenderArray;
     bottomElementsToRender.length = 0;
     if (datasetLastIndex >= 0 && endElement < datasetLastIndex) {
       let bottomAccumulatedHeight = 0;
       const MAX_BOTTOM_ELEMENTS = 50;
+      let missingMeasurement = false;
       for (let i = datasetLastIndex; i >= 0; i--) {
         if (i <= endElement) break;
         if (bottomElementsToRender.length >= MAX_BOTTOM_ELEMENTS) break;
         bottomElementsToRender.push(i);
-        // Mark as visible so Step 5 does NOT evict these from currentlyRendered.
-        this._shouldBeVisibleSet.add(i);
         if (this.hasMeasuredHeight(i)) {
           bottomAccumulatedHeight += this.getMeasuredHeight(i);
           if (bottomAccumulatedHeight >= windowHeight) break;
+        } else {
+          missingMeasurement = true;
         }
       }
       bottomElementsToRender.reverse();
+      if (missingMeasurement) {
+        // Still need DOM nodes to measure. Keep them alive across Step 5.
+        for (let i = 0; i < bottomElementsToRender.length; i++) {
+          this._shouldBeVisibleSet.add(bottomElementsToRender[i]);
+        }
+      } else {
+        // Tail is fully measured — do not keep sentinel rows in the live window.
+        bottomElementsToRender.length = 0;
+      }
     }
 
     // STEP 5: Remove elements that are no longer visible
@@ -492,12 +503,12 @@ export class ViewportRenderer {
     this.lastStartElement = startElement;
     this.lastEndElement = endElement;
     
-    // STEP 6: Render bottom boundary elements for precise end-of-scroll detection.
-    // bottomElementsToRender was pre-computed in PRE-STEP 6 (before Step 5), so
-    // stable bottom rows are still in currentlyRendered — no renderElement needed.
-    this._lastRenderedElement = null;
+    // STEP 6: Render bottom boundary elements for precise end-of-scroll detection
+    // only while any tail height is still unknown. After the first measure, the
+    // cache (pinned tail) is enough and these nodes are recycled in Step 5.
+    this._lastRenderedElement = this.currentlyRendered.get(datasetLastIndex) ?? null;
 
-    if (datasetLastIndex >= 0 && endElement < datasetLastIndex) {
+    if (datasetLastIndex >= 0 && endElement < datasetLastIndex && bottomElementsToRender.length > 0) {
       for (const elemIndex of bottomElementsToRender) {
         let bottomElement: HTMLElement;
         let bottomHeight: number;

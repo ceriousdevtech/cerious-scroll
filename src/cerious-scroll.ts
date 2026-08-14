@@ -513,9 +513,14 @@ export class CeriousScroll {
     }
 
     // OPTIMIZED: Calculate position relative to current viewport instead of from element 0
+    const uniform = this.performanceCache.getUniformHeightHint();
     let elementRelativeTop = -this.scrollOffset; // Start from current viewport position
     
-    if (elementIndex >= this.currentElement) {
+    if (elementIndex === this.currentElement) {
+      // Already at the origin of the relative walk.
+    } else if (uniform !== undefined && uniform > 0) {
+      elementRelativeTop += (elementIndex - this.currentElement) * uniform;
+    } else if (elementIndex >= this.currentElement) {
       // Element is at or after current element - sum forward
       for (let i = this.currentElement; i < elementIndex; i++) {
         elementRelativeTop += this.getElementHeight(i);
@@ -639,7 +644,10 @@ export class CeriousScroll {
     }
     // Subtract any placement top inset (e.g. the table header) from the area the
     // renderer fills, so rows stop at the container bottom rather than running
-    // the header's height past it.
+    // the header's height past it. Invalidate first so we don't reuse a stale
+    // header height; the value measured after this pass is cached for scroll()
+    // so wheel/touch don't force getBoundingClientRect every event.
+    this.placement.invalidateTopInset?.();
     const insetBefore = this.placement.getTopInset ? this.placement.getTopInset() : 0;
     const effectiveWindowHeight = Math.max(1, windowHeight - insetBefore);
     const range = this.viewportRenderer.renderViewport(effectiveWindowHeight, container, renderElement);
@@ -651,6 +659,7 @@ export class CeriousScroll {
     // asynchronously after the engine first measured an empty header. Without
     // this, the true-bottom math is off by the header height and the last row
     // never quite renders.
+    this.placement.invalidateTopInset?.();
     const insetAfter = this.placement.getTopInset ? this.placement.getTopInset() : 0;
     const syncedViewportHeight = Math.max(1, windowHeight - insetAfter);
     if (syncedViewportHeight !== this.viewportHeight) {
@@ -734,6 +743,7 @@ export class CeriousScroll {
   invalidateCache(): void {
     this.performanceCache.invalidateCache();
     this.viewportRenderer.invalidateTrueBottomCache();
+    this.placement.invalidateTopInset?.();
   }
 
   /**
@@ -742,6 +752,7 @@ export class CeriousScroll {
   clearAllCaches(): void {
     this.performanceCache.clearAllCaches();
     this.viewportRenderer.invalidateTrueBottomCache();
+    this.placement.invalidateTopInset?.();
   }
 
   // ===== DISPLAY STATE MANAGEMENT =====
@@ -784,6 +795,10 @@ export class CeriousScroll {
    * @param container The container element with the scrollbar
    */
   handleViewportChange(container: HTMLElement): void {
+    // Header inset can change with the container; drop the cached value so
+    // table mode re-reads getBoundingClientRect once rather than every scroll.
+    this.placement.invalidateTopInset?.();
+
     // Update viewport height from container (less any placement top inset).
     this.viewportHeight = this.measureViewport(container);
     this.windowHeight = this.viewportHeight;

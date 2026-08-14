@@ -17,8 +17,12 @@ import { ElementHeightCalculator } from '../types/index.js';
  */
 export class PerformanceCache {
   // Constants for cache management
-  private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200; // Keep only 200 measured heights
+  private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200; // Keep only 200 measured heights around the cursor
   private static readonly CACHE_PRUNE_THRESHOLD = 250; // Prune when we exceed this
+  // True-bottom math walks backward from the last row. If those heights are
+  // pruned while the user is at the top of a large list, the renderer has to
+  // remount ~50 sentinel rows every frame. Pin a small tail so that never happens.
+  private static readonly TAIL_PIN_COUNT = 80;
 
   // ===== CACHE STATE =====
   private _isUniformHeight: boolean | undefined = undefined;
@@ -127,41 +131,50 @@ export class PerformanceCache {
    * This prevents memory growth when scrolling through large datasets
    */
   private _pruneOldCacheEntries(): void {
-    // Only prune if we've exceeded the threshold
-    if (this._measuredHeights.size <= PerformanceCache.CACHE_PRUNE_THRESHOLD) {
+    const tailStart = this._totalElements > 0
+      ? Math.max(0, this._totalElements - PerformanceCache.TAIL_PIN_COUNT)
+      : Number.POSITIVE_INFINITY;
+    const tailBudget = this._totalElements > 0 ? PerformanceCache.TAIL_PIN_COUNT : 0;
+
+    // Only prune if we've exceeded the threshold (extra room for the pinned tail)
+    if (this._measuredHeights.size <= PerformanceCache.CACHE_PRUNE_THRESHOLD + tailBudget) {
       return;
     }
     
-    // Keep elements within a window around the last accessed index
+    // Keep elements within a window around the last accessed index, plus the tail
     const keepWindow = PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE / 2;
     const minKeep = Math.max(0, this._lastAccessedIndex - keepWindow);
     const maxKeep = this._lastAccessedIndex + keepWindow;
     
     // Use iterator for efficient deletion during iteration
     for (const [index] of this._measuredHeights) {
+      if (index >= tailStart) continue;
       if (index < minKeep || index > maxKeep) {
         this._measuredHeights.delete(index);
       }
     }
     
-    // If still too large (shouldn't happen, but defensive), keep only closest entries
-    if (this._measuredHeights.size > PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE) {
+    const maxSize = PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE + tailBudget;
+    // If still too large (shouldn't happen, but defensive), keep tail + closest entries
+    if (this._measuredHeights.size > maxSize) {
       // GC optimization: Use iterator-based approach instead of Array.from to avoid allocation
-      // Build array of entries to sort, but reuse existing array if available
       const entries: Array<[number, number]> = [];
       for (const entry of this._measuredHeights.entries()) {
         entries.push(entry);
       }
       
       entries.sort((a, b) => {
+        const aTail = a[0] >= tailStart ? 0 : 1;
+        const bTail = b[0] >= tailStart ? 0 : 1;
+        if (aTail !== bTail) return aTail - bTail;
         const distA = Math.abs(a[0] - this._lastAccessedIndex);
         const distB = Math.abs(b[0] - this._lastAccessedIndex);
         return distA - distB;
       });
       
-      // Clear and rebuild with only closest entries
+      // Clear and rebuild with only closest entries (tail sorted first)
       this._measuredHeights.clear();
-      for (let i = 0; i < PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE && i < entries.length; i++) {
+      for (let i = 0; i < maxSize && i < entries.length; i++) {
         this._measuredHeights.set(entries[i][0], entries[i][1]);
       }
     }

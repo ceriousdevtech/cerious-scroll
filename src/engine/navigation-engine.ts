@@ -101,12 +101,25 @@ export class NavigationEngine {
       break;
     }
 
-    const lastRenderedElement = this.deps.getLastRenderedElement();
-    if (!lastRenderedElement) {
-      const lastElementPosition = this.deps.getElementViewportPosition(this.totalElements - 1);
-      if (lastElementPosition.bottom <= this.viewportHeight && deltaY > 0) {
-        element = this.deps.getCurrentElement();
-        offset = this.deps.getScrollOffset();
+    offset = Math.max(0, Math.min(offset, this.deps.getElementHeight(element) - 1));
+
+    if (element >= this.totalElements - 1) {
+      element = Math.max(0, this.totalElements - 1);
+      const lastHeight = Math.max(1, this.deps.getElementHeight(element));
+      offset = Math.max(0, Math.min(offset, lastHeight - 1));
+    }
+
+    const lastIndex = this.totalElements - 1;
+    if (!this.deps.hasMeasuredHeight(lastIndex)) {
+      // First frames: last row isn't measured yet. Only walk to it when it
+      // could actually sit in the viewport — a full-dataset walk on every
+      // pre-render scroll is O(n) for million-row lists.
+      if (lastIndex - element <= 100 && deltaY > 0) {
+        const lastElementPosition = this.deps.getElementViewportPosition(lastIndex);
+        if (lastElementPosition.bottom <= this.viewportHeight) {
+          element = this.deps.getCurrentElement();
+          offset = this.deps.getScrollOffset();
+        }
       }
     } else if (element <= 0) {
       element = 0;
@@ -114,14 +127,6 @@ export class NavigationEngine {
     } else {
       const elementHeight = this.deps.getElementHeight(element);
       offset = Math.max(0, Math.min(offset, elementHeight - 1));
-    }
-
-    offset = Math.max(0, Math.min(offset, this.deps.getElementHeight(element) - 1));
-
-    if (element >= this.totalElements - 1) {
-      element = Math.max(0, this.totalElements - 1);
-      const lastHeight = Math.max(1, this.deps.getElementHeight(element));
-      offset = Math.max(0, Math.min(offset, lastHeight - 1));
     }
 
     const shouldClamp = this.guardian.shouldClamp(element);
@@ -146,11 +151,17 @@ export class NavigationEngine {
       } else {
         this.deps.updateScrollPosition(element, offset);
         positionUpdated = true;
-        const correction = this.guardian.correctBottomOvershoot(element, offset);
-        if (correction) {
-          element = correction.element;
-          offset = correction.offset;
-          this.deps.updateScrollPosition(element, offset);
+        // trueBottom already tells us we are NOT past the end. The overshoot
+        // walk (getElementViewportPosition(last)) is O(distance) and a no-op
+        // in this branch — skip it. Keep the walk only before the tail has
+        // been measured (first frames / short content).
+        if (!trueBottom) {
+          const correction = this.guardian.correctBottomOvershoot(element, offset);
+          if (correction) {
+            element = correction.element;
+            offset = correction.offset;
+            this.deps.updateScrollPosition(element, offset);
+          }
         }
       }
     }

@@ -98,4 +98,36 @@ describe('ViewportRenderer far-jump recycling', () => {
 
     scroller.dispose();
   });
+
+  it('drops already-measured tail sentinel rows after the first render', () => {
+    const container = createRealContainer();
+    const scroller = new CeriousScroll(container, 10_000, {
+      attachScrollbar: false,
+      autoResize: false,
+      observeContentChanges: false,
+      keyboard: { enabled: false },
+      wheel: { enabled: false },
+      touch: { enabled: false },
+    });
+
+    const renderRow = (index: number, element: HTMLElement): void => {
+      element.textContent = `row ${index}`;
+    };
+
+    scroller.jumpToElement(0);
+    scroller.renderViewport(720, container, renderRow);
+    const firstCount = (scroller as any).viewportRenderer.renderedElementCount;
+
+    scroller.scroll(40, 720);
+    scroller.renderViewport(720, container, renderRow);
+    const secondCount = (scroller as any).viewportRenderer.renderedElementCount;
+
+    // First pass may mount tail sentinels to measure true-bottom. After that
+    // they must be recycled so the live window is just visible + overscan
+    // (~viewport/24 + 10), well under visible+overscan+50.
+    expect(secondCount).toBeLessThan(firstCount);
+    expect(secondCount).toBeLessThan(60);
+
+    scroller.dispose();
+  });
 });

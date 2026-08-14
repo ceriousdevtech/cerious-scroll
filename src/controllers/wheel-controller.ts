@@ -81,6 +81,13 @@ export class WheelController {
     let pendingCurrentElement = 0;
     let pendingScrollOffset = 0;
     let pendingResult: ScrollResult = { element: 0, offset: 0 };
+    let cachedInner: HTMLElement | null = null;
+
+    const getInner = (): HTMLElement | null => {
+      if (cachedInner && cachedInner.isConnected) return cachedInner;
+      cachedInner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      return cachedInner;
+    };
 
     const dispatchViewportChange = () => {
       rafId = null;
@@ -100,7 +107,7 @@ export class WheelController {
     };
 
     const handleWheel = (event: WheelEvent) => {
-      // Resolve the inner content element once per event. Framework wrappers
+      // Resolve the inner content element once per gesture. Framework wrappers
       // (Vue/React/Angular) put rows into [data-cerious-scroll-content] and
       // that's where overflow-x: auto lives for wide content (e.g.
       // spreadsheet). When present, horizontal wheel deltas are forwarded
@@ -108,7 +115,7 @@ export class WheelController {
       // work; if the gesture is dominantly horizontal we skip the vertical
       // engine scroll. We also use the inner element's clientHeight as the
       // viewport so the engine accounts for the h-scrollbar gutter.
-      const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      const inner = getInner();
       const dx = event.deltaX;
       const dy = event.deltaY;
       const hTarget: HTMLElement =
