@@ -1,14 +1,13 @@
 /**
- * @fileoverview Scroll-related Type Definitions for CeriousScroll
- * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  */
 
 /**
- * Type definition for scroll position result
- * @interface ScrollResult
- * @property {number} element - Current element index
- * @property {number} offset - Pixel offset within the element
+ * Camera position: row index plus pixels into that row (not a pixel from the
+ * dataset origin).
+ *
+ * @property element Zero-based dataset index.
+ * @property offset Pixels into that row, in `[0, height - 1]`.
  */
 export interface ScrollResult {
   element: number;
@@ -16,14 +15,15 @@ export interface ScrollResult {
 }
 
 /**
- * Type definition for measured viewport range with actual rendered elements
- * @interface MeasuredViewportRange
- * @property {number} startElement - First visible element index (inclusive)
- * @property {number} endElement - Last visible element index (inclusive)
- * @property {number} scrollPercentage - Current scroll position percentage (0-100)
- * @property {number} viewportElements - Total number of elements visible in viewport
- * @property {Array<{index: number, height: number}>} renderedElements - Array of rendered elements with measured heights (no DOM references)
- * @property {number} totalRenderedHeight - Sum of all rendered element heights
+ * Snapshot from the last `renderViewport` pass.
+ *
+ * @property startElement First visible index (inclusive).
+ * @property endElement Last visible index (inclusive), including overscan.
+ * @property scrollPercentage `0`–`100` along the measured range.
+ * @property viewportElements Count of indices in the live window.
+ * @property renderedElements `{ index, height }` for this pass. Reused array —
+ *   do not retain it across frames.
+ * @property totalRenderedHeight Sum of measured heights in this pass.
  */
 export interface MeasuredViewportRange {
   startElement: number;

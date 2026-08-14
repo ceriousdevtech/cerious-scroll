@@ -1,37 +1,23 @@
 /**
- * @fileoverview Row Placement Strategies for CeriousScroll
- *
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  *
- * A RowPlacement isolates *how* a rendered row reaches its y-coordinate from the
- * measurement-driven rendering algorithm in ViewportRenderer. The algorithm
- * (incremental measure, no estimates, pooling, true-bottom, O(1) DOM nodes) is
- * placement-agnostic; only the DOM writes differ between strategies.
+ * How a row reaches its y-coordinate. ViewportRenderer owns measure/pool;
+ * this owns the DOM writes. The per-frame shift is local (overscan +
+ * partial-row offset), never a sum from row 0 — so neither strategy hits
+ * the browser max-element-height ceiling.
  *
- * - {@link AbsolutePlacement} (default): each row is an out-of-flow
- *   `position: absolute` element positioned by its own `top`. No GPU compositing,
- *   DOM order irrelevant. This is CeriousScroll's original behavior verbatim.
- *
- * - A future TableFlowPlacement renders rows in normal flow inside a real
- *   `<table>`/`<tbody>` and shifts the whole window with a single
- *   `transform: translateY()` on the row wrapper. That is what lets rows share
- *   one table formatting context (native `<tr>`/`<td>` with auto column sync),
- *   at the cost of an opt-in GPU layer and DOM-ordered insertion.
- *
- * Both strategies keep the same scaling guarantees: the per-frame shift is a
- * *local* quantity (overscan buffer + partial-row offset), never a sum from row
- * 0, and there is no full-height spacer — so neither hits the browser's
- * max-element-height ceiling regardless of dataset size.
+ * - {@link AbsolutePlacement}: out-of-flow `top`. No compositor layer.
+ * - {@link TableFlowPlacement}: real `<tr>`/`<td>` in one table; one
+ *   `translateY` on `<tbody>` for column sync. Opt-in GPU layer.
  */
 
 /**
  * Which logical region of a frame a row belongs to.
  *
- * - `'window'`: a visible or overscan row in the contiguous on-screen window.
- * - `'bottom'`: a tail row rendered only so its height can be measured for
- *   true-bottom / scroll-percentage math. In AbsolutePlacement these are placed
- *   far down by `top`; a flow strategy measures them offscreen instead, because
- *   they are not contiguous with the window and must not occupy its flow.
+ * - `'window'`: visible / overscan, contiguous with the camera.
+ * - `'bottom'`: tail row mounted only to measure height. Absolute mode
+ *   parks these far down via `top`; table mode measures them offscreen
+ *   so they don't occupy the window's flow.
  */
 export type PlacementRegion = 'window' | 'bottom';
 
@@ -49,6 +35,8 @@ export interface RowPlacement {
   /**
    * Per-frame container preparation, called before any rows are placed.
    * AbsolutePlacement uses this to make the container visible and positioned.
+   *
+   * @param container Host rows are attached to.
    */
   prepare(container: HTMLElement): void;
 
@@ -56,18 +44,24 @@ export interface RowPlacement {
    * Drop all live rows from the DOM (the big-jump rebuild path). Equivalent to
    * the old `container.innerHTML = ''`, but routed through the strategy so it
    * controls *where* rows live (the container itself vs. an inner wrapper).
+   *
+   * @param container Host whose live rows should be removed.
    */
   clear(container: HTMLElement): void;
 
   /**
    * Create a fresh, empty row element with its static (non-positional) styles
    * already applied. AbsolutePlacement returns a `<div>`.
+   *
+   * @returns Empty row element.
    */
   createRow(): HTMLElement;
 
   /**
    * Re-apply static styles to a recycled element pulled from the pool. Called
    * instead of {@link createRow} when a pooled element is reused.
+   *
+   * @param el Pooled row element.
    */
   initRow(el: HTMLElement): void;
 
@@ -76,7 +70,12 @@ export interface RowPlacement {
    * rendered and measured. AbsolutePlacement appends to the container; DOM order
    * is irrelevant because each row carries its own `top`. A flow strategy routes
    * the row to the window group or the offscreen measure group per `region` and
-   * fixes ordering later in {@link commit}. `index` is the logical row index.
+   * fixes ordering later in {@link commit}.
+   *
+   * @param container Host.
+   * @param el Row element.
+   * @param index Logical dataset index.
+   * @param region `'window'` or `'bottom'` (tail measure).
    */
   attach(container: HTMLElement, el: HTMLElement, index: number, region: PlacementRegion): void;
 
@@ -86,10 +85,19 @@ export interface RowPlacement {
    * no-op for vertical placement (the whole window is shifted once in
    * {@link commit}) but uses `region` to relocate a reused row whose group
    * changed since the last frame (e.g. a tail row that scrolled into the window).
+   *
+   * @param el Row element.
+   * @param top Pixels from the frame origin.
+   * @param region `'window'` or `'bottom'`.
    */
   position(el: HTMLElement, top: number, region: PlacementRegion): void;
 
-  /** Remove a row element from the DOM so it can be recycled. */
+  /**
+   * Remove a row element from the DOM so it can be recycled.
+   *
+   * @param container Host.
+   * @param el Row element to detach.
+   */
   detach(container: HTMLElement, el: HTMLElement): void;
 
   /**
@@ -97,6 +105,9 @@ export interface RowPlacement {
    * `firstRowTop` is the cumulative top of the first rendered row (the
    * most-negative value, `-offset - bufferAboveHeight`). AbsolutePlacement is a
    * no-op; a flow strategy sets its single wrapper transform here.
+   *
+   * @param container Host.
+   * @param firstRowTop Cumulative top of the first rendered row.
    */
   commit(container: HTMLElement, firstRowTop: number): void;
 
@@ -111,18 +122,13 @@ export interface RowPlacement {
    * scrollable viewport (e.g. a header row that sits above the rows). The host
    * subtracts this from the measured viewport height so scroll math and
    * true-bottom account for the header. Defaults to 0 when unimplemented.
+   *
+   * @returns Header height in pixels.
    */
   getTopInset?(): number;
 }
 
-/**
- * Default placement: out-of-flow `position: absolute` rows positioned by `top`.
- *
- * This is CeriousScroll's original rendering model extracted unchanged — no GPU
- * transforms, DOM order irrelevant, container-as-positioning-context.
- */
 export class AbsolutePlacement implements RowPlacement {
-  // GC-FRIENDLY: cache common CSS values to avoid per-row string allocations.
   private readonly _style = {
     position: 'absolute',
     left: '0px',
@@ -130,11 +136,9 @@ export class AbsolutePlacement implements RowPlacement {
     visible: 'visible',
     width: '100%'
   };
-  // Reuse one buffer for the `top` string to avoid template-literal allocations.
   private _topBuffer = '';
 
   prepare(container: HTMLElement): void {
-    // Ensure container is visible and positioned (idempotent after first frame).
     if (container.style.visibility === 'hidden') {
       container.style.visibility = this._style.visible;
       container.style.position = this._style.position;
@@ -182,9 +186,7 @@ export class AbsolutePlacement implements RowPlacement {
     }
   }
 
-  commit(_container: HTMLElement, _firstRowTop: number): void {
-    // No-op: each row already carries its own absolute `top`.
-  }
+  commit(_container: HTMLElement, _firstRowTop: number): void {}
 }
 
 /**
@@ -231,34 +233,7 @@ export interface TableFlowOptions {
   tbodyClassName?: string;
 }
 
-/**
- * Flow placement that renders rows as real `<tr>` inside one shared `<table>`,
- * shifting the whole window with a single `transform: translateY()` on the body
- * `<tbody>`.
- *
- * Why this enables native tables: every visible row lives in one table
- * formatting context, so the browser synchronizes `<td>`/`<th>` column widths
- * across all rendered rows — and across the header, since `<thead>` shares the
- * same table. That is the column behavior a normal `<table>` gives you, for
- * free; the cost is an opt-in GPU compositor layer (the tbody transform) and
- * the bookkeeping below.
- *
- * Two structural differences from {@link AbsolutePlacement}, both handled here
- * and invisible to the renderer:
- *
- * 1. **DOM order matters.** In normal flow, rows stack in document order, so the
- *    body `<tbody>` is reordered by logical index every frame in {@link commit}.
- *
- * 2. **Tail rows can't teleport.** AbsolutePlacement flings the true-bottom
- *    measurement rows far down via `top`; in flow there is no `top` to use, so
- *    `'bottom'` region rows are parked in a separate offscreen `<table>` purely
- *    to be measured. They never occupy the visible window's flow.
- *
- * The per-frame shift (`firstRowTop`) is the same local quantity as absolute
- * mode (overscan + partial-row offset), never a sum from row 0, and there is no
- * full-height spacer — so this stays immune to the browser max-element-height
- * ceiling regardless of dataset size.
- */
+/** Real `<tr>` in one table; `translateY` on tbody. DOM order and offscreen tail measure live here. */
 export class TableFlowPlacement implements RowPlacement {
   private container: HTMLElement | null = null;
   private table: HTMLTableElement | null = null;
@@ -277,6 +252,9 @@ export class TableFlowPlacement implements RowPlacement {
   private _sortBuffer: HTMLElement[] = [];
   private _colWidthBuffer: number[] = [];
 
+  /**
+   * @param options Table scaffold / column-sizing options.
+   */
   constructor(private readonly options: TableFlowOptions = {}) {}
 
   prepare(container: HTMLElement): void {
@@ -375,14 +353,10 @@ export class TableFlowPlacement implements RowPlacement {
   }
 
   createRow(): HTMLElement {
-    // A real table row — host renderElement fills it with <td>/<th> cells.
     return document.createElement('tr');
   }
 
-  initRow(_el: HTMLElement): void {
-    // Rows need no static positional styles in flow mode; content (cells) is
-    // cleared by the renderer's pool reuse before re-render.
-  }
+  initRow(_el: HTMLElement): void {}
 
   attach(_container: HTMLElement, el: HTMLElement, _index: number, region: PlacementRegion): void {
     // Attach immediately so the row is in a <table> and measurable right after
@@ -401,7 +375,6 @@ export class TableFlowPlacement implements RowPlacement {
   }
 
   detach(_container: HTMLElement, el: HTMLElement): void {
-    // Works regardless of which tbody the row currently lives in.
     if (el.parentNode) el.parentNode.removeChild(el);
   }
 
@@ -409,15 +382,8 @@ export class TableFlowPlacement implements RowPlacement {
     const tbody = this.tbodyMain;
     if (!tbody) return;
 
-    // 1) Order the window rows by logical index so they stack correctly in flow.
     this.reorder(tbody);
-
-    // 2) One-shot auto column sizing (before the transform, while the rows are
-    //    still content-sized under table-layout: auto).
     this.maybeAutoSizeColumns();
-
-    // 3) Shift the whole window with a single GPU transform. firstRowTop is the
-    //    same local quantity absolute mode writes to the first row's `top`.
     this._transformBuffer = 'translateY(' + firstRowTop + 'px)';
     tbody.style.transform = this._transformBuffer;
   }
@@ -500,10 +466,7 @@ export class TableFlowPlacement implements RowPlacement {
   }
 
   /**
-   * Re-append the body rows in ascending `data-element-index` order. Rows are
-   * created/recycled in roughly ascending order within a frame, but eviction +
-   * reuse on scroll lets order drift, so we normalize every frame. O(k) DOM
-   * moves over the ~15-40 windowed rows.
+   * DOM order drifts after recycle; normalize by `data-element-index`.
    */
   private reorder(tbody: HTMLTableSectionElement): void {
     const children = tbody.children;
@@ -517,7 +480,6 @@ export class TableFlowPlacement implements RowPlacement {
       (a, b) => (+(a.dataset.elementIndex ?? 0)) - (+(b.dataset.elementIndex ?? 0))
     );
 
-    // Skip the DOM churn when already ordered.
     let ordered = true;
     for (let i = 0; i < n; i++) {
       if (children[i] !== arr[i]) { ordered = false; break; }

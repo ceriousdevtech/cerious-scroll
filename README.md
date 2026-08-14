@@ -4,11 +4,9 @@
 [![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://ceriousdevtech.github.io/cerious-scroll/)
 
-**High-Performance Virtual Scrolling for Web Applications**
+Virtual scrolling for lists too large to keep in the DOM. Position is an element index plus a pixel offset into that row — not a pixel from the top of the dataset — so variable heights don’t need a prefix-sum of every row. Memory stays bounded: only the visible window (plus overscan) is mounted, and measured heights live in a sliding cache.
 
-Cerious Scroll™ is an enterprise-grade virtual scrolling engine that enables smooth scrolling through **millions to hundreds of millions of elements** at a consistent **60 FPS+**, while maintaining **O(1) constant memory usage**.
-
-It is designed for data grids, chat applications, log viewers, financial dashboards, analytics platforms, and any application that must efficiently render massive datasets without performance degradation.
+Typical uses: data grids, chat, log viewers, trading tickers, analytics tables.
 
 ---
 
@@ -33,7 +31,7 @@ npx http-server . -p 8080   # then open http://localhost:8080/
 
 ---
 
-## 🚀 Key Features
+## Features
 
 - **True O(1) Memory Usage**  
   Constant memory regardless of dataset size (tested with 100M+ elements)
@@ -45,7 +43,7 @@ npx http-server . -p 8080   # then open http://localhost:8080/
   No pre-calculation required — automatic, on-demand measurement
 
 - **Native `<table>` Layout (opt-in)**  
-  `layout: 'table'` renders real `<tr>`/`<td>` rows in one shared table — frozen header, native column alignment, auto-sized columns — while staying O(1). See [Table Layout](#-table-layout-layout-table).
+  `layout: 'table'` renders real `<tr>`/`<td>` rows in one shared table — frozen header, native column alignment, auto-sized columns — while staying O(1). See [Table Layout](#table-layout-layout-table).
 
 - **Framework Agnostic**  
   Works with Vanilla JS, Angular, React, Vue, or any framework
@@ -64,7 +62,7 @@ npx http-server . -p 8080   # then open http://localhost:8080/
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### npm
 ```bash
@@ -97,7 +95,9 @@ Or via CDN:
 
 ---
 
-## 🎯 Quick Start
+## Quick Start
+
+Constructor is `(container, totalElements, options?)`. There is no default-height argument. Drive rendering from `onScroll` — it runs for wheel, touch, keyboard, scrollbar, and resize. The engine measures `offsetHeight` after your callback; you do not need to return a height.
 
 ```javascript
 import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
@@ -109,29 +109,28 @@ const data = Array.from({ length: 10000 }, (_, i) => ({
 
 const container = document.getElementById('scroll-container');
 
-const scroller = new CeriousScroll(
-  container,
-  data.length,
-  40
-);
-
-container.addEventListener('cerious-viewport-change', () => {
+function render() {
   scroller.renderViewport(
     container.clientHeight,
     container,
     (index, element) => {
       element.innerHTML = `<div class="item">${data[index].content}</div>`;
-      return element.offsetHeight;
     }
   );
+}
+
+const scroller = new CeriousScroll(container, data.length, {
+  onScroll: render,
 });
 
-container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+render();
 ```
+
+Jump with `jumpToElement(i)` or `handleScrollPercentage(n)`. Grow the dataset with `updateTotalElements(n)` rather than constructing a new scroller mid-drag. Tear down with `dispose()`.
 
 ---
 
-## 🧮 Table Layout (`layout: 'table'`)
+## Table Layout (`layout: 'table'`)
 
 By default, rows are absolutely-positioned `<div>`s. Opt into **real HTML tables** — `<table>` / `<tr>` / `<td>` with native column alignment and a frozen header — by passing `layout: 'table'`:
 
@@ -187,23 +186,23 @@ scroller.renderViewport(container.clientHeight, container, (index, tr) => {
 
 ---
 
-## 📄 License
+## License
 
 Cerious Scroll™ is licensed under the **MIT License** by **Cerious DevTech LLC**.
 
 See [LICENSE](LICENSE) for details.
 
-📧 **info@ceriousdevtech.com**
+info@ceriousdevtech.com
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 By submitting a pull request, you agree to the **Contributor License Agreement (CLA)**.
 
 ---
 
-## 📜 Copyright
+## Copyright
 
 Copyright © 2024–2026  
 **Cerious DevTech LLC**  

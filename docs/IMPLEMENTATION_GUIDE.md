@@ -24,47 +24,41 @@
 
 ## Quick Start
 
-Here's the minimal code to get CeriousScroll running:
+Constructor is `(container, totalElements, options?)`. There is no default-height argument. Drive rendering from `onScroll` — it runs for wheel, touch, keyboard, native scrollbar, and resize. The engine measures `offsetHeight` after your callback; returning a height is ignored.
+
+`cerious-viewport-change` is wheel/touch/keyboard only. Native scrollbar emits a different `viewport-change` event. If you render only from `cerious-viewport-change`, thumb-drag will not update the list.
 
 ```typescript
 import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
-// Your data
 const data = Array.from({ length: 10000 }, (_, i) => ({
   id: i,
   content: `Item ${i}`
 }));
 
-// Get your container element
 const container = document.getElementById('scroll-container')!;
 
-// Create the scroller
-const scroller = new CeriousScroll(
-  container,           // Container element
-  data.length          // Total number of items
-);
-
-// Render on scroll
-container.addEventListener('cerious-viewport-change', () => {
+function render() {
   const viewport = scroller.renderViewport(
     container.clientHeight,
     container,
     (index, element) => {
-      // Render your content
       element.innerHTML = `
         <div class="item">
           <h3>Item ${data[index].id}</h3>
           <p>${data[index].content}</p>
         </div>
       `;
-      // Return the measured height
-      return element.offsetHeight;
     }
   );
+  console.log('Visible range:', viewport.startElement, '-', viewport.endElement);
+}
+
+const scroller = new CeriousScroll(container, data.length, {
+  onScroll: render,
 });
 
-// Initial render
-container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+render();
 ```
 
 **HTML Structure:**
@@ -82,7 +76,7 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 ```bash
 npm install @ceriousdevtech/cerious-scroll
 # or
-yarn add cerious-scroll
+yarn add @ceriousdevtech/cerious-scroll
 ```
 
 ### Manual Installation
@@ -115,92 +109,75 @@ import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
 const container = document.getElementById('scroll-container')!;
 const totalItems = 10000;
-const defaultHeight = 40; // Optional, default is 40px
-
-const scroller = new CeriousScroll(container, totalItems, defaultHeight);
+const scroller = new CeriousScroll(container, totalItems, {
+  onScroll: render,
+});
 ```
 
 ### Step 3: Implement the Render Function
 
 ```typescript
-container.addEventListener('cerious-viewport-change', () => {
+function render() {
   const viewport = scroller.renderViewport(
     container.clientHeight,
     container,
     (index, element) => {
-      // Render logic here
       element.innerHTML = `<div class="item">${data[index].content}</div>`;
-      
-      // IMPORTANT: Return the measured height
-      return element.offsetHeight;
     }
   );
-  
-  // Optional: Use viewport info
+
   console.log('Visible range:', viewport.startElement, '-', viewport.endElement);
-});
+}
 ```
 
-### Step 4: Trigger Initial Render
+The callback should populate `element`. Do not return a height — the engine reads `offsetHeight`.
 
-```typescript
-// Dispatch the event to render the initial viewport
-container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
-```
+### Step 4: Initial Render
+
+Call `render()` once after constructing the scroller. `onScroll` covers later input.
 
 ---
 
 ## Configuration Options
 
-CeriousScroll accepts an optional configuration object as the 4th parameter:
+CeriousScroll accepts an optional configuration object as the 3rd argument (`options`). There is no default-height constructor argument; the engine measures `offsetHeight` after your render callback.
 
 ```typescript
-const scroller = new CeriousScroll(
-  container,
-  totalItems,
-  defaultHeight,
-  {
-    // Keyboard navigation
-    keyboard: {
-      enabled: true,               // Enable/disable keyboard navigation
-      arrowKeySpeed: 120,          // Pixels per arrow key press
-      pageKeySpeed: 1.0,           // Viewport fraction per page key
-      onKeyDown: (event, scroller) => {
-        // Custom keyboard handling
-        if (event.key === 'Home') {
-          scroller.scrollToElement(0);
-          return true; // Prevent default
-        }
-        return false; // Use default behavior
+const scroller = new CeriousScroll(container, totalItems, {
+  keyboard: {
+    enabled: true,               // Enable/disable keyboard navigation
+    arrowKeySpeed: 120,          // Pixels per arrow key press
+    pageKeySpeed: 1.0,           // Viewport fraction per page key
+    onKeyDown: (event, scroller) => {
+      if (event.key === 'Home') {
+        scroller.jumpToElement(0);
+        return true; // Prevent default
       }
-    },
-    
-    // Touch navigation
-    touch: {
-      enabled: true,               // Enable/disable touch navigation
-      enableMomentum: true,        // Enable momentum/inertia scrolling
-      momentumFriction: 0.95,      // Friction coefficient (0-1)
-      momentumThreshold: 0.1       // Min velocity to trigger momentum (px/ms)
-    },
-    
-    // Wheel navigation
-    wheel: {
-      enabled: true,                      // Enable/disable wheel navigation
-      emitViewportChangeEvent: true,      // Emit custom event on scroll
-      coalesceViewportChangeEvent: false  // Batch multiple wheel events
-    },
-    
-    // Features
-    attachScrollbar: true,          // Auto-attach native scrollbar
-    autoResize: true,               // Auto-handle container resize
-    observeContentChanges: true,    // Auto-detect content height changes
-    
-    // Callback
-    onScroll: () => {
-      console.log('Scrolled to:', scroller.currentElement);
+      return false; // Use default behavior
     }
+  },
+
+  touch: {
+    enabled: true,
+    enableMomentum: true,
+    momentumFriction: 0.95,
+    momentumThreshold: 0.1
+  },
+
+  wheel: {
+    enabled: true,
+    emitViewportChangeEvent: true,
+    coalesceViewportChangeEvent: false
+  },
+
+  attachScrollbar: true,
+  autoResize: true,
+  observeContentChanges: true,
+
+  onScroll: () => {
+    console.log('Scrolled to:', scroller.currentElement);
   }
-);
+});
 ```
 
 ---
@@ -215,7 +192,6 @@ scroller.renderViewport(
   container,
   (index, element) => {
     element.textContent = `Item ${index}`;
-    return element.offsetHeight;
   }
 );
 ```
@@ -235,7 +211,6 @@ scroller.renderViewport(
         <p>${item.description}</p>
       </div>
     `;
-    return element.offsetHeight;
   }
 );
 ```
@@ -265,7 +240,6 @@ scroller.renderViewport(
   container,
   (index, element) => {
     renderItem(data[index], element);
-    return element.offsetHeight;
   }
 );
 ```
@@ -291,7 +265,6 @@ scroller.renderViewport(
     }
     
     element.innerHTML = renderedCache.get(index)!;
-    return element.offsetHeight;
   }
 );
 ```
@@ -319,8 +292,6 @@ scroller.renderViewport(
       element.innerHTML = `<p class="text">${item.content}</p>`;
     }
     
-    // Height is measured automatically
-    return element.offsetHeight;
   }
 );
 ```
@@ -332,12 +303,14 @@ scroller.renderViewport(
 ### Scroll to Specific Element
 
 ```typescript
-// Scroll to element at index 500
-scroller.scrollToElement(500);
+scroller.jumpToElement(500); // offset 0
 
-// Scroll to element with specific offset
-scroller.scrollToElement(500, 20); // 20px offset into element
+// Jump to end (same sentinel the keyboard End key uses)
+scroller.jumpToElement(Number.MAX_SAFE_INTEGER);
 ```
+
+`jumpToElement` always lands at offset 0. Out-of-range indices are clamped.
+Offset-into-row jumps are not on the public facade (`NavigationEngine.jumpToPosition` is what the native scrollbar uses internally). For a percentage jump, use `handleScrollPercentage`.
 
 ### Scroll by Delta
 
@@ -352,66 +325,78 @@ scroller.scroll(-100, container.clientHeight);
 ### Get Current Position
 
 ```typescript
-const position = scroller.getCurrentPosition();
-console.log('Current element:', position.element);
-console.log('Offset:', position.offset);
-console.log('Scroll percentage:', position.scrollPercentage);
+console.log('Current element:', scroller.currentElement);
+console.log('Offset:', scroller.scrollOffset);
+console.log('Scroll percentage:', scroller.scrollPercentage);
 ```
 
 ### Get Visible Range
 
 ```typescript
-const viewport = scroller.measureViewportRange(container.clientHeight);
-console.log('Start:', viewport.startElement);
-console.log('End:', viewport.endElement);
-console.log('Visible elements:', viewport.endElement - viewport.startElement);
+// startElement / endElement are updated by renderViewport / updateDisplay
+console.log('Start:', scroller.startElement);
+console.log('End:', scroller.endElement);
+console.log('Visible elements:', scroller.endElement - scroller.startElement);
 ```
 
 ---
 
 ## Event Handling
 
-### Viewport Change Event
+Drive **rendering** from `onScroll`. Use the CustomEvents below for analytics / UI chrome if you want them — they are not a complete render signal.
 
-Emitted whenever the visible viewport changes:
+### `onScroll` (render hook)
+
+Runs after wheel, touch, keyboard, native scrollbar, and resize.
+
+```typescript
+const scroller = new CeriousScroll(container, totalItems, {
+  onScroll: () => {
+    scroller.renderViewport(container.clientHeight, container, renderFunction);
+    updateScrollIndicator(scroller.scrollPercentage);
+  }
+});
+scroller.renderViewport(container.clientHeight, container, renderFunction);
+```
+
+### `cerious-viewport-change`
+
+Fired by wheel, touch, and keyboard. **Not** fired by native scrollbar drag.
+
+`event.detail` is reused across events (do not retain it). Shape:
+
+```typescript
+{
+  percentage: number;
+  currentElement: number;
+  scrollOffset: number;
+  result?: { element: number; offset: number };
+}
+```
 
 ```typescript
 container.addEventListener('cerious-viewport-change', (event: CustomEvent) => {
-  const { startElement, endElement, scrollPercentage } = event.detail;
-  
-  console.log(`Showing elements ${startElement} to ${endElement}`);
-  console.log(`Scroll progress: ${(scrollPercentage * 100).toFixed(1)}%`);
-  
-  // Re-render viewport
-  scroller.renderViewport(container.clientHeight, container, renderFunction);
+  const { currentElement, scrollOffset, percentage } = event.detail;
+  console.log(`At element ${currentElement} + ${scrollOffset}px (${percentage.toFixed(1)}%)`);
 });
 ```
 
-### Scroll Callback
+### Native scrollbar `viewport-change`
 
-Set a callback in the options:
-
-```typescript
-const scroller = new CeriousScroll(container, totalItems, 40, {
-  onScroll: () => {
-    updateScrollIndicator(scroller.scrollPercentage);
-    updateVisibleCount(scroller.endElement - scroller.startElement);
-  }
-});
-```
+Thumb drag emits `viewport-change` (no `cerious-` prefix) on the container. Prefer `onScroll` so you do not have to listen to both names.
 
 ### Custom Keyboard Handling
 
 ```typescript
-const scroller = new CeriousScroll(container, totalItems, 40, {
+const scroller = new CeriousScroll(container, totalItems, {
   keyboard: {
     onKeyDown: (event, scroller) => {
       if (event.key === 'Home') {
-        scroller.scrollToElement(0);
+        scroller.jumpToElement(0);
         return true; // Handled
       }
       if (event.key === 'End') {
-        scroller.scrollToElement(totalItems - 1);
+        scroller.jumpToElement(totalItems - 1);
         return true; // Handled
       }
       return false; // Use default behavior
@@ -432,7 +417,6 @@ const scroller = new CeriousScroll(container, totalItems, 40, {
   // Complex calculations inside render
   const processedData = expensiveOperation(data[index]);
   element.innerHTML = processedData;
-  return element.offsetHeight;
 }
 ```
 
@@ -443,7 +427,6 @@ const processedData = data.map(item => expensiveOperation(item));
 
 (index, element) => {
   element.innerHTML = processedData[index];
-  return element.offsetHeight;
 }
 ```
 
@@ -454,7 +437,6 @@ const processedData = data.map(item => expensiveOperation(item));
 (index, element) => {
   element.innerHTML = `<div>${data[index].title}</div>`;
   element.querySelector('div')!.style.color = 'red'; // Extra DOM access
-  return element.offsetHeight;
 }
 ```
 
@@ -462,14 +444,13 @@ const processedData = data.map(item => expensiveOperation(item));
 ```typescript
 (index, element) => {
   element.innerHTML = `<div style="color: red;">${data[index].title}</div>`;
-  return element.offsetHeight;
 }
 ```
 
 ### 3. Use Event Coalescing for Heavy Updates
 
 ```typescript
-const scroller = new CeriousScroll(container, totalItems, 40, {
+const scroller = new CeriousScroll(container, totalItems, {
   wheel: {
     coalesceViewportChangeEvent: true // Batch wheel events
   }
@@ -479,7 +460,7 @@ const scroller = new CeriousScroll(container, totalItems, 40, {
 ### 4. Disable Unused Features
 
 ```typescript
-const scroller = new CeriousScroll(container, totalItems, 40, {
+const scroller = new CeriousScroll(container, totalItems, {
   keyboard: { enabled: false },  // If no keyboard navigation needed
   touch: { enabled: false },     // If desktop-only
   observeContentChanges: false   // If heights are truly static
@@ -490,12 +471,14 @@ const scroller = new CeriousScroll(container, totalItems, 40, {
 
 ```typescript
 // When removing the scroller
-scroller.destroy();
+scroller.dispose();
 ```
 
 ---
 
 ## Common Use Cases
+
+These snippets are the **render callback**. Wire them through `onScroll` as in Quick Start so wheel, touch, keyboard, **and** native scrollbar all re-render. Dispatching `cerious-viewport-change` is not a substitute.
 
 ### Use Case 1: Data Grid
 
@@ -503,7 +486,7 @@ scroller.destroy();
 const columns = ['ID', 'Name', 'Email', 'Status', 'Actions'];
 const rows = 100000;
 
-const scroller = new CeriousScroll(container, rows, 40);
+const scroller = new CeriousScroll(container, rows);
 
 container.addEventListener('cerious-viewport-change', () => {
   scroller.renderViewport(container.clientHeight, container, (index, element) => {
@@ -518,7 +501,6 @@ container.addEventListener('cerious-viewport-change', () => {
         </div>
       </div>
     `;
-    return element.offsetHeight;
   });
 });
 ```
@@ -528,10 +510,10 @@ container.addEventListener('cerious-viewport-change', () => {
 ```typescript
 const messages = loadMessages(); // Array of message objects
 
-const scroller = new CeriousScroll(container, messages.length, 60);
+const scroller = new CeriousScroll(container, messages.length);
 
 // Scroll to bottom (most recent message)
-scroller.scrollToElement(messages.length - 1);
+scroller.jumpToElement(messages.length - 1);
 
 container.addEventListener('cerious-viewport-change', () => {
   scroller.renderViewport(container.clientHeight, container, (index, element) => {
@@ -546,7 +528,6 @@ container.addEventListener('cerious-viewport-change', () => {
         </div>
       </div>
     `;
-    return element.offsetHeight;
   });
 });
 ```
@@ -556,7 +537,7 @@ container.addEventListener('cerious-viewport-change', () => {
 ```typescript
 const logs = loadLogs(); // Array of log entries
 
-const scroller = new CeriousScroll(container, logs.length, 24);
+const scroller = new CeriousScroll(container, logs.length);
 
 container.addEventListener('cerious-viewport-change', () => {
   scroller.renderViewport(container.clientHeight, container, (index, element) => {
@@ -570,7 +551,6 @@ container.addEventListener('cerious-viewport-change', () => {
         <span class="message">${log.message}</span>
       </div>
     `;
-    return element.offsetHeight;
   });
 });
 ```
@@ -580,7 +560,7 @@ container.addEventListener('cerious-viewport-change', () => {
 ```typescript
 const products = loadProducts(); // Array of products
 
-const scroller = new CeriousScroll(container, products.length, 300);
+const scroller = new CeriousScroll(container, products.length);
 
 container.addEventListener('cerious-viewport-change', () => {
   scroller.renderViewport(container.clientHeight, container, (index, element) => {
@@ -594,7 +574,6 @@ container.addEventListener('cerious-viewport-change', () => {
         <button onclick="addToCart(${product.id})">Add to Cart</button>
       </div>
     `;
-    return element.offsetHeight;
   });
 });
 ```
@@ -604,7 +583,7 @@ container.addEventListener('cerious-viewport-change', () => {
 ```typescript
 const trades = loadTrades(); // Array of trade data
 
-const scroller = new CeriousScroll(container, trades.length, 50);
+const scroller = new CeriousScroll(container, trades.length);
 
 container.addEventListener('cerious-viewport-change', () => {
   scroller.renderViewport(container.clientHeight, container, (index, element) => {
@@ -622,7 +601,6 @@ container.addEventListener('cerious-viewport-change', () => {
         <span class="time">${trade.timestamp}</span>
       </div>
     `;
-    return element.offsetHeight;
   });
 });
 ```
@@ -633,13 +611,21 @@ container.addEventListener('cerious-viewport-change', () => {
 
 ### Issue: Nothing Renders
 
-**Cause:** Forgot to trigger initial viewport change event.
+**Cause:** `renderViewport` was never called. Constructing the scroller does not paint.
 
 **Solution:**
 ```typescript
-// After setup, dispatch the event
-container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+const scroller = new CeriousScroll(container, totalItems, { onScroll: render });
+render(); // initial paint; onScroll covers later input
 ```
+
+Do not rely on dispatching `cerious-viewport-change` for the first frame — that event is not how the constructor boots the list.
+
+### Issue: Scrollbar Drag Does Not Re-render
+
+**Cause:** Rendering is wired only to `cerious-viewport-change`, which wheel/touch/keyboard emit. Native scrollbar drag does not.
+
+**Solution:** Put `renderViewport` in `onScroll`.
 
 ### Issue: Scroll Isn't Working
 
@@ -655,15 +641,9 @@ container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
 
 ### Issue: Heights Are Wrong
 
-**Cause:** Not returning the measured height from render function.
+**Cause:** Content is not in the DOM yet when the engine measures, or height changes on later paints (images, fonts, async HTML).
 
-**Solution:**
-```typescript
-scroller.renderViewport(container.clientHeight, container, (index, element) => {
-  element.innerHTML = content;
-  return element.offsetHeight; // Must return this!
-});
-```
+**Solution:** Populate `element` synchronously in the render callback. The engine reads `offsetHeight` after the callback returns — you do not return a height. If content loads later (images), call `renderViewport` again once sizes are known, or set an explicit `minHeight`.
 
 ### Issue: Performance Degradation
 
@@ -692,7 +672,6 @@ Or ensure consistent rendering:
 (index, element) => {
   element.style.minHeight = '60px'; // Prevent height changes
   element.innerHTML = content;
-  return element.offsetHeight;
 }
 ```
 
@@ -702,19 +681,19 @@ Or ensure consistent rendering:
 
 **Solution:**
 ```typescript
-const scroller = new CeriousScroll(container, totalItems, 40, {
+const scroller = new CeriousScroll(container, totalItems, {
   attachScrollbar: true // Enable scrollbar
 });
 ```
 
 ### Issue: Memory Leaks
 
-**Cause:** Not calling `destroy()` when removing scroller.
+**Cause:** Not calling `dispose()` when removing scroller.
 
 **Solution:**
 ```typescript
 // When done with scroller
-scroller.destroy();
+scroller.dispose();
 ```
 
 ---
@@ -759,7 +738,6 @@ const renderItem = (index: number, element: HTMLElement): number => {
       <p>${item.description}</p>
     </div>
   `;
-  return element.offsetHeight;
 };
 
 const handleViewportChange = () => {
@@ -778,36 +756,28 @@ onMounted(() => {
     scroller = new CeriousScroll(
       containerRef.value,
       props.items.length,
-      60,
       {
         keyboard: { enabled: true },
         touch: { enabled: true },
-        onScroll: () => {
-          console.log('Scrolled to:', scroller?.currentElement);
-        }
+        onScroll: handleViewportChange,
       }
     );
-
-    // Listen for viewport changes
-    containerRef.value.addEventListener('cerious-viewport-change', handleViewportChange);
-    
-    // Initial render
-    containerRef.value.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    handleViewportChange();
   }
 });
 
 onBeforeUnmount(() => {
-  // Cleanup
-  if (containerRef.value) {
-    containerRef.value.removeEventListener('cerious-viewport-change', handleViewportChange);
-  }
-  scroller?.destroy();
+  scroller?.dispose();
 });
 
 // Expose methods for parent components
 defineExpose({
-  scrollToElement: (index: number) => scroller?.scrollToElement(index),
-  getCurrentPosition: () => scroller?.getCurrentPosition()
+  jumpToElement: (index: number) => scroller?.jumpToElement(index),
+  getCurrentPosition: () => ({
+    element: scroller?.currentElement,
+    offset: scroller?.scrollOffset,
+    scrollPercentage: scroller?.scrollPercentage
+  })
 });
 </script>
 
@@ -863,19 +833,13 @@ export default defineComponent({
   mounted() {
     const container = this.$refs.container as HTMLElement;
     
-    this.scroller = new CeriousScroll(
-      container,
-      this.items.length,
-      60
-    );
-
-    container.addEventListener('cerious-viewport-change', this.handleViewportChange);
-    container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    this.scroller = new CeriousScroll(container, this.items.length, {
+      onScroll: this.handleViewportChange
+    });
+    this.handleViewportChange();
   },
   beforeUnmount() {
-    const container = this.$refs.container as HTMLElement;
-    container.removeEventListener('cerious-viewport-change', this.handleViewportChange);
-    this.scroller?.destroy();
+    this.scroller?.dispose();
   },
   methods: {
     handleViewportChange() {
@@ -892,13 +856,12 @@ export default defineComponent({
                 <p>${item.description}</p>
               </div>
             `;
-            return element.offsetHeight;
           }
         );
       }
     },
-    scrollToElement(index: number) {
-      this.scroller?.scrollToElement(index);
+    jumpToElement(index: number) {
+      this.scroller?.jumpToElement(index);
     }
   }
 });
@@ -928,18 +891,12 @@ export function useCeriousScroll<T>(
 ) {
   const containerRef = ref<HTMLElement | null>(null);
   let scroller: CeriousScroll | null = null;
+  let lastRender: (() => void) | null = null;
 
-  const init = (renderFn: (index: number, element: HTMLElement) => number) => {
+  const init = (renderFn: (index: number, element: HTMLElement) => void) => {
     if (!containerRef.value) return;
 
-    scroller = new CeriousScroll(
-      containerRef.value,
-      items.value.length,
-      defaultHeight,
-      options
-    );
-
-    const handleViewportChange = () => {
+    lastRender = () => {
       if (scroller && containerRef.value) {
         scroller.renderViewport(
           containerRef.value.clientHeight,
@@ -949,31 +906,35 @@ export function useCeriousScroll<T>(
       }
     };
 
-    containerRef.value.addEventListener('cerious-viewport-change', handleViewportChange);
-    containerRef.value.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    scroller = new CeriousScroll(
+      containerRef.value,
+      items.value.length,
+      { ...options, onScroll: lastRender }
+    );
+    lastRender();
   };
 
-  const scrollToElement = (index: number, offset: number = 0) => {
-    scroller?.scrollToElement(index, offset);
+  const jumpToElement = (index: number) => {
+    scroller?.jumpToElement(index);
   };
 
   const getCurrentPosition = () => {
-    return scroller?.getCurrentPosition();
+    return { element: scroller?.currentElement, offset: scroller?.scrollOffset, scrollPercentage: scroller?.scrollPercentage };
   };
 
   const updateItems = (newItems: T[]) => {
     scroller?.updateTotalElements(newItems.length);
-    containerRef.value?.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    lastRender?.();
   };
 
   onBeforeUnmount(() => {
-    scroller?.destroy();
+    scroller?.dispose();
   });
 
   return {
     containerRef,
     init,
-    scrollToElement,
+    jumpToElement,
     getCurrentPosition,
     updateItems
   };
@@ -999,7 +960,6 @@ const { containerRef, init } = useCeriousScroll(items, 60, {
 onMounted(() => {
   init((index, element) => {
     element.innerHTML = `<div class="item">${items.value[index].title}</div>`;
-    return element.offsetHeight;
   });
 });
 </script>
@@ -1060,7 +1020,6 @@ export class CeriousScrollComponent implements OnInit, OnDestroy {
   @Output() viewportChange = new EventEmitter<{ start: number; end: number }>();
 
   private scroller?: CeriousScroll;
-  private viewportChangeHandler?: () => void;
 
   ngOnInit(): void {
     this.initializeScroller();
@@ -1076,22 +1035,17 @@ export class CeriousScrollComponent implements OnInit, OnDestroy {
     this.scroller = new CeriousScroll(
       container,
       this.items.length,
-      this.defaultHeight,
       {
         ...this.options,
         onScroll: () => {
+          this.handleViewportChange();
           if (this.scroller) {
             this.scrollPositionChange.emit(this.scroller.currentElement);
           }
         }
       }
     );
-
-    this.viewportChangeHandler = () => this.handleViewportChange();
-    container.addEventListener('cerious-viewport-change', this.viewportChangeHandler);
-    
-    // Initial render
-    container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    this.handleViewportChange();
   }
 
   private handleViewportChange(): void {
@@ -1113,7 +1067,6 @@ export class CeriousScrollComponent implements OnInit, OnDestroy {
             </div>
           `;
         }
-        return element.offsetHeight;
       }
     );
 
@@ -1124,27 +1077,26 @@ export class CeriousScrollComponent implements OnInit, OnDestroy {
   }
 
   private cleanup(): void {
-    if (this.viewportChangeHandler) {
-      const container = this.containerRef.nativeElement;
-      container.removeEventListener('cerious-viewport-change', this.viewportChangeHandler);
-    }
-    this.scroller?.destroy();
+    this.scroller?.dispose();
   }
 
   // Public methods for parent components
-  scrollToElement(index: number, offset: number = 0): void {
-    this.scroller?.scrollToElement(index, offset);
+  jumpToElement(index: number, offset: number = 0): void {
+    this.scroller?.jumpToElement(index);
   }
 
   getCurrentPosition() {
-    return this.scroller?.getCurrentPosition();
+    return {
+      element: this.scroller?.currentElement,
+      offset: this.scroller?.scrollOffset,
+      scrollPercentage: this.scroller?.scrollPercentage
+    };
   }
 
   updateItems(items: VirtualScrollItem[]): void {
     this.items = items;
     this.scroller?.updateTotalElements(items.length);
-    const container = this.containerRef.nativeElement;
-    container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    this.handleViewportChange();
   }
 }
 ```
@@ -1249,7 +1201,7 @@ export class VirtualScrollService {
     defaultHeight: number = 60,
     options?: CeriousScrollOptions
   ): CeriousScroll {
-    const scroller = new CeriousScroll(container, totalItems, defaultHeight, options);
+    const scroller = new CeriousScroll(container, totalItems, options);
     this.scrollers.set(id, scroller);
     return scroller;
   }
@@ -1258,16 +1210,16 @@ export class VirtualScrollService {
     return this.scrollers.get(id);
   }
 
-  destroyScroller(id: string): void {
+  disposeScroller(id: string): void {
     const scroller = this.scrollers.get(id);
     if (scroller) {
-      scroller.destroy();
+      scroller.dispose();
       this.scrollers.delete(id);
     }
   }
 
-  destroyAll(): void {
-    this.scrollers.forEach(scroller => scroller.destroy());
+  disposeAll(): void {
+    this.scrollers.forEach(scroller => scroller.dispose());
     this.scrollers.clear();
   }
 }
@@ -1295,26 +1247,18 @@ export class VirtualScrollDirective implements OnInit, OnDestroy {
   @Input() totalItems: number = 0;
   @Input() defaultHeight: number = 60;
   @Input() scrollOptions?: CeriousScrollOptions;
-  @Input() renderFn!: (index: number, element: HTMLElement) => number;
+  @Input() renderFn!: (index: number, element: HTMLElement) => void;
 
   @Output() viewportChange = new EventEmitter<any>();
 
   private scroller?: CeriousScroll;
-  private viewportHandler?: () => void;
 
   constructor(private el: ElementRef<HTMLElement>) {}
 
   ngOnInit(): void {
     const container = this.el.nativeElement;
 
-    this.scroller = new CeriousScroll(
-      container,
-      this.totalItems,
-      this.defaultHeight,
-      this.scrollOptions
-    );
-
-    this.viewportHandler = () => {
+    const render = () => {
       if (this.scroller && this.renderFn) {
         const viewport = this.scroller.renderViewport(
           container.clientHeight,
@@ -1325,15 +1269,16 @@ export class VirtualScrollDirective implements OnInit, OnDestroy {
       }
     };
 
-    container.addEventListener('cerious-viewport-change', this.viewportHandler);
-    container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+    this.scroller = new CeriousScroll(
+      container,
+      this.totalItems,
+      { ...this.scrollOptions, onScroll: render }
+    );
+    render();
   }
 
   ngOnDestroy(): void {
-    if (this.viewportHandler) {
-      this.el.nativeElement.removeEventListener('cerious-viewport-change', this.viewportHandler);
-    }
-    this.scroller?.destroy();
+    this.scroller?.dispose();
   }
 }
 ```
@@ -1365,7 +1310,6 @@ export class ExampleComponent {
 
   renderItem = (index: number, element: HTMLElement): number => {
     element.innerHTML = `<div>${this.items[index].title}</div>`;
-    return element.offsetHeight;
   };
 
   onViewportChange(viewport: any): void {
@@ -1403,8 +1347,8 @@ When your data changes:
 // Update total count
 scroller.updateTotalElements(newData.length);
 
-// Force re-render
-container.dispatchEvent(new CustomEvent('cerious-viewport-change'));
+// Force re-render (call the same function you passed as onScroll)
+render();
 ```
 
 ### Scroll Position Persistence
@@ -1413,13 +1357,16 @@ Save and restore scroll position:
 
 ```typescript
 // Save position
-const position = scroller.getCurrentPosition();
+const position = {
+  element: scroller.currentElement,
+  offset: scroller.scrollOffset
+};
 localStorage.setItem('scrollPos', JSON.stringify(position));
 
 // Restore position
 const saved = JSON.parse(localStorage.getItem('scrollPos'));
 if (saved) {
-  scroller.scrollToElement(saved.element, saved.offset);
+  scroller.jumpToElement(saved.element);
 }
 ```
 
@@ -1432,4 +1379,4 @@ if (saved) {
 
 ---
 
-**Ready to implement?** Check out the [demo files](../demo/) for complete working examples!
+**Ready to implement?** Working examples are the `*-demo.html` files in the repo root (gallery: `index.html`).

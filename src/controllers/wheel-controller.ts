@@ -1,8 +1,6 @@
 /**
- * @fileoverview Wheel interaction controller for CeriousScroll
- *
- * Normalizes wheel input handling and DOM event dispatching to keep the
- * main CeriousScroll class slim.
+ * Wheel → scroll. Large/line/page deltas apply immediately (mouse notches).
+ * Small pixel deltas are treated as trackpad and eased if `smooth` is on.
  */
 
 import { ScrollResult, WheelNavigationOptions } from '../types/index.js';
@@ -42,7 +40,7 @@ interface WheelControllerDeps {
 }
 
 export class WheelController {
-  // GC optimization: Reuse event detail object to avoid allocations
+  // Mutated in place and passed as CustomEvent.detail.
   private readonly _eventDetail: {
     percentage: number;
     currentElement: number;
@@ -57,6 +55,12 @@ export class WheelController {
 
   constructor(private readonly deps: WheelControllerDeps) {}
 
+  /**
+   * @param container Host to listen on (`{ passive: false }`).
+   * @param onScroll After each applied delta.
+   * @param wheelOptions Optional overrides.
+   * @returns Detach function.
+   */
   attach(
     container: HTMLElement,
     onScroll?: (result: ScrollResult) => void,
@@ -93,7 +97,7 @@ export class WheelController {
       rafId = null;
       if (!options.emitViewportChangeEvent) return;
 
-      // GC optimization: Reuse event detail object instead of creating new one
+      // Reuse _eventDetail; listeners must not retain it across events.
       this._eventDetail.percentage = pendingPercentage;
       this._eventDetail.currentElement = pendingCurrentElement;
       this._eventDetail.scrollOffset = pendingScrollOffset;

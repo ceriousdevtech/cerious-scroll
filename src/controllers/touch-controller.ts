@@ -1,8 +1,6 @@
 /**
- * @fileoverview Touch interaction controller for CeriousScroll
- *
- * Handles touch gesture translation, including optional momentum scrolling,
- * so that CeriousScroll can remain focused on data/state orchestration.
+ * Touch → scroll. Vertical engine motion is coalesced to one rAF; velocity
+ * is sampled every move. Horizontal overflow is native scrollLeft.
  */
 
 import { ScrollResult, TouchNavigationOptions } from '../types/index.js';
@@ -15,7 +13,7 @@ interface TouchControllerDeps {
 }
 
 export class TouchController {
-  // GC optimization: Reuse event detail object to avoid allocations
+  // Mutated in place and passed as CustomEvent.detail.
   private readonly _eventDetail: {
     percentage: number;
     currentElement: number;
@@ -30,6 +28,12 @@ export class TouchController {
 
   constructor(private readonly deps: TouchControllerDeps) {}
 
+  /**
+   * @param container Host to listen on (`{ passive: false, capture: true }`).
+   * @param onScroll After each applied (or flushed) delta.
+   * @param options Optional overrides.
+   * @returns Detach function.
+   */
   attach(
     container: HTMLElement,
     onScroll?: (result: ScrollResult) => void,
@@ -414,7 +418,7 @@ export class TouchController {
 
           const result = this.deps.scroll(delta, getViewportHeight());
 
-          // GC optimization: Reuse event detail object instead of creating new one
+          // Reuse eventDetail; listeners must not retain it across events.
           this._eventDetail.percentage = this.deps.calculateScrollPercentage();
           this._eventDetail.currentElement = this.deps.getCurrentElement();
           this._eventDetail.scrollOffset = this.deps.getScrollOffset();

@@ -117,7 +117,7 @@ We take security seriously and appreciate your efforts to responsibly disclose y
    ```javascript
    function scrollToSafeIndex(index) {
      if (index >= 0 && index < scroller.totalElements) {
-       scroller.scrollToElement(index);
+       scroller.jumpToElement(index);
      }
    }
    ```

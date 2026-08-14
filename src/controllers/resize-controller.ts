@@ -1,17 +1,15 @@
 /**
- * @fileoverview Container + window resize observer for CeriousScroll.
- *
- * Detects size changes that affect the virtual viewport via two channels:
- *  - `ResizeObserver` on the container element (fires for layout/CSS-driven
- *    changes that never trigger a window resize, e.g. flex/grid reflows,
- *    media-query branches, JS-driven sizing).
- *  - `window.resize` as a fallback for environments without ResizeObserver
- *    and to catch viewport-level changes (zoom, orientation).
+ * Host size: ResizeObserver on the container, plus window.resize for
+ * environments without it and for zoom/orientation.
  */
 
 export class ResizeController {
   constructor(private readonly onViewportChange: (container: HTMLElement) => void) {}
 
+  /**
+   * @param container Host to observe.
+   * @returns Detach function.
+   */
   attach(container: HTMLElement): () => void {
     const cleanups: Array<() => void> = [];
 

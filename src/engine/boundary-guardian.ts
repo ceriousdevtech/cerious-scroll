@@ -1,6 +1,4 @@
-/**
- * @fileoverview BoundaryGuardian keeps navigation within dataset bounds.
- */
+/** Pulls the camera back when empty space appears under the last row. */
 
 interface BoundaryGuardianDeps {
   getViewportHeight: () => number;
@@ -19,6 +17,9 @@ export class BoundaryGuardian {
   private readonly smallDatasetThreshold: number;
   private readonly nearBottomThreshold: number;
 
+  /**
+   * @param deps Viewport size, dataset length, and per-row geometry.
+   */
   constructor(private readonly deps: BoundaryGuardianDeps) {
     this.overshootThreshold = deps.overshootThreshold ?? 2;
     this.dampingFactor = deps.dampingFactor ?? 0.9;
@@ -26,6 +27,10 @@ export class BoundaryGuardian {
     this.nearBottomThreshold = deps.nearBottomThreshold ?? 100;
   }
 
+  /**
+   * @param element Current camera index.
+   * @returns Whether bottom clamping should run (small lists, or near the end).
+   */
   shouldClamp(element: number): boolean {
     const total = this.deps.getTotalElements();
     return total <= this.smallDatasetThreshold || element >= Math.max(0, total - this.nearBottomThreshold);
@@ -37,6 +42,11 @@ export class BoundaryGuardian {
    * the gap. `damping` controls how much of the gap is closed in one call
    * (default {@link dampingFactor} for smooth wheel/touch correction; pass `1`
    * for a full re-anchor, e.g. after a container resize that revealed space).
+   *
+   * @param element Current camera element.
+   * @param offset Current pixel offset into that element.
+   * @param damping Fraction of the gap to close (`1` = full). Default 0.9.
+   * @returns Corrected `{ element, offset }`, or `null` if no overshoot.
    */
   correctBottomOvershoot(
     element: number,

@@ -206,7 +206,7 @@ npm init -y
 npm install @ceriousdevtech/cerious-scroll
 
 # Verify files are correct
-ls node_modules/cerious-scroll/
+ls node_modules/@ceriousdevtech/cerious-scroll/
 ```
 
 ### Step 10: Update Documentation Site
@@ -232,7 +232,7 @@ git push origin main
 
 ### Immediate (Same Day)
 
-- [ ] Verify npm package is available: `npm view cerious-scroll`
+- [ ] Verify npm package is available: `npm view @ceriousdevtech/cerious-scroll`
 - [ ] Test installation in clean project
 - [ ] Monitor for immediate issues
 - [ ] Respond to any urgent bug reports
@@ -284,14 +284,14 @@ npm publish
 
 ```bash
 # Deprecate problematic version
-npm deprecate cerious-scroll@1.0.0 "Critical bug, please upgrade to 1.0.1"
+npm deprecate @ceriousdevtech/cerious-scroll@1.0.0 "Critical bug, please upgrade to 1.0.1"
 ```
 
 ### Option 3: Unpublish (Within 72 hours only)
 
 ```bash
 # Last resort - only if absolutely necessary
-npm unpublish cerious-scroll@1.0.0
+npm unpublish @ceriousdevtech/cerious-scroll@1.0.0
 ```
 
 ---

@@ -1,23 +1,11 @@
 /**
- * @fileoverview Type-Safe Event Emitter for CeriousScroll
- * 
- * Provides a strongly-typed event system to replace generic CustomEvent usage,
- * improving type safety and developer experience.
+ * Typed pub/sub. DOM CustomEvent stays on the container for consumers;
+ * this is for internal listeners that want a payload type.
  */
 
-/**
- * Event listener function type
- */
 export type EventListener<T = any> = (data: T) => void;
-
-/**
- * Cleanup function returned from event subscriptions
- */
 export type Unsubscribe = () => void;
 
-/**
- * Event map defining available events and their payload types
- */
 export interface EventMap {
   'viewport-change': ViewportChangeEvent;
   'scroll': ScrollEvent;
@@ -25,9 +13,6 @@ export interface EventMap {
   'element-measured': ElementMeasuredEvent;
 }
 
-/**
- * Viewport change event data
- */
 export interface ViewportChangeEvent {
   percentage: number;
   currentElement: number;
@@ -36,9 +21,6 @@ export interface ViewportChangeEvent {
   offset: number;
 }
 
-/**
- * Scroll event data
- */
 export interface ScrollEvent {
   element: number;
   offset: number;
@@ -46,9 +28,6 @@ export interface ScrollEvent {
   percentage: number;
 }
 
-/**
- * Resize event data
- */
 export interface ResizeEvent {
   viewportHeight: number;
   viewportWidth: number;
@@ -56,21 +35,13 @@ export interface ResizeEvent {
   previousWidth: number;
 }
 
-/**
- * Element measured event data
- */
 export interface ElementMeasuredEvent {
   index: number;
   height: number;
   previousHeight?: number;
 }
 
-/**
- * Type-safe event emitter implementation
- * 
- * Provides a publish-subscribe pattern with strong typing for events.
- * Replaces generic DOM CustomEvent usage with proper TypeScript types.
- */
+/** Internal typed pub/sub. Container CustomEvents are a separate channel. */
 export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   private listeners: Map<keyof TEventMap, Set<EventListener<any>>> = new Map();
   private onceListeners: Map<keyof TEventMap, Set<EventListener<any>>> = new Map();
@@ -82,6 +53,8 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   /**
    * Register a global error handler for listener exceptions. Replaces the
    * default console.error logging. Pass `null` to restore default behavior.
+   *
+   * @param handler Called with the thrown value and event name, or `null` to restore `console.error`.
    */
   setErrorHandler(
     handler: ((error: unknown, eventName: string | symbol) => void) | null
@@ -102,11 +75,9 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   }
 
   /**
-   * Subscribe to an event
-   * 
-   * @param eventName Name of the event to listen for
-   * @param listener Callback function to invoke when event is emitted
-   * @returns Unsubscribe function to remove the listener
+   * @param eventName Event to subscribe to.
+   * @param listener Invoked with the typed payload.
+   * @returns Unsubscribe function.
    */
   on<K extends keyof TEventMap>(
     eventName: K,
@@ -117,17 +88,15 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
     }
     
     this.listeners.get(eventName)!.add(listener);
-    
-    // Return unsubscribe function
     return () => this.off(eventName, listener);
   }
 
   /**
-   * Subscribe to an event that fires only once
-   * 
-   * @param eventName Name of the event to listen for
-   * @param listener Callback function to invoke when event is emitted
-   * @returns Unsubscribe function to remove the listener
+   * Subscribe for a single emission.
+   *
+   * @param eventName Event to subscribe to.
+   * @param listener Invoked once with the typed payload.
+   * @returns Unsubscribe function (no-op after the event fires).
    */
   once<K extends keyof TEventMap>(
     eventName: K,
@@ -148,10 +117,8 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   }
 
   /**
-   * Unsubscribe from an event
-   * 
-   * @param eventName Name of the event to stop listening for
-   * @param listener Callback function to remove
+   * @param eventName Event to unsubscribe from.
+   * @param listener Listener previously passed to {@link on} or {@link once}.
    */
   off<K extends keyof TEventMap>(
     eventName: K,
@@ -175,13 +142,10 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   }
 
   /**
-   * Emit an event to all subscribers
-   * 
-   * @param eventName Name of the event to emit
-   * @param data Event data payload
+   * @param eventName Event to emit.
+   * @param data Typed payload.
    */
   emit<K extends keyof TEventMap>(eventName: K, data: TEventMap[K]): void {
-    // Call regular listeners
     const listeners = this.listeners.get(eventName);
     if (listeners) {
       listeners.forEach(listener => {
@@ -193,7 +157,6 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
       });
     }
     
-    // Call once listeners and remove them
     const onceListeners = this.onceListeners.get(eventName);
     if (onceListeners) {
       onceListeners.forEach(listener => {
@@ -203,15 +166,12 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
           this._reportError(error, eventName, 'once-listener');
         }
       });
-      // Clear once listeners after calling
       this.onceListeners.delete(eventName);
     }
   }
 
   /**
-   * Remove all listeners for a specific event, or all events if no event specified
-   * 
-   * @param eventName Optional event name to clear listeners for
+   * @param eventName Event to clear. Omit to remove every listener.
    */
   clear(eventName?: keyof TEventMap): void {
     if (eventName) {
@@ -224,10 +184,8 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   }
 
   /**
-   * Get the number of listeners for an event
-   * 
-   * @param eventName Name of the event
-   * @returns Number of listeners subscribed to the event
+   * @param eventName Event to count.
+   * @returns Regular + once listeners.
    */
   listenerCount(eventName: keyof TEventMap): number {
     const regular = this.listeners.get(eventName)?.size ?? 0;
@@ -236,19 +194,15 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
   }
 
   /**
-   * Check if there are any listeners for an event
-   * 
-   * @param eventName Name of the event
-   * @returns True if there are listeners for the event
+   * @param eventName Event to check.
+   * @returns Whether any listener is registered.
    */
   hasListeners(eventName: keyof TEventMap): boolean {
     return this.listenerCount(eventName) > 0;
   }
 
   /**
-   * Get all event names that have listeners
-   * 
-   * @returns Array of event names
+   * @returns Event names that currently have listeners.
    */
   eventNames(): Array<keyof TEventMap> {
     const names = new Set<keyof TEventMap>();
@@ -259,16 +213,15 @@ export class EventEmitter<TEventMap extends Record<string, any> = EventMap> {
 }
 
 /**
- * Create a new event emitter instance
- * 
- * @returns New EventEmitter instance
+ * @returns A new typed emitter.
  */
 export function createEventEmitter<TEventMap extends Record<string, any> = EventMap>(): EventEmitter<TEventMap> {
   return new EventEmitter<TEventMap>();
 }
 
 /**
- * Type guard to check if an object is an event emitter
+ * @param obj Value to test.
+ * @returns Whether `obj` is an {@link EventEmitter}.
  */
 export function isEventEmitter(obj: any): obj is EventEmitter {
   return obj instanceof EventEmitter;

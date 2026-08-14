@@ -1,22 +1,14 @@
 /**
- * @fileoverview Native Scrollbar Integration Module for CeriousScroll
- * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * 
- * This module handles native browser scrollbar integration for virtual scrolling.
- * Provides smooth synchronization between virtual scroll position and native scrollbar.
+ *
+ * Sibling strip whose scrollTop is a percentage of the virtual range.
+ * Bidirectional sync; programmatic writes are matched by position so their
+ * echo isn't treated as a user drag.
  */
 
 import { NavigationEngine } from '../engine/navigation-engine.js';
 
-/**
- * Native Scrollbar Manager for CeriousScroll
- * 
- * Manages native browser scrollbar integration, automatic width detection,
- * and bidirectional synchronization with virtual scroll position.
- */
 export class NativeScrollbar {
-  // Constants for scrollbar behavior
   private static readonly DEFAULT_SCROLLBAR_WIDTH = 17;
   private static readonly DEFAULT_Z_INDEX = 10;
   private static readonly ELEMENT_HEIGHT_MULTIPLIER = 10;
@@ -198,6 +190,19 @@ export class NativeScrollbar {
     else clearTimeout(handle);
   }
 
+  /**
+   * @param totalElements Dataset length (sets virtual track height).
+   * @param getScrollPercentage Current `0`–`100` position.
+   * @param getElementHeight Height lookup for a dataset index.
+   * @param onScrollPositionChange Called when the strip drives the camera.
+   * @param scrollHandlers Navigation engine, or `null` until {@link setScrollHandlers}.
+   * @param getViewportHeight Usable height in pixels.
+   * @param getCurrentElement Camera row index.
+   * @param getScrollOffset Pixels into the camera row.
+   * @param getTrueBottomPosition Measured true-bottom camera, or `null`.
+   * @param virtualTrackHeight Pixel height of the virtual track. Default 10_000_000.
+   * @param onRender Optional. Invoked after a user-driven strip scroll so the host re-renders.
+   */
   constructor(
     private totalElements: number,
     private getScrollPercentage: () => number,
@@ -217,38 +222,33 @@ export class NativeScrollbar {
    * created before the engine exists in CeriousScroll's bootstrap order, so
    * a deferred setter avoids the previous `null as any` cast and the
    * accompanying NPE risk if a scroll event fires before assignment.
+   *
+   * @param handlers Navigation engine instance.
    */
   setScrollHandlers(handlers: NavigationEngine): void {
     this.scrollHandlers = handlers;
   }
 
   /**
-   * Get the scrollbar container element
+   * Attached sibling strip, or `null` if none.
    */
   get container(): HTMLElement | null {
     return this._scrollbarContainer;
   }
 
   /**
-   * Check if currently syncing scrollbar (to prevent infinite loops)
+   * True while a programmatic `scrollTop` write is in flight. Callers skip
+   * re-sync so the echo cannot loop.
    */
   get isSyncing(): boolean {
     return this._syncingScrollbar;
   }
 
-  /**
-   * Dynamically detect the scrollbar width for the current browser/environment
-   * This accounts for different browsers, OS settings, zoom levels, and custom CSS
-   * 
-   * @returns {number} The scrollbar width in pixels
-   */
   private getScrollbarWidth(): number {
-    // Return cached value if available (scrollbar width shouldn't change during session)
     if (this._cachedScrollbarWidth !== undefined) {
       return this._cachedScrollbarWidth;
     }
 
-    // Create a temporary div to measure scrollbar width
     const outer = document.createElement('div');
     outer.style.cssText = 'visibility:hidden;width:100px;height:100px;overflow:scroll;position:absolute;top:-9999px;';
     document.body.appendChild(outer);
@@ -262,7 +262,6 @@ export class NativeScrollbar {
     // OS can paint its overlay bar over the content's right edge on scroll.
     this._cachedOverlayScrollbars = scrollbarWidth === 0;
 
-    // Cache the result and return (fallback if detection fails / overlay)
     this._cachedScrollbarWidth = scrollbarWidth || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
     return this._cachedScrollbarWidth;
   }
@@ -278,79 +277,55 @@ export class NativeScrollbar {
     return this._cachedOverlayScrollbars ?? false;
   }
 
-  /**
-   * Clear cached scrollbar width (useful when zoom or display settings change)
-   */
+  /** Drop cached OS scrollbar width (zoom / display change). */
   clearScrollbarWidthCache(): void {
     this._cachedScrollbarWidth = undefined;
     this._cachedOverlayScrollbars = undefined;
   }
 
   /**
-   * Handle viewport changes that might affect scrollbar width (zoom, display settings, etc.)
-   * Call this method when the viewport or container is resized
-   * 
-   * @param container The container element with the scrollbar
-   * @param viewportHeight New viewport height
+   * @param container Host the strip is attached to.
+   * @param viewportHeight New host height in pixels (unused for layout; strip is `height: 100%`).
    */
   handleViewportChange(container: HTMLElement, viewportHeight: number): void {
-    // Clear scrollbar width cache to force re-detection
     this.clearScrollbarWidthCache();
 
-    // IMPORTANT: do NOT recreate the scrollbar element here. It already uses
-    // `height: 100%`, so it tracks the container's new size automatically, and
-    // its scrollable content height is element-count based (a viewport resize
-    // doesn't change it). Recreating would reset `scrollTop` to 0 and force a
-    // re-sync — that transient 0 can be read by a stray scroll event (the
-    // viewport jumps to the top), and the recreated element strands the
-    // programmatic-scroll accounting on the discarded node (so the user's next
-    // real scroll gets swallowed — a "dead zone" before scrolling registers).
-    //
-    // The caller's reflow() re-syncs the thumb to the preserved logical position
-    // via syncNativeScrollbar() (the container's clientHeight changed, so the
-    // pixel scrollTop for the same percentage changes). Clear the programmatic
-    // marker so a resize can never eat the next genuine scroll; reflow's sync
-    // re-establishes it for the new pixel position.
+    // Do not recreate the strip. It is height:100% so it tracks the host,
+    // and recreating reset scrollTop to 0 — a stray scroll event then jumped
+    // the viewport to the top, and echo-accounting stayed on the discarded
+    // node (dead zone until enough events drained). Caller reflow() re-syncs
+    // the thumb; clear the programmatic marker so a resize cannot eat the
+    // next genuine scroll.
     this._syncingScrollbar = false;
     this._lastProgrammaticScrollTop = null;
   }
 
   /**
-   * Set up automatic handling of viewport changes (window resize, zoom changes)
-   * This ensures scrollbar width stays accurate when display settings change
-   * 
-   * @param container The container element with the scrollbar
-   * @param onViewportChange Callback for when viewport changes
-   * @returns A cleanup function to remove the resize listener
+   * @param container Host element.
+   * @param onViewportChange Called on window resize.
+   * @returns Detach function.
    */
   setupAutoResizeHandling(
     container: HTMLElement, 
     onViewportChange: (container: HTMLElement) => void
   ): () => void {
     const resizeHandler = () => onViewportChange(container);
-    
-    // Listen for window resize events
     window.addEventListener('resize', resizeHandler);
-    
-    // Return cleanup function
     return () => {
       window.removeEventListener('resize', resizeHandler);
     };
   }
 
   /**
-   * Automatically attach a native scrollbar to the provided container
-   * 
-   * @param container Parent container to attach the scrollbar to
+   * Attach the sibling strip (and touch overlay thumb when appropriate).
+   * @param container Host element.
    */
   attachNativeScrollbar(container: HTMLElement): void {
-    // Remove any existing scrollbar first since scrollbar properties depend on current data
     const existingScrollbar = container.querySelector('[data-cerious-scrollbar="container"]');
     if (existingScrollbar) {
       existingScrollbar.remove();
     }
 
-    // Use dynamic scrollbar width detection
     const detectedWidth = this.getScrollbarWidth();
 
     // On touch-primary devices the OS won't paint a scrollbar on this
@@ -380,14 +355,14 @@ export class NativeScrollbar {
   }
 
   /**
-   * Create and attach a native scrollbar that drives the virtual scrolling
-   * 
-   * Creates a hidden scrollable div with the same total content height as the virtual content.
-   * When the user scrolls this native scrollbar, it drives the virtual viewport scrolling.
-   * 
-   * @param container Parent container to attach the scrollbar to
-   * @param options Scrollbar configuration options
-   * @returns The created scrollbar container element
+   * Create and attach a native scrollbar that drives virtual scrolling.
+   *
+   * @param container Host to attach the strip to.
+   * @param options Strip width, side, and extra CSS.
+   * @param options.width Strip CSS width. Default: measured OS scrollbar width.
+   * @param options.position `'left'` or `'right'` (default `'right'`).
+   * @param options.style Extra CSS properties written onto the strip.
+   * @returns The strip element.
    */
   createNativeScrollbar(container: HTMLElement, options: {
     width?: string;
@@ -411,7 +386,6 @@ export class NativeScrollbar {
     // the scoped stylesheet hides its (otherwise-present) native scrollbar.
     const touch = NativeScrollbar.isTouchPrimary();
 
-    // Create scrollbar container
     const scrollbarContainer = document.createElement('div');
     scrollbarContainer.setAttribute('data-cerious-scrollbar', 'container');
     if (touch) scrollbarContainer.setAttribute('data-touch', 'true');
@@ -496,10 +470,8 @@ export class NativeScrollbar {
         percentage = 0;
       }
 
-      // Set flag to prevent a sync loop.
       this._syncingScrollbar = true;
 
-      // Get the true bottom position based on measured elements.
       const trueBottom = this.getTrueBottomPosition();
 
       // Calculate target position based on percentage.
@@ -543,7 +515,6 @@ export class NativeScrollbar {
     // cheap, must-stay-synchronous bookkeeping (echo rejection, the user-scroll
     // timestamp, thumb visuals) runs here; the map+render is deferred to a frame.
     const scrollListener = (_e: Event) => {
-      // Prevent infinite loop by checking if we're currently syncing
       if (this._syncingScrollbar) return;
       // Bail out gracefully if the engine hasn't been wired up yet (this can
       // happen if a scroll event fires between scrollbar creation and the
@@ -587,7 +558,6 @@ export class NativeScrollbar {
       // for the duration of the gesture.
       this._lastUserScrollTs = NativeScrollbar._now();
 
-      // Update last scroll position
       this._lastScrollTop = scrollTop;
 
       // Keep the custom thumb visually in sync with the strip position on
@@ -601,7 +571,7 @@ export class NativeScrollbar {
       if (this._scrollRafId === null) {
         this._scrollRafId = NativeScrollbar._raf(renderFromScroll);
       }
-    }; // End scroll event listener
+    };
 
     // Remove any previous listener (we recreate the scrollbar on resize)
     if (this._scrollListener && this._scrollbarContainer) {
@@ -635,7 +605,7 @@ export class NativeScrollbar {
   /**
    * Synchronize native scrollbar position with virtual scroll position
    * 
-   * @param scrollbarContainer The scrollbar container element
+   * @param scrollbarContainer Strip to write. Defaults to the attached strip.
    */
   syncNativeScrollbar(scrollbarContainer?: HTMLElement): void {
     const container = scrollbarContainer || this._scrollbarContainer;
@@ -665,7 +635,6 @@ export class NativeScrollbar {
     if (maxScroll <= 0) return;
     const targetScrollTop = (percentage / NativeScrollbar.PERCENTAGE_MAX) * maxScroll;
 
-    // Prevent infinite loop by checking if we need to update
     if (Math.abs(container.scrollTop - targetScrollTop) > 1) {
       this._syncingScrollbar = true;
       container.scrollTop = targetScrollTop;
@@ -685,10 +654,10 @@ export class NativeScrollbar {
   }
 
   /**
-   * Update native scrollbar content height when dataset changes
-   * 
-   * @param totalElements New total number of elements
-   * @param scrollbarContainer The scrollbar container element (optional)
+   * Resize the virtual track after the dataset length changes.
+   *
+   * @param totalElements New dataset length.
+   * @param scrollbarContainer Optional strip; defaults to the attached one.
    */
   updateNativeScrollbarHeight(totalElements: number, scrollbarContainer?: HTMLElement): void {
     this.totalElements = totalElements;
@@ -706,16 +675,11 @@ export class NativeScrollbar {
   }
 
   /**
-   * Detach and remove the native scrollbar from the container
-   * 
-   * This is useful for cleanup when the CeriousScroll instance is no longer needed.
-   * Note: Creating a new CeriousScroll instance will automatically replace any existing scrollbar.
-   * 
-   * @param container The container to remove the scrollbar from
+   * Remove the strip, thumb, and listeners.
+   * @param container Optional host used to find an orphan strip.
    */
   detachScrollbar(container?: HTMLElement): void {
     if (this._scrollbarContainer) {
-      // Find the parent container to restore padding
       const parentContainer = this._scrollbarContainer.parentElement;
 
       if (this._scrollListener) {

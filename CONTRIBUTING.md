@@ -1,10 +1,10 @@
 # Contributing to Cerious Scroll™
 
-Thank you for your interest in contributing to **Cerious Scroll™**! We appreciate your help in making this library better.
+Thank you for your interest in contributing to **Cerious Scroll™**. We appreciate your help in making this library better.
 
 ---
 
-## 📜 Code of Conduct
+## Code of Conduct
 
 By participating in this project, you agree to maintain a respectful and professional environment. We expect:
 
@@ -15,7 +15,7 @@ By participating in this project, you agree to maintain a respectful and profess
 
 ---
 
-## 🤔 How Can I Contribute?
+## How Can I Contribute?
 
 ### Reporting Bugs
 
@@ -109,7 +109,7 @@ We welcome pull requests that align with the goals of the project.
 
 ---
 
-## 🛠️ Development Setup
+## Development Setup
 
 ### Prerequisites
 - Node.js 18+
@@ -128,7 +128,7 @@ npm run build
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 cerious-scroll/
@@ -148,11 +148,10 @@ cerious-scroll/
 │   ├── engine/
 │   ├── helpers/
 │   └── integration/
-├── demo/                    # Demo applications (9 examples)
-│   ├── vanilla-js-demo.html
-│   ├── data-grid-demo.html
-│   ├── chat-messaging-demo.html
-│   └── ... (other demos)
+├── index.html               # Demo gallery / GitHub Pages landing
+├── *-demo.html              # Individual demos
+├── demo-bootstrap.js
+├── shared-styles.css
 ├── docs/                    # Documentation
 │   ├── ARCHITECTURE.md      # Technical architecture docs
 │   └── IMPLEMENTATION_GUIDE.md  # Integration guide
@@ -160,7 +159,6 @@ cerious-scroll/
 ├── .github/                 # GitHub workflows and actions
 │   └── workflows/
 │       └── deploy-pages.yml
-├── index.html               # GitHub Pages landing page
 ├── README.md                # User-facing documentation
 ├── CHANGELOG.md             # Version history
 ├── CONTRIBUTING.md          # This file
@@ -173,17 +171,17 @@ cerious-scroll/
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 npm test
-npm run test:watch
-npm run test:coverage
 ```
+
+That is `vitest run`. After source changes, rebuild the bundle (`npm run compile && npm run bundle`) or the HTML demos will keep serving the old IIFE.
 
 ---
 
-## 📝 Code Style
+## Code Style
 
 - TypeScript strict mode
 - No `any` in public APIs
@@ -192,7 +190,7 @@ npm run test:coverage
 
 ---
 
-## 📋 Legal Considerations
+## Legal Considerations
 
 ### License
 Cerious Scroll™ is licensed under the **MIT License**.
@@ -201,7 +199,7 @@ All contributions must be compatible with the MIT license.
 
 ---
 
-### 🔐 Contributor License Agreement (CLA)
+### Contributor License Agreement (CLA)
 
 By submitting a pull request, issue, or other contribution, you acknowledge and agree that:
 
@@ -216,7 +214,7 @@ No additional signature is required.
 
 ---
 
-## 💬 Getting Help
+## Getting Help
 
 - GitHub Issues for bugs
 - GitHub Discussions for questions
@@ -224,13 +222,13 @@ No additional signature is required.
 
 ---
 
-## 🎉 Recognition
+## Recognition
 
 Significant contributors may be recognized in release notes and changelogs.
 
 ---
 
-## 📜 Copyright
+## Copyright
 
 Copyright © 2024–2026  
 **Cerious DevTech LLC**  

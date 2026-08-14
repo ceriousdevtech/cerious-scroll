@@ -1,6 +1,4 @@
 /**
- * @fileoverview Configuration Option Types for CeriousScroll
- *
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  */
 

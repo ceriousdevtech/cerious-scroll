@@ -1,9 +1,4 @@
-/**
- * @fileoverview Content observation utilities for CeriousScroll
- *
- * Watches rendered DOM elements for size mutations so cached measurements stay
- * in sync without bloating the main CeriousScroll class.
- */
+/** ResizeObserver on mounted rows; MutationObserver to attach/detach as the window moves. */
 
 interface ContentObserverDeps {
   getMeasuredHeight: (index: number) => number | undefined;
@@ -28,6 +23,12 @@ export class ContentObserverManager {
 
   constructor(private readonly deps: ContentObserverDeps) {}
 
+  /**
+   * Watch mounted rows for in-place height changes.
+   *
+   * @param container Host whose subtree contains `[data-element-index]` rows.
+   * @returns Detach function. Refcounted if `observe` is called again on the same node.
+   */
   observe(container: HTMLElement): () => void {
     if (!container) return () => {};
 

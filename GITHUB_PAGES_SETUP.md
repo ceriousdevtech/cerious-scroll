@@ -1,11 +1,11 @@
 # CeriousScroll GitHub Pages Setup
 
-## 🌐 Live Site
+## Live Site
 
 Once deployed, your GitHub Pages site will be available at:
 - `https://ceriousdevtech.github.io/cerious-scroll/`
 
-## 📁 Structure
+## Structure
 
 ```
 /
@@ -22,7 +22,7 @@ Once deployed, your GitHub Pages site will be available at:
 └── dist/                          # Built library files
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Automatic Deployment (Recommended)
 
@@ -60,7 +60,7 @@ If you prefer manual deployment:
 
 2. Create a `gh-pages` branch and push the built files
 
-## 📝 Customization
+## Customization
 
 ### Update Repository URL
 
@@ -85,7 +85,7 @@ Edit the markdown files in the `docs/` folder:
 
 Changes will automatically be converted to HTML during deployment.
 
-## 🎨 Styling
+## Styling
 
 The landing page uses:
 - Responsive grid layout
@@ -95,7 +95,7 @@ The landing page uses:
 
 Customize colors by changing the CSS variables in `index.html`.
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Site not deploying?
 
@@ -111,7 +111,7 @@ Ensure all demo files are committed and pushed to the repository.
 
 Clear your browser cache or use incognito mode to see changes.
 
-## 📊 Analytics (Optional)
+## Analytics (Optional)
 
 To add Google Analytics, insert this in the `<head>` of `index.html`:
 
@@ -128,7 +128,7 @@ To add Google Analytics, insert this in the `<head>` of `index.html`:
 
 Replace `GA_MEASUREMENT_ID` with your actual Google Analytics ID.
 
-## 🔒 Custom Domain (Optional)
+## Custom Domain (Optional)
 
 To use a custom domain:
 
@@ -141,7 +141,7 @@ To use a custom domain:
 
 3. Enable HTTPS in GitHub Pages settings
 
-## 📞 Support
+## Support
 
 For issues with GitHub Pages setup, contact: info@ceriousdevtech.com
 

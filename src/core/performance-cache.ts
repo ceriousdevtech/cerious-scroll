@@ -1,44 +1,40 @@
 /**
- * @fileoverview Performance Cache Module for CeriousScroll
- * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
- * 
- * This module handles height caching and optimization for virtual scrolling.
- * Provides O(1) memory usage regardless of dataset size through sliding window caching.
+ *
+ * Sliding-window height map. Writes prune; reads do not. Tail indices are
+ * pinned so true-bottom survives a prune while the camera is at the top.
  */
 
 import { ElementHeightCalculator } from '../types/index.js';
 
-/**
- * Performance Cache Manager for CeriousScroll
- * 
- * Manages height measurements, cumulative height calculations, and optimization caches
- * to provide constant-time scroll operations for large datasets.
- */
 export class PerformanceCache {
-  // Constants for cache management
-  private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200; // Keep only 200 measured heights around the cursor
-  private static readonly CACHE_PRUNE_THRESHOLD = 250; // Prune when we exceed this
-  // True-bottom math walks backward from the last row. If those heights are
-  // pruned while the user is at the top of a large list, the renderer has to
-  // remount ~50 sentinel rows every frame. Pin a small tail so that never happens.
+  private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200;
+  private static readonly CACHE_PRUNE_THRESHOLD = 250;
+  // True-bottom walks backward from the last row. If those heights are
+  // pruned while the camera is at the top, the renderer remounts ~50
+  // sentinel rows every frame. Pin a small tail so that cannot happen.
   private static readonly TAIL_PIN_COUNT = 80;
 
-  // ===== CACHE STATE =====
   private _isUniformHeight: boolean | undefined = undefined;
   private _uniformHeightValue: number | undefined = undefined;
   private _measuredHeights = new Map<number, number>();
-  private _lastAccessedIndex: number = 0; // Track last accessed element for cache cleanup
+  private _lastAccessedIndex: number = 0;
   // Upper bound on element count, used to keep linear walks bounded. 0 means
   // "unknown"; in that case the cache falls back to its previous behavior.
   private _totalElements = 0;
 
+  /**
+   * @param getElementHeight Height lookup used when a row has no measured value
+   *   (walks such as {@link findRowFromScrollPosition}).
+   */
   constructor(private getElementHeight: ElementHeightCalculator) {}
 
   /**
    * Tell the cache how many elements exist in the dataset. Used to bound
    * linear walks (e.g. findRowFromScrollPosition) so a malformed scroll
    * position can never spin past the dataset.
+   *
+   * @param totalElements Dataset length. Ignored if not a finite >= 0 number.
    */
   setTotalElements(totalElements: number): void {
     if (!Number.isFinite(totalElements) || totalElements < 0) return;
@@ -46,14 +42,11 @@ export class PerformanceCache {
   }
 
   /**
-   * Cache a measured height for a specific element
-   * @param index Element index
-   * @param height Measured height in pixels
+   * @param index Dataset index.
+   * @param height Pixels. Non-finite / negative becomes 1px (detached-node `offsetHeight`).
    */
   setMeasuredHeight(index: number, height: number): void {
-    // Defensive validation. NaN/Infinity/negative heights would corrupt the
-    // total-height cache permanently and propagate into every scroll math
-    // result downstream.
+    // NaN/Infinity would poison total-height math for the rest of the session.
     if (!Number.isFinite(index) || index < 0) {
       return;
     }
@@ -67,12 +60,10 @@ export class PerformanceCache {
     this._measuredHeights.set(index, height);
     this._lastAccessedIndex = index;
 
-    // Prune old cache entries to prevent memory growth
     this._pruneOldCacheEntries();
 
     if (this._isUniformHeight === undefined && this._measuredHeights.size >= 10) {
-      // GC optimization: Use iterator-based approach instead of Array.from
-      // Check uniformity without creating array if possible
+      // Don't Array.from the map just to compare values.
       let firstHeight: number | undefined;
       let allSame = true;
       for (const height of this._measuredHeights.values()) {
@@ -84,7 +75,7 @@ export class PerformanceCache {
         }
       }
       
-      // Skip uniform height detection for minimal placeholders
+      // 1px placeholders are measurement failures, not real uniform rows.
       if (allSame && firstHeight !== undefined && firstHeight > 1) {
         this._isUniformHeight = true;
         this._uniformHeightValue = firstHeight;
@@ -95,58 +86,47 @@ export class PerformanceCache {
   }
 
   /**
-   * Check if an element height has been measured
-   * @param index Element index
-   * @returns True if height has been measured
+   * @param index Dataset index.
+   * @returns Whether a real measurement exists (not an estimate).
    */
   hasMeasuredHeight(index: number): boolean {
     return this._measuredHeights.has(index);
   }
 
   /**
-   * Return the detected uniform row height, or undefined if rows are not
-   * (yet) known to be uniform. Used by the viewport renderer to skip
-   * `offsetHeight` reads on newly-created rows during fast scroll — one
-   * forced layout per new row otherwise dominates frame time.
+   * Detected uniform row height, or undefined. Lets the renderer skip
+   * offsetHeight on new rows during fast scroll.
+   *
+   * @returns Height in pixels, or `undefined` if rows are not known to be uniform.
    */
   getUniformHeightHint(): number | undefined {
     return this._isUniformHeight === true ? this._uniformHeightValue : undefined;
   }
 
   /**
-   * Get a measured height for an element, or undefined if not measured
-   * @param index Element index
-   * @returns Measured height or undefined
+   * Hot path: Map.get only. Prune on write, not here.
    *
-   * Hot path: this is called many times per scroll frame. Keep it as a
-   * single Map.get — pruning happens in setMeasuredHeight (the only path
-   * that grows the map), so doing it here would just burn cycles.
+   * @param index Dataset index.
+   * @returns Measured height in pixels, or `undefined` if never measured.
    */
   getMeasuredHeight(index: number): number | undefined {
     return this._measuredHeights.get(index);
   }
   
-  /**
-   * Prune cache entries that are far from the currently accessed element
-   * This prevents memory growth when scrolling through large datasets
-   */
   private _pruneOldCacheEntries(): void {
     const tailStart = this._totalElements > 0
       ? Math.max(0, this._totalElements - PerformanceCache.TAIL_PIN_COUNT)
       : Number.POSITIVE_INFINITY;
     const tailBudget = this._totalElements > 0 ? PerformanceCache.TAIL_PIN_COUNT : 0;
 
-    // Only prune if we've exceeded the threshold (extra room for the pinned tail)
     if (this._measuredHeights.size <= PerformanceCache.CACHE_PRUNE_THRESHOLD + tailBudget) {
       return;
     }
-    
-    // Keep elements within a window around the last accessed index, plus the tail
+
     const keepWindow = PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE / 2;
     const minKeep = Math.max(0, this._lastAccessedIndex - keepWindow);
     const maxKeep = this._lastAccessedIndex + keepWindow;
     
-    // Use iterator for efficient deletion during iteration
     for (const [index] of this._measuredHeights) {
       if (index >= tailStart) continue;
       if (index < minKeep || index > maxKeep) {
@@ -155,9 +135,7 @@ export class PerformanceCache {
     }
     
     const maxSize = PerformanceCache.MAX_MEASURED_HEIGHTS_CACHE + tailBudget;
-    // If still too large (shouldn't happen, but defensive), keep tail + closest entries
     if (this._measuredHeights.size > maxSize) {
-      // GC optimization: Use iterator-based approach instead of Array.from to avoid allocation
       const entries: Array<[number, number]> = [];
       for (const entry of this._measuredHeights.entries()) {
         entries.push(entry);
@@ -172,7 +150,6 @@ export class PerformanceCache {
         return distA - distB;
       });
       
-      // Clear and rebuild with only closest entries (tail sorted first)
       this._measuredHeights.clear();
       for (let i = 0; i < maxSize && i < entries.length; i++) {
         this._measuredHeights.set(entries[i][0], entries[i][1]);
@@ -181,13 +158,10 @@ export class PerformanceCache {
   }
 
   /**
-   * Get cumulative height up to a specific row.
+   * Sum of heights from row 0 up to, but not including, `row`.
    *
-   * @param row Row index to calculate cumulative height for
-   * @returns Total height from row 0 to row-1 (exclusive)
-   *
-   * O(1) when uniform-height has been detected; O(row) otherwise. Not on
-   * the scroll hot path — kept as a public utility for consumers.
+   * @param row Exclusive end index.
+   * @returns Pixels. Unmeasured rows contribute 1px.
    */
   getCumulativeHeight(row: number): number {
     if (row <= 0) return 0;
@@ -205,14 +179,10 @@ export class PerformanceCache {
   }
 
   /**
-   * Find row and offset from absolute scroll position (optimized)
-   * 
-   * @param scrollPixel Absolute scroll position in pixels
-   * @returns Object with row index and pixel offset within that row
-   * @performance O(1) for uniform heights, O(log n) for variable heights with binary search
+   * @param scrollPixel Distance from the top of the dataset in pixels.
+   * @returns `{ element, offset }` for that pixel. Unmeasured rows are 1px.
    */
   findRowFromScrollPosition(scrollPixel: number): { element: number; offset: number } {
-    // Validate input. NaN/Infinity falls through to the (0, 0) safe default.
     if (!Number.isFinite(scrollPixel) || scrollPixel <= 0) {
       return { element: 0, offset: 0 };
     }
@@ -226,7 +196,6 @@ export class PerformanceCache {
           ? Math.max(...this._measuredHeights.keys()) + 1
           : 1_000_000);
 
-    // For uniform heights, use O(1) calculation
     if (this._isUniformHeight && this._uniformHeightValue !== undefined && this._uniformHeightValue > 0) {
       let element = Math.floor(scrollPixel / this._uniformHeightValue);
       element = Math.min(element, maxElementIndex);
@@ -238,15 +207,12 @@ export class PerformanceCache {
       return { element, offset: clampedOffset };
     }
 
-    // Variable heights: walk forward using measurements where available.
-    // Bounded by maxElementIndex so a malformed scrollPixel can never iterate
-    // past the dataset.
     let element = 0;
     let cumulativeHeight = 0;
     while (element <= maxElementIndex) {
       const elementHeight = this._measuredHeights.has(element)
         ? this._measuredHeights.get(element)!
-        : 1; // Minimal placeholder
+        : 1;
 
       if (cumulativeHeight + elementHeight > scrollPixel) {
         break;
@@ -265,28 +231,20 @@ export class PerformanceCache {
     return { element, offset };
   }
 
-  /**
-   * Invalidate all performance caches
-   * Call this method when row heights change or dataset is modified
-   */
   invalidateCache(): void {
     this._isUniformHeight = undefined;
     this._uniformHeightValue = undefined;
-    // Keep measured heights since they are real measurements
-    // this._measuredHeights.clear(); // Only clear if data actually changed
+    // Heights stay — they are still valid measurements.
   }
 
-  /**
-   * Clear all caches including measured heights when dataset changes
-   * Call this method when the actual data rows change (not just resizing)
-   */
+  /** Dataset identity changed, not just a resize. */
   clearAllCaches(): void {
     this.invalidateCache();
     this._measuredHeights.clear();
   }
 
   /**
-   * Get cache statistics for debugging
+   * @returns Debug snapshot of cache size and uniform-height detection.
    */
   getCacheStats() {
     return {

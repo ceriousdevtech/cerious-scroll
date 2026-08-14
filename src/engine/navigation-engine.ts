@@ -1,6 +1,4 @@
-/**
- * @fileoverview NavigationEngine delegates scroll math and position changes.
- */
+/** Delta / jump / percentage → (element, offset). Side effects go through deps. */
 
 import { ScrollResult } from '../types/index.js';
 import { BoundaryGuardian } from './boundary-guardian.js';
@@ -26,9 +24,12 @@ export class NavigationEngine {
   private viewportHeight: number;
   private readonly guardian: BoundaryGuardian;
   
-  // GC optimization: Reuse ScrollResult object to avoid allocations during scroll
+  // Returned from scroll(); mutated in place — copy if you stash it.
   private readonly _scrollResult: ScrollResult = { element: 0, offset: 0 };
 
+  /**
+   * @param deps Camera, height, and scrollbar callbacks.
+   */
   constructor(private readonly deps: NavigationEngineDeps) {
     this.totalElements = deps.totalElements;
     this.viewportHeight = deps.viewportHeight;
@@ -40,6 +41,10 @@ export class NavigationEngine {
     });
   }
 
+  /**
+   * @param totalElements Dataset length.
+   * @param viewportHeight Usable height in pixels (header inset already subtracted).
+   */
   updateConfig(totalElements: number, viewportHeight: number): void {
     this.totalElements = totalElements;
     this.viewportHeight = viewportHeight;
@@ -53,6 +58,9 @@ export class NavigationEngine {
    * full correction. Returns the corrected position, or null if none was needed
    * (i.e. not scrolled near the bottom). Does not touch the scrollbar — the
    * caller re-syncs it after.
+   *
+   * @param viewportHeight Usable height in pixels after the resize.
+   * @returns Corrected `{ element, offset }`, or `null` if no pull was needed.
    */
   reanchorBottom(viewportHeight: number): ScrollResult | null {
     if (Number.isFinite(viewportHeight) && viewportHeight > 0) {
@@ -68,6 +76,11 @@ export class NavigationEngine {
     return this._scrollResult;
   }
 
+  /**
+   * @param deltaY Pixels to move (positive = down).
+   * @param viewportHeight Usable height in pixels.
+   * @returns Camera after the move. Same object each call — copy if you stash it.
+   */
   scroll(deltaY: number, viewportHeight: number): ScrollResult {
     // Validate inputs. NaN/Infinity here would propagate into offset and
     // permanently corrupt scroll state, so refuse them with a no-op result
@@ -184,12 +197,16 @@ export class NavigationEngine {
 
     this.deps.syncScrollbar();
     
-    // GC optimization: Reuse result object instead of creating new one
+    // Same _scrollResult instance every call.
     this._scrollResult.element = element;
     this._scrollResult.offset = offset;
     return this._scrollResult;
   }
 
+  /**
+   * @param percentage `0` = top, `100` = bottom. Clamped.
+   * @returns Camera after the jump.
+   */
   handleScrollPercentage(percentage: number): ScrollResult {
     if (!Number.isFinite(percentage)) {
       return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
@@ -226,6 +243,10 @@ export class NavigationEngine {
     return this.scroll(approximatePixelDelta, this.viewportHeight);
   }
 
+  /**
+   * @param elementIndex Target index. Clamped. `Number.MAX_SAFE_INTEGER` = end.
+   * @returns Camera after the jump (offset 0, or true-bottom if past the last visible row).
+   */
   jumpToElement(elementIndex: number): ScrollResult {
     // Validate input - non-finite values are programmer errors that would
     // otherwise silently no-op.
@@ -262,6 +283,12 @@ export class NavigationEngine {
     return { element: target, offset: 0 };
   }
 
+  /**
+   * @param elementIndex Target index. Clamped.
+   * @param offset Pixels into that row. Clamped to `[0, height - 1]`.
+   * @param skipScrollbarSync When true, do not write the native strip (thumb-drag path).
+   * @returns Camera after the jump.
+   */
   jumpToPosition(elementIndex: number, offset: number, skipScrollbarSync = false): ScrollResult {
     if (!Number.isFinite(elementIndex) || !Number.isFinite(offset)) {
       return { element: this.deps.getCurrentElement(), offset: this.deps.getScrollOffset() };
@@ -292,6 +319,7 @@ export class NavigationEngine {
     return { element, offset: clampedOffset };
   }
 
+  /** Camera to element 0, offset 0. */
   reset(): void {
     this.deps.updateScrollPosition(0, 0);
     this.deps.requestDisplayUpdate();

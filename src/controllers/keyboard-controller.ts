@@ -1,6 +1,4 @@
-/**
- * @fileoverview Dedicated keyboard navigation controller.
- */
+/** Arrow / page / home / end. */
 
 import { KeyboardNavigationOptions, ScrollResult } from '../types/index.js';
 
@@ -14,7 +12,7 @@ interface KeyboardControllerDeps {
 }
 
 export class KeyboardController {
-  // GC optimization: Reuse event detail object to avoid allocations
+  // Mutated in place and passed as CustomEvent.detail.
   private readonly _eventDetail: {
     percentage: number;
     currentElement: number;
@@ -27,6 +25,12 @@ export class KeyboardController {
 
   constructor(private readonly deps: KeyboardControllerDeps) {}
 
+  /**
+   * @param container Host. Given `tabindex="0"` if missing so it can take focus.
+   * @param keyboardOptions Optional overrides.
+   * @param onViewportChange After a handled key.
+   * @returns Detach function.
+   */
   attach(
     container: HTMLElement,
     keyboardOptions?: KeyboardNavigationOptions,
@@ -84,7 +88,7 @@ export class KeyboardController {
         event.preventDefault();
         event.stopPropagation();
         
-        // GC optimization: Reuse event detail object instead of creating new one
+        // Reuse _eventDetail; listeners must not retain it across events.
         this._eventDetail.percentage = this.deps.getScrollPercentage();
         this._eventDetail.currentElement = this.deps.getCurrentElement();
         this._eventDetail.scrollOffset = this.deps.getScrollOffset();

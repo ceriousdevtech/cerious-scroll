@@ -1,21 +1,20 @@
 /**
- * @fileoverview Callback Type Definitions for CeriousScroll
- * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  */
 
 /**
- * Type definition for element height calculation function
- * @callback ElementHeightCalculator
- * @param {number} index - Zero-based element index
- * @returns {number} Height in pixels for the specified element
+ * Resolve a row's height in pixels.
+ *
+ * @param index Zero-based dataset index.
+ * @returns Height in pixels for that row.
  */
 export type ElementHeightCalculator = (index: number) => number;
 
 /**
- * Type definition for element rendering and measurement callback
- * @callback ElementRenderer
- * @param {number} index - Zero-based element index
- * @param {HTMLElement} container - Container element to render the element into
+ * Fill `container` for `index`. The engine measures `offsetHeight` after you
+ * return — a returned height is ignored.
+ *
+ * @param index Zero-based dataset index.
+ * @param container Row element to populate.
  */
 export type ElementRenderer = (index: number, container: HTMLElement) => void;

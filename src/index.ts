@@ -1,16 +1,10 @@
 /**
- * @fileoverview CeriousScroll Main Export
- * 
  * Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.
  */
 
-// Export the main CeriousScroll class
 export { CeriousScroll } from './cerious-scroll.js';
-
-// Export all types for consumers
 export * from './types/index.js';
 
-// Export individual modules for advanced usage
 export { PerformanceCache } from './core/performance-cache.js';
 export { ViewportStateCalculator } from './core/viewport-state.js';
 export { NativeScrollbar } from './features/native-scrollbar.js';

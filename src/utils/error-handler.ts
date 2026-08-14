@@ -1,13 +1,5 @@
-/**
- * @fileoverview Error Handling Utilities for CeriousScroll
- * 
- * Provides structured error handling, validation, and error types for better
- * debugging and developer experience.
- */
+/** Library errors. Most call sites still throw `Error`; these exist for typed catching. */
 
-/**
- * Base error class for CeriousScroll errors
- */
 export class CeriousScrollError extends Error {
   constructor(
     message: string,
@@ -16,17 +8,12 @@ export class CeriousScrollError extends Error {
   ) {
     super(message);
     this.name = 'CeriousScrollError';
-    
-    // Maintains proper stack trace for where error was thrown (only available on V8)
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, CeriousScrollError);
     }
   }
 }
 
-/**
- * Configuration validation error
- */
 export class ConfigurationError extends CeriousScrollError {
   constructor(message: string, context?: Record<string, any>) {
     super(message, 'CONFIG_ERROR', context);
@@ -34,9 +21,6 @@ export class ConfigurationError extends CeriousScrollError {
   }
 }
 
-/**
- * Invalid state error
- */
 export class InvalidStateError extends CeriousScrollError {
   constructor(message: string, context?: Record<string, any>) {
     super(message, 'INVALID_STATE', context);
@@ -44,9 +28,6 @@ export class InvalidStateError extends CeriousScrollError {
   }
 }
 
-/**
- * Boundary violation error
- */
 export class BoundaryError extends CeriousScrollError {
   constructor(message: string, context?: Record<string, any>) {
     super(message, 'BOUNDARY_ERROR', context);
@@ -81,10 +62,8 @@ export class ErrorHandler {
     context?: Record<string, any>,
     recovery?: () => void
   ): void {
-    // Log error
     console.error('CeriousScroll Error:', error.message, context);
-    
-    // Notify listeners
+
     this.errorListeners.forEach(listener => {
       try {
         listener(error);
@@ -93,7 +72,6 @@ export class ErrorHandler {
       }
     });
     
-    // Attempt recovery
     if (recovery) {
       try {
         recovery();

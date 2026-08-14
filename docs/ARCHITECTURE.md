@@ -63,7 +63,7 @@ scrollOffset = 25px (25 pixels into element 1000)
 The viewport consists of:
 - **Visible elements**: Elements currently in the viewport
 - **Overscan buffer**: 5 elements above and below (prevents flash during scrolling)
-- **Last element tracker**: Always renders the last element for boundary detection
+- **Tail height pin**: After the first measure, up to ~50 end-of-dataset rows are measured, then dropped from the DOM. `PerformanceCache` pins the last **80** height entries so prune at the top of a large list cannot evict them. True-bottom math reads those cached heights — it does not keep sentinel nodes mounted every frame.
 
 ```
 ┌─────────────────────────────┐
@@ -76,8 +76,7 @@ The viewport consists of:
 ├─────────────────────────────┤ ← Viewport Bottom
 │   Buffer (5 elements)       │
 └─────────────────────────────┘
-│   Last Element (boundary)   │
-└─────────────────────────────┘
+     Tail heights cached (not live DOM)
 ```
 
 ### 3. Measurement-Driven Incremental Rendering
@@ -184,26 +183,33 @@ getElementViewportPosition(index)
 
 **Cache Limits:**
 ```typescript
-MAX_MEASURED_HEIGHTS_CACHE = 200    // Max measured heights stored
-CACHE_PRUNE_THRESHOLD = 250         // Prune trigger point
-MAX_CUMULATIVE_CACHE_SIZE = 300     // Max cumulative heights
+MAX_MEASURED_HEIGHTS_CACHE = 200    // Sliding window around the cursor
+CACHE_PRUNE_THRESHOLD = 250         // Prune trigger (plus tail budget)
+TAIL_PIN_COUNT = 80                 // Last N indices never pruned
 ```
 
 **Pruning Strategy:**
 ```typescript
-// Keep only heights near current position
-const pruneDistance = 100;
-for (const [index, height] of measuredHeights) {
-  if (Math.abs(index - lastAccessedIndex) > pruneDistance) {
+// Keep heights near the cursor, plus the pinned tail.
+// Writes prune; reads do not. If the tail were evicted while the
+// camera is at the top of a large list, the renderer would remount
+// ~50 sentinel rows every frame just to re-measure them.
+const tailStart = totalElements - TAIL_PIN_COUNT;
+const keepWindow = MAX_MEASURED_HEIGHTS_CACHE / 2;
+for (const [index] of measuredHeights) {
+  if (index >= tailStart) continue; // pinned
+  if (index < lastAccessedIndex - keepWindow ||
+      index > lastAccessedIndex + keepWindow) {
     measuredHeights.delete(index);
   }
 }
 ```
 
 **Why this achieves O(1) memory:**
-- Cache size is fixed regardless of dataset size
+- Cache size is fixed regardless of dataset size (window + 80 tail slots)
 - Pruning removes old entries as new ones are added
-- Maximum memory: ~200 heights × 8 bytes = 1.6KB + overhead
+- True-bottom still works after scrolling back to the top
+- Maximum memory: ~280 heights × 8 bytes ≈ 2.2KB + overhead
 
 ### 3. ViewportRenderer
 
@@ -239,10 +245,12 @@ for (const [index, height] of measuredHeights) {
    - Render next 5 elements after viewport
    - Measure each for future use
 
-4. Render bottom boundary elements:
-   - Render up to 50 elements from dataset end
-   - Enables accurate end-of-scroll detection
-   - Limited count prevents initial load lockup
+4. Measure bottom-boundary heights (first time only):
+   - Walk up to 50 indices from the dataset end
+   - If any height is missing, mount those rows, measure, then drop them
+   - Once cached (and pinned), skip the live DOM sentinels — repositioning
+     ~50 extra nodes every frame was wasted work
+   - Limited count prevents initial-load lockup
 
 5. Remove out-of-range elements:
    - Elements outside visible + overscan range
@@ -343,7 +351,13 @@ scroll(deltaY: number) {
 
 **Boundary Correction:**
 
-Prevents over-scrolling past the last element:
+Prevents over-scrolling past the last element. After the tail is measured,
+`getTrueBottomPosition()` is known. If the camera is **not** past that
+position, the overshoot walk (`getElementViewportPosition(last)`) is skipped —
+it is O(distance) and a no-op in that branch. The walk still runs on the first
+frames / short content, before the last row has a cached height. Unmeasured
+last-row walks only start when the camera is within 100 of the end (avoids O(n)
+on huge lists before the first render).
 
 ```typescript
 calculateBottomBoundaryCorrection(element, offset) {
@@ -551,7 +565,8 @@ Here's a complete trace of what happens when the user scrolls:
    scrollbarTop = cumulativeHeight + 20
 
 5. Call onScroll Callback
-   └─→ updateDisplay()
+   └─→ app calls renderViewport() (this is the supported render hook
+       for every input path, including native scrollbar)
 
 6. ViewportRenderer.renderViewport()
    a. Calculate visible range:
@@ -752,9 +767,19 @@ handleScrollbarScroll(event) {
 ```
 
 **Applied to:**
-- Scrollbar scroll events
-- Touch move events
+- Scrollbar scroll events (one engine `scroll` + `onScroll` per animation frame)
+- Touch move events (vertical delta accumulated; velocity sampled every move)
 - Momentum animation
+
+Mouse-wheel notches stay instant. Trackpad wheel can optionally smooth (`wheel.smooth`).
+
+### 2b. Uniform-height and table hot path
+
+When `PerformanceCache.getUniformHeightHint()` is set (ten consecutive equal measured heights), `getElementViewportPosition` is O(1) instead of walking from the camera. Newly created rows can skip a layout-forcing `offsetHeight` read during fast scroll.
+
+`layout: 'table'` caches `getBoundingClientRect` of `<thead>` as `getTopInset`. Invalidate at the start of `renderViewport`, between inset-before/after (async header), on resize, and on `invalidateCache` / `clearAllCaches`. `scroll()` uses the cached inset so the last row is not clipped behind the header.
+
+`AbsolutePlacement` does not rewrite `position: absolute` every frame, and skips writing `top` when the value is unchanged.
 
 ### 3. Periodic DOM Cleanup
 
@@ -782,12 +807,15 @@ Aggressive cleanup keeps only relevant measurements:
 
 ```typescript
 _pruneOldCacheEntries() {
-  if (measuredHeights.size <= PRUNE_THRESHOLD) return;
-  
-  const pruneDistance = 100; // Keep ±100 from current
-  
-  for (const [index, height] of measuredHeights) {
-    if (Math.abs(index - lastAccessedIndex) > pruneDistance) {
+  // Threshold includes room for the pinned tail
+  if (measuredHeights.size <= PRUNE_THRESHOLD + TAIL_PIN_COUNT) return;
+
+  const tailStart = totalElements - TAIL_PIN_COUNT;
+  const keepWindow = MAX_MEASURED_HEIGHTS_CACHE / 2;
+
+  for (const [index] of measuredHeights) {
+    if (index >= tailStart) continue;
+    if (Math.abs(index - lastAccessedIndex) > keepWindow) {
       measuredHeights.delete(index);
     }
   }
@@ -795,12 +823,12 @@ _pruneOldCacheEntries() {
 ```
 
 **Called from:**
-- Every `setMeasuredHeight()`
-- Every `getMeasuredHeight()`
+- Every `setMeasuredHeight()` (writes prune; reads do not)
 
 **Result:**
-- Maximum 200 heights cached (1.6KB)
+- Sliding window of ~200 heights plus 80 pinned tail entries
 - No memory growth over time
+- True-bottom math stays valid after a prune at the top of the list
 
 ### 5. Early Returns and Short Circuits
 
@@ -868,11 +896,15 @@ container.addEventListener('wheel', (e) => {
 2. touchmove:
    - Calculate deltaY = currentY - lastY
    - Invert for natural scrolling: deltaY *= -1
-   - scroll(deltaY)
-   - Track for velocity: touchHistory.push({time, y})
+   - Accumulate deltaY; schedule one scroll + onScroll per animation frame
+     (same idea as native-scrollbar 1.0.8 — browsers fire many touchmoves
+     per frame; applying each one walks the engine and re-renders)
+   - Velocity is still sampled on every move
    - Update lastY, lastTime
 
 3. touchend:
+   - Flush any coalesced delta before momentum so the flick starts from
+     the real finger-up position
    - Calculate velocity from recent history
    - If enableMomentum:
      * Start momentum animation
@@ -962,30 +994,44 @@ new CeriousScroll(
 
 ```typescript
 interface CeriousScrollOptions {
-  // Rendering
-  overscanCount?: number;        // Buffer size (default: 5)
-  
-  // Input handlers
-  wheel?: { enabled: boolean };  // Mouse wheel (default: true)
+  // Input
+  wheel?: {
+    enabled?: boolean;                   // default true
+    emitViewportChangeEvent?: boolean;   // default true
+    coalesceViewportChangeEvent?: boolean; // default false
+    smooth?: boolean;                    // trackpad only; default true
+    smoothFactor?: number;               // default 0.22
+  };
   touch?: {
-    enabled: boolean;            // Touch gestures (default: true)
-    enableMomentum: boolean;     // Momentum scrolling (default: true)
-    momentumFriction: number;    // 0.0-1.0 (default: 0.95)
+    enabled?: boolean;
+    enableMomentum?: boolean;            // default true
+    momentumFriction?: number;           // default 0.95
+    momentumThreshold?: number;          // px/ms, default 0.1
+    getHorizontalScrollTarget?: () => HTMLElement | null | undefined;
+    axisLockThreshold?: number;          // default 8
   };
   keyboard?: {
-    enabled: boolean;            // Keyboard nav (default: true)
-    arrowKeySpeed: number;       // px per arrow key (default: 120)
-    pageKeySpeed: number;        // viewport heights (default: 1.0)
+    enabled?: boolean;
+    arrowKeySpeed?: number;              // px, default 120
+    pageKeySpeed?: number;               // viewport fraction, default 1.0
     onKeyDown?: (event, scroller) => boolean;
   };
-  
-  // Scrollbar
-  scrollContainer?: HTMLElement; // Container for scrollbar (default: container)
-  
-  // Callbacks
-  onScroll?: () => void;         // Called after every scroll
+
+  attachScrollbar?: boolean;             // default true
+  autoResize?: boolean;                  // default true
+  observeContentChanges?: boolean;       // default true
+
+  // Drive rendering from this callback. It runs for wheel, touch, keyboard,
+  // native scrollbar, and resize. `cerious-viewport-change` is wheel/touch/
+  // keyboard only; the scrollbar emits a different `viewport-change` event.
+  onScroll?: () => void;
+
+  layout?: 'absolute' | 'table';         // default 'absolute'
+  table?: TableFlowOptions;              // header populator, class names
 }
 ```
+
+Overscan is a constant (`OVERSCAN_BUFFER_SIZE = 5`), not a constructor option.
 
 ### Core Methods
 
@@ -1085,10 +1131,12 @@ interface ScrollResult {
 #### jumpToElement()
 
 ```typescript
-jumpToElement(index: number): void
+jumpToElement(index: number): ScrollResult
 ```
 
-Jump directly to an element (offset = 0).
+Jump directly to an element (offset = 0). Out-of-range indices are clamped.
+`Number.MAX_SAFE_INTEGER` is the keyboard End sentinel (jump to last row /
+true bottom).
 
 **Parameters:**
 - `index`: Element index (0-based)
@@ -1099,24 +1147,10 @@ Jump directly to an element (offset = 0).
 scroller.jumpToElement(1000);  // Jump to element 1000
 ```
 
-#### jumpToPosition()
-
-```typescript
-jumpToPosition(element: number, offset: number): void
-```
-
-Jump to a specific element + offset position.
-
-**Parameters:**
-- `element`: Element index
-- `offset`: Pixel offset within the element
-
-**Example:**
-
-```typescript
-// Jump to element 500, 25 pixels into it
-scroller.jumpToPosition(500, 25);
-```
+Offset-into-row jumps are not on the public `CeriousScroll` facade.
+`NavigationEngine.jumpToPosition(element, offset)` exists for the native
+scrollbar (thumb drag maps a pixel `scrollTop` onto an element + offset).
+Consumers who need a percentage jump should use `handleScrollPercentage`.
 
 #### handleScrollPercentage()
 
@@ -1195,13 +1229,14 @@ readonly endElement: number;         // Last rendered element
 
 ### Lifecycle
 
-#### destroy()
+#### dispose()
 
 ```typescript
-destroy(): void
+dispose(): void
 ```
 
-Clean up event listeners and resources.
+Detach wheel / touch / keyboard / resize / content observers and the native
+scrollbar. Call this when the container leaves the DOM.
 
 **Example:**
 
@@ -1210,8 +1245,7 @@ const scroller = new CeriousScroll(container, 1000, options);
 
 // ... use scroller ...
 
-// Clean up
-scroller.destroy();
+scroller.dispose();
 ```
 
 ---
@@ -1677,11 +1711,11 @@ onScroll: () => {
 
 ### 5. Clean Up Resources
 
-Always call destroy:
+Always call dispose:
 
 ```typescript
 componentWillUnmount() {
-  this.scroller.destroy();
+  this.scroller.dispose();
 }
 ```
 

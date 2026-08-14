@@ -1,9 +1,4 @@
-/**
- * @fileoverview Viewport state calculation utilities for CeriousScroll
- *
- * Encapsulates the logic for deriving derived viewport metrics so the main
- * CeriousScroll class can focus on orchestration rather than bookkeeping.
- */
+/** Derived display fields (visible range, percentage, virtual-track top). */
 
 import { ElementHeightCalculator } from '../types/index.js';
 
@@ -26,12 +21,15 @@ interface ViewportStateDeps {
   virtualTrackHeight: number;
 }
 
-/**
- * Computes viewport metadata from the current scroll state.
- */
 export class ViewportStateCalculator {
+  /**
+   * @param deps Live getters for camera, heights, and viewport size.
+   */
   constructor(private readonly deps: ViewportStateDeps) {}
 
+  /**
+   * @returns Visible range (plus overscan), scroll percentage, and virtual-track top.
+   */
   calculate(): ViewportSnapshot {
     const totalElements = Math.max(0, this.deps.totalElements());
     const currentElement = Math.min(Math.max(this.deps.getCurrentElement(), 0), Math.max(totalElements - 1, 0));
