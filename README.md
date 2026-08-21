@@ -202,6 +202,43 @@ By submitting a pull request, you agree to the **Contributor License Agreement (
 
 ---
 
+
+## Masonry
+
+```js
+const scroller = new CeriousScroll(host, 200000, {
+  layout: 'masonry',
+  masonry: {
+    // Must be pure — called for cards that are not in the DOM.
+    getItemHeight: (i, columnWidth) => Math.round(columnWidth / ratio(i)) + 44,
+    renderItem: (i, el) => { el.innerHTML = card(i); },
+    gap: 14,
+    targetColumnWidth: 280
+  },
+  onScroll: () => scroller.renderViewport(host.clientHeight, host, () => {})
+});
+```
+
+Cards flow into the shortest column, each keeping its own height. `totalElements`
+is the card count; `jumpToItem(index)` navigates in card space. Column count is
+responsive by default (`targetColumnWidth`, `minColumns`, `maxColumns`) or fixed
+via `columns`, and a width change relayouts while holding the card nearest the
+viewport top in place.
+
+Masonry comes in two variants with **different determinism guarantees**, chosen
+by whether you supply `getItemHeight`:
+
+| | **oracle** (`canonical`) | **dynamic** (`local`) |
+|---|---|---|
+| heights from | your function | the DOM |
+| a card's column depends on | the dataset | the dataset **and the route** |
+| random access | O(n) preprocessing | **O(1)** |
+
+Supply `getItemHeight` when a card's position is part of your product — deep
+links, shared coordinates, reproducible layouts. Omit it when height is only
+knowable by rendering, which is most text. `scroller.masonryDeterminism` reports
+which guarantee is in force. See [docs/MASONRY.md](docs/MASONRY.md).
+
 ## Copyright
 
 Copyright © 2024–2026  

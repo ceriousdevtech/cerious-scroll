@@ -27,9 +27,9 @@ const MOUSE_WHEEL_NOTCH_MIN_PX = 100;
  * a round number. Inertial smoothing must only apply to trackpads; a mouse wheel
  * that keeps gliding after the user stops feels wrong, so we err toward "wheel".
  */
-function isLikelyTrackpad(e: WheelEvent): boolean {
+function isLikelyTrackpad(e: WheelEvent, notchThresholdPx: number): boolean {
   if (e.deltaMode !== 0) return false;                 // DOM_DELTA_LINE / _PAGE => wheel
-  return Math.abs(e.deltaY) < MOUSE_WHEEL_NOTCH_MIN_PX; // small px => trackpad, large => wheel
+  return Math.abs(e.deltaY) < notchThresholdPx;        // small px => trackpad, large => wheel
 }
 
 interface WheelControllerDeps {
@@ -66,11 +66,15 @@ export class WheelController {
     onScroll?: (result: ScrollResult) => void,
     wheelOptions?: WheelNavigationOptions
   ): () => void {
-    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor'>> = {
+    const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor' | 'notchThresholdPx'>> = {
       enabled: wheelOptions?.enabled !== false,
       emitViewportChangeEvent: wheelOptions?.emitViewportChangeEvent !== false,
       coalesceViewportChangeEvent: wheelOptions?.coalesceViewportChangeEvent === true,
       smooth: wheelOptions?.smooth !== false,
+      notchThresholdPx:
+        typeof wheelOptions?.notchThresholdPx === 'number' && wheelOptions.notchThresholdPx > 0
+          ? wheelOptions.notchThresholdPx
+          : MOUSE_WHEEL_NOTCH_MIN_PX,
       smoothFactor: typeof wheelOptions?.smoothFactor === 'number' && wheelOptions.smoothFactor > 0 && wheelOptions.smoothFactor <= 1
         ? wheelOptions.smoothFactor
         : 0.22,
@@ -142,7 +146,7 @@ export class WheelController {
       // Apply inertial smoothing ONLY to trackpad input. Discrete mouse-wheel
       // notches go through the instant path so they stop the moment the wheel
       // stops — matching native OS behavior — even when `smooth` is enabled.
-      if (!options.smooth || !isLikelyTrackpad(event)) {
+      if (!options.smooth || !isLikelyTrackpad(event, options.notchThresholdPx)) {
         const result = this.deps.scroll(dy, viewportHeight);
         emitChange(result);
         onScroll?.(result);

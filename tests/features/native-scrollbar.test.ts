@@ -222,7 +222,7 @@ describe('NativeScrollbar gutter reservation', () => {
     expect(container.style.paddingRight === '' || container.style.paddingRight === '0px').toBe(true);
   });
 
-  it('reserves a gutter when the platform has classic (fixed-width) scrollbars', () => {
+  it('reserves a gutter exactly as wide as the strip', () => {
     const sb = makeScrollbar();
     // Force the measured-metrics cache to a classic 17px scrollbar.
     (sb as any)._cachedScrollbarWidth = 17;
@@ -230,6 +230,55 @@ describe('NativeScrollbar gutter reservation', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     sb.createNativeScrollbar(container);
-    expect(container.style.paddingRight).toBe('19px'); // 17 + 2
+    // Previously 19px — the strip width plus an unexplained 2. That surplus is a
+    // dead sliver between the content edge and the strip, which any layout that
+    // measures its own usable width has to compensate for.
+    expect(container.style.paddingRight).toBe('17px');
+  });
+
+  it('gives back exactly what it reserved on detach', () => {
+    const sb = makeScrollbar();
+    (sb as any)._cachedScrollbarWidth = 17;
+    (sb as any)._cachedOverlayScrollbars = false;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    sb.createNativeScrollbar(container);
+    expect(container.style.paddingRight).toBe('17px');
+
+    // Detach used to subtract a hard-coded 19 regardless of what was added, so
+    // any strip that was not 17px wide left the host 2px narrower each cycle.
+    sb.detachScrollbar(container);
+    expect(parseFloat(container.style.paddingRight) || 0).toBe(0);
+  });
+
+  it('survives repeated attach/detach without eroding the host', () => {
+    const sb = makeScrollbar();
+    (sb as any)._cachedScrollbarWidth = 17;
+    (sb as any)._cachedOverlayScrollbars = false;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    for (let i = 0; i < 5; i++) {
+      sb.createNativeScrollbar(container);
+      sb.detachScrollbar(container);
+    }
+    expect(parseFloat(container.style.paddingRight) || 0).toBe(0);
+  });
+
+  it("leaves the host's own padding alone when it already clears the strip", () => {
+    const sb = makeScrollbar();
+    (sb as any)._cachedScrollbarWidth = 17;
+    (sb as any)._cachedOverlayScrollbars = false;
+    const container = document.createElement('div');
+    container.style.paddingRight = '40px';
+    document.body.appendChild(container);
+
+    sb.createNativeScrollbar(container);
+    expect(container.style.paddingRight).toBe('40px'); // nothing to add
+
+    // ...and detach must not claw back padding it never contributed.
+    sb.detachScrollbar(container);
+    expect(container.style.paddingRight).toBe('40px');
   });
 });

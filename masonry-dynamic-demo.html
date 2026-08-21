@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Masonry · Dynamic Heights</title>
+    <meta name="description" content="Masonry virtual scrolling where card heights are measured from the DOM — no getItemHeight, wildly unpredictable content.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        /* ---- Dynamic-height masonry ----
+         * No getItemHeight is supplied, so every card's height comes from the
+         * DOM. Nothing here may set an explicit height: the content decides. */
+        .cs-card {
+            border-radius: 10px;
+            border: 1px solid var(--border, rgba(255,255,255,.10));
+            background: var(--panel, rgba(255,255,255,.05));
+            padding: 12px 14px;
+            overflow: hidden;
+        }
+        .cs-card__kind {
+            font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--muted, #8b949e); margin-bottom: 6px;
+        }
+        .cs-card__id { float: right; font-variant-numeric: tabular-nums; opacity: .75; }
+        .cs-card p  { margin: 0; font-size: 0.84rem; line-height: 1.5; color: #c9d1d9; }
+        .cs-card ul { margin: 4px 0 0; padding-left: 18px; }
+        .cs-card li { font-size: 0.82rem; line-height: 1.5; color: #c9d1d9; margin: 2px 0; }
+        .cs-card__quote {
+            border-left: 3px solid var(--accent, #1f6feb);
+            padding-left: 10px; font-style: italic; color: #a5b3c2;
+        }
+        .cs-card__band { border-radius: 6px; margin-top: 8px; }
+        #scroll [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
+    </style>
+    <script src="demo-bootstrap.js?v=20260611" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🪜 Masonry · dynamic heights</h1>
+                <p>
+                    No <code>getItemHeight</code>. Every card's height is <strong>measured from the DOM</strong> —
+                    one-liners beside walls of text, lists, quotes and bands, all unpredictable.
+                    Columns still balance and the gutter stays exact.
+                </p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label>Cards:
+                    <select id="size">
+                        <option value="1000">1,000</option>
+                        <option value="50000" selected>50,000</option>
+                        <option value="500000">500,000</option>
+                    </select>
+                </label>
+                <span>Jump to
+                    <input id="jump" type="number" min="0" value="25000" style="width:100px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+                <button id="topBtn" type="button">Top</button>
+                <button id="endBtn" type="button">End</button>
+                <button id="reshuffleBtn" type="button" title="Re-roll every card's content">Reshuffle</button>
+                <span class="stat" id="stat">scroll to see live stats</span>
+            </div>
+
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">50,000</strong></span>
+                <span>Heights: <strong>measured</strong></span>
+                <span id="detLabel">Determinism: –</span>
+                <span id="domLabel">DOM cards: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260611"></script>
+    <script src="demo-bootstrap.js?v=20260611"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+            const host = document.getElementById('scroll');
+            let total = 50000;
+            let seed = 1;
+            let scroller = null;
+
+            const WORDS = ('virtual scroll masonry column height measure viewport segment frontier ' +
+                'anchor gutter card render engine layout dataset pixel budget cache').split(' ');
+            const text = (i, salt, n) => {
+                const out = [];
+                for (let k = 0; k < n; k++) out.push(WORDS[Math.floor(hash(i * 31 + k, salt + seed) * WORDS.length)]);
+                return out.join(' ');
+            };
+
+            // Seven content kinds, each producing a very different height — and
+            // none of them computable without laying the card out.
+            function renderCard(i, el) {
+                el.className = 'cs-card';
+                const kind = Math.floor(hash(i, 3 + seed) * 7);
+                const head = '<div class="cs-card__kind"><span class="cs-card__id">' +
+                    i.toLocaleString() + '</span>' + ['note','thread','list','quote','band','blurb','log'][kind] + '</div>';
+                let body;
+                switch (kind) {
+                    case 0: body = '<p>' + text(i, 11, 4) + '</p>'; break;
+                    case 1: body = '<p>' + text(i, 12, 60) + '</p>'; break;
+                    case 2: {
+                        const n = 3 + Math.floor(hash(i, 13 + seed) * 9);
+                        let li = '';
+                        for (let k = 0; k < n; k++) li += '<li>' + text(i + k, 14, 4) + '</li>';
+                        body = '<ul>' + li + '</ul>'; break;
+                    }
+                    case 3: body = '<p class="cs-card__quote">' + text(i, 15, 18) + '</p>'; break;
+                    case 4: {
+                        const h = 40 + Math.floor(hash(i, 16 + seed) * 260);
+                        const hue = Math.floor(hash(i, 17 + seed) * 360);
+                        body = '<div class="cs-card__band" style="height:' + h + 'px;background:linear-gradient(160deg,hsl(' +
+                            hue + ' 60% 55%),hsl(' + ((hue + 40) % 360) + ' 60% 42%))"></div>'; break;
+                    }
+                    case 5: body = '<p>' + text(i, 18, 12) + '</p>'; break;
+                    default: body = '<p>' + text(i, 19, 30) + '</p>';
+                }
+                el.innerHTML = head + body;
+            }
+
+            function build() {
+                if (scroller) scroller.dispose();
+                host.textContent = '';
+                const Ctor = window.CeriousScroll.CeriousScroll || window.CeriousScroll;
+                scroller = new Ctor(host, total, {
+                    layout: 'masonry',
+                    wheel: { smooth: true, notchThresholdPx: Infinity },
+                    masonry: {
+                        // getItemHeight deliberately omitted -> heights measured.
+                        renderItem: renderCard,
+                        gap: 14,
+                        targetColumnWidth: 300,
+                        // segmentSize left at the dynamic-mode default: it is the
+                        // measurement quantum, and measuring is what costs here.
+                        estimatedItemHeight: 260
+                    },
+                    onScroll: draw
+                });
+                draw();
+            }
+
+            function draw() {
+                scroller.renderViewport(host.clientHeight, host, function () {});
+                const n = host.querySelectorAll('[data-element-index]').length;
+                document.getElementById('stat').textContent =
+                    'card ' + scroller.currentElement.toLocaleString() +
+                    ' · ' + scroller.scrollPercentage.toFixed(1) + '%';
+                document.getElementById('detLabel').innerHTML =
+                    'Determinism: <strong>' + scroller.masonryDeterminism + '</strong>';
+                document.getElementById('domLabel').innerHTML =
+                    'DOM cards: <strong>' + n + '</strong> of ' + total.toLocaleString();
+            }
+
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                build();
+            });
+            document.getElementById('reshuffleBtn').addEventListener('click', () => { seed++; build(); });
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) { scroller.jumpToItem(i); draw(); }
+            });
+            document.getElementById('topBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(0); draw();
+            });
+            document.getElementById('endBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(100); draw();
+            });
+
+            build();
+        })();
+    </script>
+</body>
+</html>

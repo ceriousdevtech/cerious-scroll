@@ -181,6 +181,11 @@ getElementViewportPosition(index)
 - Cache pruning and memory management
 - Total content height calculation
 
+**Authoritative mode:** supplying a `heightProvider` bypasses the map and its
+pruning entirely. The window below is right for heights that can only be
+observed by measuring; it is wrong for heights that can be computed, where
+eviction is lossy rather than merely cold.
+
 **Cache Limits:**
 ```typescript
 MAX_MEASURED_HEIGHTS_CACHE = 200    // Sliding window around the cursor
@@ -210,6 +215,42 @@ for (const [index] of measuredHeights) {
 - Pruning removes old entries as new ones are added
 - True-bottom still works after scrolling back to the top
 - Maximum memory: ~280 heights × 8 bytes ≈ 2.2KB + overhead
+
+### 2b. MasonryLayout + MasonryRenderer (`layout: 'masonry'`)
+
+**Files:** `features/masonry-layout.ts`, `features/masonry-renderer.ts`
+
+Masonry breaks two assumptions the engine otherwise relies on: height is no
+longer a function of index alone (which column a card lands in depends on every
+card before it), and one virtual element is no longer one DOM node.
+
+Both are resolved by changing what a virtual element *is*:
+
+- **Scroll unit = segment.** The engine is constructed over `segmentCount`, and
+  every height question is answered by `MasonryLayout` through a
+  `heightProvider`. `NavigationEngine`, `BoundaryGuardian`, `NativeScrollbar`
+  and all four controllers are unchanged and unaware.
+- **Mount unit = card.** `MasonryRenderer` owns the DOM loop, reading the camera
+  the engine already computed. The default `ViewportRenderer` loop is untouched,
+  so masonry costs nothing when unused.
+
+`MasonryLayout` stores the real column frontier every K cards — `columns` floats
+per snapshot — and resumes the next run from it, so the layout is bit-identical
+to one greedy pass from card 0: no seam anywhere, every gutter exactly `gap`.
+Memory is `columns * (n / segmentSize)` floats (~12KB for 1M cards at the
+default K). The frontier table doubles as a prefix-sum table, making
+`getCumulativeHeight` an O(1) lookup rather than a walk.
+
+Reaching a cold position is a sequential pass over everything above it;
+`chainAhead(target, budgetMs)` spreads that across frames, and progress is
+durable so an abandoned rebuild costs nothing.
+
+Heights come from `getItemHeight(index, columnWidth)`, never from the DOM —
+segment replay must price cards that were never mounted. In exchange the scroll
+path performs no layout reads at all.
+
+See [MASONRY.md](MASONRY.md) for usage, the seam strategies that were rejected
+and why, and resize/rebuild costs.
 
 ### 3. ViewportRenderer
 

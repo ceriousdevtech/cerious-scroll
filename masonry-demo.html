@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Masonry Demo</title>
+    <meta name="description" content="Virtual scrolling masonry — cards flow into the shortest column with computed heights, layout:'masonry' mode in cerious-scroll.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <style>
+        /* ---- Masonry card styling ----
+         * The engine positions cards with a transform and writes their width and
+         * height; everything below is presentation only. Heights come from
+         * getItemHeight(), never from measuring these elements — so nothing here
+         * may change a card's box size. */
+        .cs-card {
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border, rgba(255,255,255,.08));
+            background: var(--panel, rgba(255,255,255,.07));
+        }
+        .cs-card__fill {
+            position: absolute;
+            inset: 0;
+        }
+        .cs-card__label {
+            position: absolute;
+            left: 9px;
+            bottom: 7px;
+            font-size: 0.72rem;
+            font-variant-numeric: tabular-nums;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,.75);
+        }
+        /* Rows can be full-bleed; cards cannot — flush against the container edge
+           they read as clipped. The renderer honours padding on its own content
+           box, so a gutter is just CSS. */
+        #scroll [data-cerious-masonry="content"] {
+            overflow: hidden;
+            padding: 14px 14px 0;
+        }
+    </style>
+    <script src="demo-bootstrap.js?v=20260611" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🧱 Masonry mode</h1>
+                <p>Cards flow into the shortest column via <code>layout: 'masonry'</code> — computed heights, no seam, responsive columns.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label>Cards:
+                    <select id="size">
+                        <option value="1000">1,000</option>
+                        <option value="200000" selected>200,000</option>
+                        <option value="5000000">5,000,000</option>
+                    </select>
+                </label>
+                <label>Columns:
+                    <select id="cols">
+                        <option value="auto" selected>auto</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="6">6</option>
+                    </select>
+                </label>
+                <span>Jump to
+                    <input id="jump" type="number" min="0" value="123456" style="width:100px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+                <button id="topBtn" type="button">Top</button>
+                <button id="endBtn" type="button">End</button>
+                <span class="stat" id="stat">scroll to see live stats</span>
+            </div>
+
+            <!-- Masonry mounts individual CARDS here while the engine scrolls over
+                 segments; the two units never meet in the API. -->
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">200,000</strong></span>
+                <span>Mode: <strong>layout: 'masonry'</strong></span>
+                <span id="detLabel">Determinism: –</span>
+                <span id="domLabel">DOM cards: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260611"></script>
+    <script src="demo-bootstrap.js?v=20260611"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+            const host = document.getElementById('scroll');
+            // Common photo shapes; masonry suits content whose height is known
+            // from an intrinsic aspect ratio rather than from measurement.
+            const RATIOS = [3/4, 4/3, 1, 9/16, 16/9, 2/3];
+
+            let total = 200000;
+            let fixedColumns = null;
+            let scroller = null;
+
+            function cardHeight(i, columnWidth) {
+                const r = RATIOS[Math.floor(hash(i, 1) * RATIOS.length)];
+                return Math.round(columnWidth / r) + 44;
+            }
+
+            function renderCard(i, el) {
+                el.className = 'cs-card';
+                const hue = Math.floor(hash(i, 2) * 360);
+                el.innerHTML =
+                    '<span class="cs-card__fill" style="background:linear-gradient(160deg,' +
+                    'hsl(' + hue + ' 62% 58%),hsl(' + ((hue + 38) % 360) + ' 62% 44%))"></span>' +
+                    '<span class="cs-card__label">' + i.toLocaleString() + '</span>';
+            }
+
+            function build() {
+                if (scroller) scroller.dispose();
+                host.textContent = '';
+                const Ctor = window.CeriousScroll.CeriousScroll || window.CeriousScroll;
+                scroller = new Ctor(host, total, {
+                    layout: 'masonry',
+                    // Ease every wheel delta. The default applies a >=100px notch
+                    // instantly, which is right for rows but reads as a teleport
+                    // when one notch is most of a card.
+                    wheel: { smooth: true, notchThresholdPx: Infinity },
+                    masonry: {
+                        getItemHeight: cardHeight,
+                        renderItem: renderCard,
+                        gap: 14,
+                        columns: fixedColumns || undefined,
+                        targetColumnWidth: 260,
+                        segmentSize: 500
+                    },
+                    onScroll: draw
+                });
+                draw();
+            }
+
+            function draw() {
+                scroller.renderViewport(host.clientHeight, host, function () {});
+                refreshStat();
+            }
+
+            function refreshStat() {
+                document.getElementById('stat').textContent =
+                    'card ' + scroller.currentElement.toLocaleString() +
+                    ' · ' + scroller.scrollPercentage.toFixed(1) + '%';
+                const n = host.querySelectorAll('[data-element-index]').length;
+                document.getElementById('detLabel').innerHTML =
+                    'Determinism: <strong>' + scroller.masonryDeterminism + '</strong>';
+                document.getElementById('domLabel').innerHTML =
+                    'DOM cards: <strong>' + n + '</strong> of ' + total.toLocaleString();
+            }
+
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                build();
+            });
+            document.getElementById('cols').addEventListener('change', (e) => {
+                fixedColumns = e.target.value === 'auto' ? null : parseInt(e.target.value, 10);
+                build();
+            });
+            // jumpToItem / handleScrollPercentage move the engine without firing
+            // onScroll, so re-render and refresh the stat line after each.
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) { scroller.jumpToItem(i); draw(); }
+            });
+            document.getElementById('topBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(0); draw();
+            });
+            document.getElementById('endBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(100); draw();
+            });
+
+            build();
+        })();
+    </script>
+</body>
+</html>

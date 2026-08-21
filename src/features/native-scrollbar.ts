@@ -10,8 +10,20 @@ import { NavigationEngine } from '../engine/navigation-engine.js';
 
 export class NativeScrollbar {
   private static readonly DEFAULT_SCROLLBAR_WIDTH = 17;
+  /**
+   * Marks a host whose padding WE widened, and by how much, as
+   * `paddingLeft:8` / `paddingRight:15`.
+   *
+   * Recorded on the element rather than on the instance so that detach can undo
+   * the exact amount even when it runs from a different instance than the one
+   * that attached — the orphan-strip cleanup path does exactly that.
+   */
+  private static readonly RESERVED_ATTR = 'data-cerious-scrollbar-reserved';
   private static readonly DEFAULT_Z_INDEX = 10;
   private static readonly ELEMENT_HEIGHT_MULTIPLIER = 10;
+  // Browsers clamp element height (Chrome ~33.5M px). Stay well under it: past
+  // the cap the strip silently stops growing and the mapping compresses again.
+  private static readonly MAX_STRIP_HEIGHT_PX = 30_000_000;
   // Tolerance (px) for recognising the async echo of a programmatic scrollTop
   // write. The browser may clamp/round our written value, so the echo's
   // scrollTop can differ from the target by a sub-pixel; a small window
@@ -67,6 +79,7 @@ export class NativeScrollbar {
   // Matching on the actual position carries no such residual. `null` means
   // "no programmatic write to reconcile yet".
   private _lastProgrammaticScrollTop: number | null = null;
+  private _contentHeightSource: (() => number | undefined) | null = null;
   // Timestamp (ms) of the last GENUINE user scroll on the strip — i.e. a scroll
   // event that was NOT the echo of our own programmatic write. On desktop the
   // user drags the real native OS scrollbar (there is no custom thumb, so
@@ -225,6 +238,43 @@ export class NativeScrollbar {
    *
    * @param handlers Navigation engine instance.
    */
+  /**
+   * Height of the strip's scrollable surface.
+   *
+   * Single source of truth for both the creation path and later re-sizes —
+   * they used to compute this independently, so installing a content-height
+   * source only affected re-sizes and the strip kept its element-count height
+   * from creation.
+   *
+   * @param container Strip element (its clientHeight sets the floor).
+   * @returns Pixels.
+   */
+  private computeSurfaceHeight(container: HTMLElement): number {
+    // Exceed the container so the thumb renders even for small lists.
+    const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
+    const contentHeight = this._contentHeightSource ? this._contentHeightSource() : undefined;
+    const surface = (contentHeight !== undefined && Number.isFinite(contentHeight) && contentHeight > 0)
+      ? Math.min(contentHeight, NativeScrollbar.MAX_STRIP_HEIGHT_PX)
+      // Element count is the right proxy when an element is roughly a row.
+      : (this.totalElements + 1) * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
+    return Math.max(Math.round(surface), minHeight);
+  }
+
+  /**
+   * Size the strip by CONTENT height instead of element count.
+   *
+   * The default is `totalElements * 10px`, which is right when an element is
+   * roughly a row: ten track pixels per row is ample resolution. When an element
+   * is much larger than a row, that ratio collapses — 400 elements addressing
+   * 10M px of content leaves ~3,360 content px per track px, so the position
+   * quantizes and scrolling snaps.
+   *
+   * @param source Returns total content height, or undefined to keep element sizing.
+   */
+  setContentHeightSource(source: (() => number | undefined) | null): void {
+    this._contentHeightSource = source;
+  }
+
   setScrollHandlers(handlers: NavigationEngine): void {
     this.scrollHandlers = handlers;
   }
@@ -410,11 +460,9 @@ export class NativeScrollbar {
     // fit within the viewport (e.g. paged datasets).
     const scrollableContent = document.createElement('div');
     scrollableContent.setAttribute('data-cerious-scrollbar', 'content');
-    const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
-    const elementHeight = (this.totalElements + 1) * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
     scrollableContent.style.cssText = `
       width: 1px;
-      height: ${Math.max(elementHeight, minHeight)}px;
+      height: ${this.computeSurfaceHeight(container)}px;
       pointer-events: none;
     `;
 
@@ -433,16 +481,22 @@ export class NativeScrollbar {
     // the OS still paints its overlay bar over the content's right edge.
     const overlay = this.hasOverlayScrollbars();
     const reserveGutter = !touch && !overlay;
-    const scrollbarWidth = parseInt(width) || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
-    if (reserveGutter && position === 'right') {
-      const currentPaddingRight = parseInt(getComputedStyle(container).paddingRight) || 0;
-      container.style.paddingRight = `${Math.max(currentPaddingRight, scrollbarWidth + 2)}px`;
-    } else if (reserveGutter && position === 'left') {
-      const currentPaddingLeft = parseInt(getComputedStyle(container).paddingLeft) || 0;
-      container.style.paddingLeft = `${Math.max(currentPaddingLeft, scrollbarWidth + 2)}px`;
-    }
 
+    // Mount the strip BEFORE reserving space for it. The gutter has to match the
+    // strip's RENDERED width, and only a mounted element reports that — the
+    // configured width excludes any `borderLeft` the caller styled on. The strip
+    // is absolutely positioned, so mounting it first cannot disturb layout.
     container.appendChild(scrollbarContainer);
+
+    if (reserveGutter) {
+      NativeScrollbar.reserveGutter(
+        container,
+        position === 'left' ? 'left' : 'right',
+        scrollbarContainer.offsetWidth ||
+          parseInt(width) ||
+          NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH
+      );
+    }
 
     // The expensive half of a scroll: map the latest scrollTop to a virtual
     // position and render the viewport. Coalesced to ONE run per animation frame
@@ -666,11 +720,7 @@ export class NativeScrollbar {
 
     const scrollableContent = container.querySelector('[data-cerious-scrollbar="content"]') as HTMLElement;
     if (scrollableContent) {
-      // Use element count for scroll height, not content height. Ensure the
-      // surface exceeds the container so the thumb renders for small lists.
-      const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
-      const elementHeight = totalElements * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
-      scrollableContent.style.height = Math.max(elementHeight, minHeight) + 'px';
+      scrollableContent.style.height = this.computeSurfaceHeight(container) + 'px';
     }
   }
 
@@ -702,28 +752,15 @@ export class NativeScrollbar {
       this._scrollbarContainer.remove();
       this._scrollbarContainer = null;
       
-      // Restore original padding if we can identify the container
-      if (parentContainer) {
-        // Reset padding that was added for scrollbar
-        // Note: This is a simple reset - in production you might want to store original values
-        if (parentContainer.style.paddingRight && 
-            parseInt(parentContainer.style.paddingRight) >= NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH) {
-          const currentPadding = parseInt(parentContainer.style.paddingRight);
-          parentContainer.style.paddingRight = `${Math.max(0, currentPadding - 19)}px`; // 17px + 2px border
-        }
-      }
+      // Give back exactly what was reserved — no more, and nothing at all if the
+      // host's own padding already covered the strip and we never widened it.
+      NativeScrollbar.releaseGutter(parentContainer);
     } else if (container) {
       // If no tracked scrollbar, try to find and remove any existing scrollbar
       const existingScrollbar = container.querySelector('[data-cerious-scrollbar="container"]');
       if (existingScrollbar) {
         existingScrollbar.remove();
-        
-        // Also restore padding for this case
-        if (container.style.paddingRight && 
-            parseInt(container.style.paddingRight) >= NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH) {
-          const currentPadding = parseInt(container.style.paddingRight);
-          container.style.paddingRight = `${Math.max(0, currentPadding - 19)}px`;
-        }
+        NativeScrollbar.releaseGutter(container);
       }
       const orphanThumb = container.querySelector('[data-cerious-scrollbar="thumb"]');
       if (orphanThumb) orphanThumb.remove();
@@ -975,5 +1012,70 @@ export class NativeScrollbar {
     }
     this._thumbHitZone = null;
     this._thumbHitZoneDown = null;
+  }
+
+  /**
+   * Widen the host's padding so the strip does not overlap content, and record
+   * the amount added.
+   *
+   * Reserves the strip's rendered width exactly. The previous implementation
+   * reserved `width + 2` and removed a hard-coded 19 on detach, which was wrong
+   * in three ways: the gutter was 2px wider than the strip (leaving a dead
+   * sliver that a content-aware layout has to work around), detach removed more
+   * than attach ever added whenever the strip was not 17px, and a host with its
+   * own padding kept none of it after a detach.
+   *
+   * @param container Host element.
+   * @param side Which edge the strip is pinned to.
+   * @param renderedWidth Strip width in pixels, as measured after mounting.
+   */
+  private static reserveGutter(
+    container: HTMLElement,
+    side: 'left' | 'right',
+    renderedWidth: number
+  ): void {
+    if (!(renderedWidth > 0)) return;
+    const computed = getComputedStyle(container);
+    const current = (side === 'left'
+      ? parseFloat(computed.paddingLeft)
+      : parseFloat(computed.paddingRight)) || 0;
+
+    // A host that already reserves enough keeps its own value, and we record
+    // nothing — so detach leaves that padding alone.
+    const added = renderedWidth - current;
+    if (added <= 0) return;
+
+    if (side === 'left') container.style.paddingLeft = `${current + added}px`;
+    else container.style.paddingRight = `${current + added}px`;
+
+    const prop = side === 'left' ? 'paddingLeft' : 'paddingRight';
+    container.setAttribute(NativeScrollbar.RESERVED_ATTR, `${prop}:${added}`);
+  }
+
+  /**
+   * Undo {@link reserveGutter}, restoring the host's original padding.
+   *
+   * @param container Host element, or null.
+   */
+  private static releaseGutter(container: HTMLElement | null): void {
+    if (!container) return;
+    const record = container.getAttribute(NativeScrollbar.RESERVED_ATTR);
+    if (!record) return;
+    container.removeAttribute(NativeScrollbar.RESERVED_ATTR);
+
+    const sep = record.indexOf(':');
+    if (sep < 0) return;
+    const prop = record.slice(0, sep);
+    const added = parseFloat(record.slice(sep + 1));
+    if (!Number.isFinite(added) || added <= 0) return;
+
+    const computed = getComputedStyle(container);
+    if (prop === 'paddingLeft') {
+      const current = parseFloat(computed.paddingLeft) || 0;
+      container.style.paddingLeft = `${Math.max(0, current - added)}px`;
+    } else {
+      const current = parseFloat(computed.paddingRight) || 0;
+      container.style.paddingRight = `${Math.max(0, current - added)}px`;
+    }
   }
 }

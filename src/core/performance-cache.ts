@@ -5,7 +5,7 @@
  * pinned so true-bottom survives a prune while the camera is at the top.
  */
 
-import { ElementHeightCalculator } from '../types/index.js';
+import { ElementHeightCalculator, HeightProvider } from '../types/index.js';
 
 export class PerformanceCache {
   private static readonly MAX_MEASURED_HEIGHTS_CACHE = 200;
@@ -26,8 +26,15 @@ export class PerformanceCache {
   /**
    * @param getElementHeight Height lookup used when a row has no measured value
    *   (walks such as {@link findRowFromScrollPosition}).
+   * @param provider Optional authoritative height source. When supplied, the
+   *   measured-height map and its pruning are bypassed entirely — heights are
+   *   computed, not observed, so evicting them would be lossy rather than
+   *   merely cold. See {@link HeightProvider}.
    */
-  constructor(private getElementHeight: ElementHeightCalculator) {}
+  constructor(
+    private getElementHeight: ElementHeightCalculator,
+    private readonly provider?: HeightProvider
+  ) {}
 
   /**
    * Tell the cache how many elements exist in the dataset. Used to bound
@@ -46,6 +53,8 @@ export class PerformanceCache {
    * @param height Pixels. Non-finite / negative becomes 1px (detached-node `offsetHeight`).
    */
   setMeasuredHeight(index: number, height: number): void {
+    // A provider is the source of truth; DOM measurements are advisory noise.
+    if (this.provider) return;
     // NaN/Infinity would poison total-height math for the rest of the session.
     if (!Number.isFinite(index) || index < 0) {
       return;
@@ -90,6 +99,7 @@ export class PerformanceCache {
    * @returns Whether a real measurement exists (not an estimate).
    */
   hasMeasuredHeight(index: number): boolean {
+    if (this.provider) return true; // every index has a computable height
     return this._measuredHeights.has(index);
   }
 
@@ -100,6 +110,10 @@ export class PerformanceCache {
    * @returns Height in pixels, or `undefined` if rows are not known to be uniform.
    */
   getUniformHeightHint(): number | undefined {
+    // The hint lets the renderer skip offsetHeight. With a provider there is no
+    // offsetHeight read to skip, and claiming uniformity would make the engine
+    // extrapolate positions arithmetically from one height.
+    if (this.provider) return undefined;
     return this._isUniformHeight === true ? this._uniformHeightValue : undefined;
   }
 
@@ -110,6 +124,7 @@ export class PerformanceCache {
    * @returns Measured height in pixels, or `undefined` if never measured.
    */
   getMeasuredHeight(index: number): number | undefined {
+    if (this.provider) return this.provider.height(index);
     return this._measuredHeights.get(index);
   }
   
@@ -166,6 +181,13 @@ export class PerformanceCache {
   getCumulativeHeight(row: number): number {
     if (row <= 0) return 0;
 
+    if (this.provider) {
+      if (this.provider.cumulativeHeight) return this.provider.cumulativeHeight(row);
+      let sum = 0;
+      for (let i = 0; i < row; i++) sum += this.provider.height(i);
+      return sum;
+    }
+
     if (this._isUniformHeight && this._uniformHeightValue !== undefined) {
       return row * this._uniformHeightValue;
     }
@@ -185,6 +207,10 @@ export class PerformanceCache {
   findRowFromScrollPosition(scrollPixel: number): { element: number; offset: number } {
     if (!Number.isFinite(scrollPixel) || scrollPixel <= 0) {
       return { element: 0, offset: 0 };
+    }
+
+    if (this.provider?.rowAtPosition) {
+      return this.provider.rowAtPosition(scrollPixel);
     }
 
     // Upper bound for any walk. Without an explicit total we fall back to the
@@ -241,6 +267,19 @@ export class PerformanceCache {
   clearAllCaches(): void {
     this.invalidateCache();
     this._measuredHeights.clear();
+  }
+
+  /** Whether an authoritative height source replaced DOM measurement. */
+  get hasHeightProvider(): boolean {
+    return this.provider !== undefined;
+  }
+
+  /**
+   * Total content height from the provider, if it knows one.
+   * @returns Pixels, or `undefined`.
+   */
+  getProvidedTotalHeight(): number | undefined {
+    return this.provider?.totalHeight ? this.provider.totalHeight() : undefined;
   }
 
   /**

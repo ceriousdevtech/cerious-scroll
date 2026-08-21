@@ -15,6 +15,8 @@ import { PerformanceCache } from './core/performance-cache.js';
 import { NativeScrollbar } from './features/native-scrollbar.js';
 import { ViewportRenderer } from './features/viewport-renderer.js';
 import { RowPlacement, AbsolutePlacement, TableFlowPlacement } from './features/row-placement.js';
+import { MasonryRenderer } from './features/masonry-renderer.js';
+import type { MasonryDeterminism } from './types/index.js';
 import { NavigationEngine } from './engine/navigation-engine.js';
 import { ViewportStateCalculator } from './core/viewport-state.js';
 import { WheelController } from './controllers/wheel-controller.js';
@@ -103,6 +105,10 @@ export class CeriousScroll {
   endElement = 0;
 
   private placement: RowPlacement;
+  /** Non-null only in `layout: 'masonry'`. Owns the card DOM. */
+  private masonry: MasonryRenderer | null = null;
+  /** Card count in masonry mode; `totalElements` holds the SEGMENT count. */
+  private totalItems = 0;
   private performanceCache: PerformanceCache;
   private nativeScrollbar: NativeScrollbar;
   private viewportRenderer: ViewportRenderer;
@@ -169,18 +175,40 @@ export class CeriousScroll {
       ? new TableFlowPlacement(this.options.table)
       : new AbsolutePlacement();
 
+    // Masonry scrolls over SEGMENTS, not cards. The constructor's
+    // `totalElements` is a card count in that mode, so translate it here and
+    // keep the rest of the engine unaware of the distinction.
+    if (this.options.layout === 'masonry') {
+      if (!this.options.masonry) {
+        throw new Error("CeriousScroll: layout 'masonry' requires the `masonry` option");
+      }
+      if (this.options.heightProvider) {
+        throw new Error(
+          "CeriousScroll: layout 'masonry' installs its own heightProvider; remove yours"
+        );
+      }
+      this.totalItems = this.totalElements;
+      this.masonry = new MasonryRenderer(container, this.totalItems, this.options.masonry);
+      this.totalElements = this.masonry.segmentCount;
+    }
+
     this.viewportHeight = this.measureViewport(container);
     this.windowHeight = this.viewportHeight;
 
-    this.getElementHeight = (index: number) => {
-      // Do not cache the default. Writing it would make hasMeasuredHeight()
-      // true for a row that was never measured, so a later prune/reflow would
-      // skip offsetHeight and keep the fake 40px.
-      const measuredHeight = this.performanceCache.getMeasuredHeight(index);
-      return measuredHeight !== undefined ? measuredHeight : CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
-    };
+    const heightProvider = this.masonry
+      ? this.masonry.heightProvider()
+      : this.options.heightProvider;
+    this.getElementHeight = heightProvider
+      ? (index: number) => heightProvider.height(index)
+      : (index: number) => {
+          // Do not cache the default. Writing it would make hasMeasuredHeight()
+          // true for a row that was never measured, so a later prune/reflow would
+          // skip offsetHeight and keep the fake 40px.
+          const measuredHeight = this.performanceCache.getMeasuredHeight(index);
+          return measuredHeight !== undefined ? measuredHeight : CeriousScroll.DEFAULT_ELEMENT_HEIGHT;
+        };
 
-    this.performanceCache = new PerformanceCache(this.getElementHeight);
+    this.performanceCache = new PerformanceCache(this.getElementHeight, heightProvider);
     // Caps linear walks (findRowFromScrollPosition) so a bad scrollPixel
     // cannot iterate past the dataset.
     this.performanceCache.setTotalElements(this.totalElements);
@@ -205,6 +233,13 @@ export class CeriousScroll {
         this.options.onScroll?.();
       }
     );
+
+    // With a computed height source, size the strip by CONTENT. Element-count
+    // sizing assumes an element is roughly a row; when it is not, the track
+    // loses resolution and the scroll position quantizes.
+    if (heightProvider?.totalHeight) {
+      this.nativeScrollbar.setContentHeightSource(() => this.performanceCache.getProvidedTotalHeight());
+    }
 
     this.viewportRenderer = new ViewportRenderer(
       this.totalElements,
@@ -371,7 +406,20 @@ export class CeriousScroll {
       );
     }
     
-    if (this.options.autoResize !== false) {
+    if (this.masonry) {
+      // Masonry owns its own resize: a width change invalidates the whole
+      // layout, which needs a re-anchor and a sliced rebuild, not a re-measure.
+      const onRender = () => { this.options.onScroll?.(); };
+      // Re-measure now that the scrollbar strip exists. The renderer's geometry
+      // was computed in its constructor, before the strip was attached, so the
+      // last column would otherwise be sized against space the strip occupies.
+      // Waiting for a resize observation is not enough: when the host is reused
+      // it already carries the strip's padding, so the content box never changes
+      // size and no observation ever arrives.
+      this.masonry.remeasure(this, onRender);
+      this.resizeCleanup = this.masonry.observeResize(this, onRender);
+      this.masonry.scheduleTailChain(this);
+    } else if (this.options.autoResize !== false) {
       this.resizeCleanup = this.setupAutoResizeHandling(container);
     }
 
@@ -530,6 +578,28 @@ export class CeriousScroll {
    * @param elementIndex Zero-based target index.
    * @returns Camera after the jump. Offset is 0 unless clamped to true bottom.
    */
+  /**
+   * Jump to an exact camera position.
+   *
+   * {@link jumpToElement} always lands at offset 0, which is enough when an
+   * element is a row. It is not enough for re-anchoring after a relayout, where
+   * the goal is to put a specific piece of content back at a specific screen
+   * position — that needs a sub-element offset.
+   *
+   * @param elementIndex Target element.
+   * @param offset Pixels into that element.
+   * @param skipScrollbarSync Leave the strip alone (the caller will sync).
+   * @returns Camera after the jump.
+   */
+  jumpToPosition(elementIndex: number, offset: number, skipScrollbarSync = false): ScrollResult {
+    if (!Number.isFinite(elementIndex) || !Number.isFinite(offset)) {
+      throw new Error(
+        `CeriousScroll.jumpToPosition: elementIndex and offset must be finite, got ${elementIndex}, ${offset}`
+      );
+    }
+    return this.navigationEngine.jumpToPosition(elementIndex, offset, skipScrollbarSync);
+  }
+
   jumpToElement(elementIndex: number): ScrollResult {
     if (!Number.isFinite(elementIndex)) {
       throw new Error(
@@ -601,6 +671,15 @@ export class CeriousScroll {
     // the header's height past it. Invalidate first so we don't reuse a stale
     // header height; the value measured after this pass is cached for scroll()
     // so wheel/touch don't force getBoundingClientRect every event.
+    if (this.masonry) {
+      // Masonry mounts CARDS, not one node per virtual element. `renderElement`
+      // is ignored: cards are populated by `masonry.renderItem`, which runs once
+      // per mount rather than once per frame.
+      const usable = this.syncViewportHeight(windowHeight);
+      this.masonry.render(usable, container, this);
+      return this.masonryRange();
+    }
+
     this.placement.invalidateTopInset?.();
     const insetBefore = this.placement.getTopInset ? this.placement.getTopInset() : 0;
     const effectiveWindowHeight = Math.max(1, windowHeight - insetBefore);
@@ -613,16 +692,36 @@ export class CeriousScroll {
     // asynchronously after the engine first measured an empty header. Without
     // this, the true-bottom math is off by the header height and the last row
     // never quite renders.
-    this.placement.invalidateTopInset?.();
-    const insetAfter = this.placement.getTopInset ? this.placement.getTopInset() : 0;
-    const syncedViewportHeight = Math.max(1, windowHeight - insetAfter);
-    if (syncedViewportHeight !== this.viewportHeight) {
-      this.viewportHeight = syncedViewportHeight;
-      this.windowHeight = syncedViewportHeight;
-      this.navigationEngine.updateConfig(this.totalElements, this.viewportHeight);
-    }
+    this.syncViewportHeight(windowHeight);
     this.updateDisplay();
     return range;
+  }
+
+  /**
+   * Re-sync the engine's cached viewport height to the host.
+   *
+   * The engine measures the host once at construction and normally re-syncs
+   * here, from inside {@link renderViewport}. A consumer that drives its own DOM
+   * — anything that does not call `renderViewport` — must call this instead, or
+   * the engine keeps its construction-time height forever. True-bottom is
+   * derived from that height, so a stale value silently clamps the scroll short
+   * of the end by exactly the drift.
+   *
+   * @param observedHeight Host height in pixels, before any placement top inset.
+   * @returns The usable height the engine now holds.
+   */
+  syncViewportHeight(observedHeight: number): number {
+    if (!Number.isFinite(observedHeight) || observedHeight <= 0) return this.viewportHeight;
+    this.placement.invalidateTopInset?.();
+    const inset = this.placement.getTopInset ? this.placement.getTopInset() : 0;
+    const synced = Math.max(1, observedHeight - inset);
+    if (synced !== this.viewportHeight) {
+      this.viewportHeight = synced;
+      this.windowHeight = synced;
+      this.navigationEngine.updateConfig(this.totalElements, this.viewportHeight);
+      this.viewportRenderer.invalidateTrueBottomCache();
+    }
+    return this.viewportHeight;
   }
 
   /**
@@ -695,6 +794,73 @@ export class CeriousScroll {
     this.performanceCache.clearAllCaches();
     this.viewportRenderer.invalidateTrueBottomCache();
     this.placement.invalidateTopInset?.();
+  }
+
+  /**
+   * Viewport snapshot for masonry mode. `startElement`/`endElement` are SEGMENT
+   * indices, matching the engine's element space; card-level detail belongs to
+   * the caller's own render callback.
+   */
+  private masonryRange(): MeasuredViewportRange {
+    this.updateDisplay();
+    return {
+      startElement: this.currentElement,
+      endElement: this.currentElement,
+      scrollPercentage: this.scrollPercentage,
+      viewportElements: 1,
+      renderedElements: [],
+      totalRenderedHeight: this.viewportHeight
+    };
+  }
+
+  /**
+   * Scroll a specific CARD into view. Masonry mode only.
+   *
+   * {@link jumpToElement} takes a segment index in this mode, which is an
+   * internal unit; this takes the card index the caller actually thinks in.
+   *
+   * @param index Card index.
+   * @param screenOffset Pixels below the viewport top to place it. Default 0.
+   */
+  jumpToItem(index: number, screenOffset = 0): void {
+    if (!this.masonry) {
+      throw new Error("CeriousScroll.jumpToItem: only available with layout 'masonry'");
+    }
+    const pos = this.masonry.cameraForItem(index, screenOffset);
+    if (!pos) return;
+    this.navigationEngine.jumpToPosition(pos.segment, pos.offset);
+  }
+
+  /** Cards in the dataset. Masonry mode only; otherwise equals `totalElements`. */
+  get itemCount(): number {
+    return this.masonry ? this.totalItems : this.totalElements;
+  }
+
+  /**
+   * Determinism guarantee of the current masonry layout, or `null` outside
+   * masonry mode. See {@link MasonryDeterminism}.
+   *
+   * Worth branching on rather than assuming. Under `'local'` a card's column
+   * depends on how the viewer reached it, so a feature that treats a position as
+   * shareable — a deep link to a card, a saved scroll coordinate, a
+   * pixel-comparison test — is only sound under `'canonical'`.
+   */
+  get masonryDeterminism(): MasonryDeterminism | null {
+    return this.masonry ? this.masonry.determinism : null;
+  }
+
+  /**
+   * Re-size the scrollbar strip and re-sync it, after total content height
+   * changed without the element count changing.
+   *
+   * {@link updateTotalElements} covers the usual case, but a computed layout can
+   * change its total height while the element count is fixed — a relayout, or a
+   * progressive height calculation settling from estimate to exact. Without this
+   * the strip keeps its stale surface and the thumb misreports the range.
+   */
+  refreshScrollbarMetrics(): void {
+    this.nativeScrollbar.updateNativeScrollbarHeight(this.totalElements);
+    this.syncScrollbar();
   }
 
   /** Refresh `startElement`, `endElement`, `scrollPercentage`, `viewportTop`. */
@@ -826,6 +992,7 @@ export class CeriousScroll {
 
   /** Detach listeners, observers, and the debug hook. Call when the host leaves the DOM. */
   dispose(): void {
+    this.masonry?.dispose();
     this.keyboardCleanup?.();
     this.keyboardCleanup = undefined;
     this.wheelCleanup?.();
