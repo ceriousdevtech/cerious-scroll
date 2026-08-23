@@ -66,9 +66,9 @@ The host must have a nonzero height and be in the DOM before construction:
 }
 ```
 
-Try the [canonical demo](../masonry-demo.html) and
-[dynamic-height demo](../masonry-dynamic-demo.html) locally, or open them from
-the [live demo index](https://ceriousdevtech.github.io/cerious-scroll/).
+Try the [canonical demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html)
+and [dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html),
+or browse the [live demo index](https://ceriousdevtech.github.io/cerious-scroll/).
 
 ## Choose a height mode
 

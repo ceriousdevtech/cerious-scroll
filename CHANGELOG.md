@@ -5,6 +5,65 @@ All notable changes to CeriousScroll will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.0] - 2026-08-22
+
+### Added
+
+- **Virtualized Masonry layout** with `layout: 'masonry'`. Cards flow into the
+  shortest responsive column while only the visible window and overscan are
+  mounted. Fixed column counts and responsive sizing through
+  `targetColumnWidth`, `minColumns`, and `maxColumns` are supported.
+- **Two Masonry height modes with explicit determinism guarantees.** Supplying
+  a pure `getItemHeight(index, columnWidth)` selects canonical mode, where a
+  card has one reproducible column. Omitting it selects dynamic mode, where card
+  heights are measured from the DOM and far random access establishes a local
+  layout without measuring the entire preceding dataset.
+- **Card-oriented Masonry APIs:** `jumpToItem(index, screenOffset)`, `itemCount`,
+  and `masonryDeterminism`. The new `MasonryOptions` and
+  `MasonryDeterminism` types are included in the public TypeScript declarations.
+- **Authoritative height providers** through the public `heightProvider` option.
+  Computed layouts can provide element heights, cumulative heights, inverse
+  pixel lookup, and total content height without entering the DOM measurement
+  cache.
+- **External-layout integration hooks:** `jumpToPosition`,
+  `syncViewportHeight`, and `refreshScrollbarMetrics` allow computed renderers
+  to share the existing navigation and scrollbar engine.
+- **Responsive content anchoring for Masonry.** Width changes rebuild column
+  geometry in animation-frame slices while holding the card nearest the
+  viewport top at the same screen offset.
+- **Canonical and dynamic Masonry demos**, a dedicated Masonry guide, expanded
+  architecture documentation, and regression coverage for placement,
+  determinism, far jumps, resizing, height providers, and scrollbar behavior.
+
+### Changed
+
+- Vertical touch movement is coalesced to one render per animation frame while
+  preserving the full finger delta. The pending movement is flushed before
+  momentum starts so a flick begins from the final touch position.
+- True-bottom measurements now retain a small bounded tail cache instead of
+  repeatedly mounting sentinel rows. Already-measured tail rows no longer stay
+  in the live DOM window.
+- Uniform-height position lookups use direct arithmetic, avoiding a row-by-row
+  walk from the current viewport.
+- Inner content-element and table-header measurements are cached and invalidated
+  only when their geometry can change, reducing layout reads during scrolling.
+- The README is organized around installation, quick start, layout selection,
+  framework resources, and local development; Masonry behavior and tuning now
+  live in a focused user guide.
+
+### Fixed
+
+- Prevented pre-render navigation on very large datasets from walking to the
+  final row on every scroll before its height was measured.
+- Prevented repeated true-bottom correction walks after an authoritative bottom
+  position was already known.
+- Hardened dynamic Masonry jumps and reverse navigation so locally anchored
+  frontier ranges do not read unwritten state or remeasure the whole dataset.
+- Preserved the visible Masonry card and its screen offset across responsive
+  relayouts, including sliced rebuilds for multi-million-card datasets.
+
 ## [1.0.8] - 2026-06-24
 
 ### Changed
@@ -191,9 +250,9 @@ First public release of CeriousScroll - high-performance virtual scrolling libra
 
 ---
 
-## [Unreleased]
+## Roadmap
 
-### Planned Features
+### Planned features
 - React integration examples
 - Svelte integration examples
 - Accessibility improvements (ARIA labels, keyboard focus)
