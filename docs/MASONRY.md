@@ -10,6 +10,7 @@ resizing.
 - [Quick start](#quick-start)
 - [Choose a height mode](#choose-a-height-mode)
 - [Rendering contract](#rendering-contract)
+- [Real content: images, components, interaction](#real-content-images-components-interaction)
 - [Sizing and gutters](#sizing-and-gutters)
 - [Navigation and public state](#navigation-and-public-state)
 - [Options](#options)
@@ -66,9 +67,11 @@ The host must have a nonzero height and be in the DOM before construction:
 }
 ```
 
-Try the [canonical demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html)
-and [dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html),
-or browse the [live demo index](https://ceriousdevtech.github.io/cerious-scroll/).
+Try the [canonical demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html),
+[dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html),
+and [real-content demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-gallery-demo.html)
+— images, Tailwind, and carousels — or browse the
+[live demo index](https://ceriousdevtech.github.io/cerious-scroll/).
 
 ## Choose a height mode
 
@@ -167,6 +170,144 @@ function render() {
 Only the visible cards plus `overscan` are mounted. `renderItem` is not called
 once per animation frame for cards that remain mounted.
 
+## Real content: images, components, interaction
+
+Cards in production are not colored boxes. They contain images that arrive
+late, markup from a component library, and controls the user can click. All
+three work, but each has one rule that follows from recycling and from the fact
+that the engine sizes a card before the browser lays it out.
+
+See [masonry-gallery-demo.html](../masonry-gallery-demo.html) for a working
+example: network images, Tailwind utility classes, and per-card carousels over
+50,000 cards.
+
+### Images
+
+Masonry does not re-measure a card that changes size after it is mounted. A card
+whose real height ends up larger than the height it was given does not push its
+neighbour down; it overlaps it. So the card must reach its final height before
+its images do.
+
+Reserve the media box from intrinsic dimensions:
+
+```css
+.media { aspect-ratio: 1 / var(--ar); overflow: hidden; }
+.media img { width: 100%; height: 100%; object-fit: cover; }
+```
+
+```js
+element.style.setProperty('--ar', String(item.height / item.width));
+```
+
+`masonryColumnWidth` reports the live column width, so a CDN can be asked for an
+image at the size actually displayed rather than a fixed guess:
+
+```js
+const w = scroller.masonryColumnWidth;
+img.src = `${cdn}/${item.id}?w=${w}`;
+img.width = w;
+img.height = Math.round(w * ratio);
+```
+
+If intrinsic dimensions are genuinely unavailable, use dynamic mode and give the
+image a fixed box. Do not let an unconstrained `<img>` decide a card's height.
+
+#### Making images arrive sooner
+
+Four things matter, roughly in order of effect. Figures below are from
+`masonry-gallery-demo.html` against an on-demand resizing CDN.
+
+**Do not use `loading="lazy"`.** Native lazy loading defers until the browser
+judges an image near the viewport, and its heuristics do not fire reliably for
+elements inside a clipped, transformed container. Measured: zero requests issued
+after four seconds, with cards visible and empty. Virtualization already is the
+lazy loader — a card exists only when it is nearly on screen — so its image
+should be requested the moment it is rendered.
+
+**Paint a placeholder immediately.** Bytes do not arrive faster, but an empty
+rectangle is most of what "slow" looks like. Give the reserved box a per-card
+colour, or a dominant colour or blurred preview if the data has one, and fade
+the image in when it decodes:
+
+```css
+.media { aspect-ratio: 1 / var(--ar); background: hsl(var(--ph-h) 28% 22%); }
+.media img { opacity: 0; transition: opacity .28s ease; }
+.media img.is-loaded { opacity: 1; }
+```
+
+**Prefetch a small window beyond the mounted range, at low priority.** This
+decouples fetching from mounting, so bytes are already cached when a card
+appears. Keep the window small and deprioritise it: a browser allows roughly six
+concurrent connections per host, and speculative requests otherwise queue ahead
+of the ones on screen. Measured — prefetching 30 ahead at default priority left
+141 requests in flight and 0 of 18 visible cards filled; 12 ahead at
+`fetchPriority = 'low'` raised cards that were ready on arrival from 0% to 39%.
+
+```js
+const im = new Image();
+im.fetchPriority = 'low';
+im.src = urlFor(index);        // must match the URL renderItem will use, exactly
+```
+
+**Bucket the requested width.** A CDN that resizes on demand caches per exact
+URL, so an unbucketed `masonryColumnWidth` makes every container size a fresh
+origin render. Rounding up to a 100px bucket costs slight downscaling and turns
+most requests into cache hits.
+
+Add `preconnect` hints for the image host so the first request does not also pay
+for DNS and TLS.
+
+### Component libraries and utility CSS
+
+`renderItem` receives a plain element. Anything that renders into a DOM node —
+a Tailwind-classed template, a mounted Vue or React component, a web component —
+works, subject to two constraints.
+
+**The card's box belongs to the engine.** Width, height, and `transform` are
+written every frame. Style the inside of the card; do not set its box.
+
+**Global CSS resets can break the host, not just the cards.** Tailwind's
+Preflight resets `html, body { height: 100% }`, which collapses a flexbox scroll
+host to zero height and stops the engine rendering. Disable it when layering
+Tailwind onto existing CSS:
+
+```js
+tailwind.config = { corePlugins: { preflight: false } };
+```
+
+Frameworks that own their own mounting should mount on first use and update
+afterwards, keyed by card index — see the wrapper packages linked from the
+README for React, Vue, and Angular.
+
+### Interaction and recycled elements
+
+Card elements are pooled. The element showing card 12,000 was showing a
+different card a moment ago and will show another later. Two consequences:
+
+**Keep per-card state in your model, not on the element.** A carousel's current
+frame, a selection, an expanded flag — key them by card index so they survive
+recycling and are restored on the next `renderItem`.
+
+**Delegate events.** One listener on the host, resolved through
+`data-element-index`, rather than listeners attached per card:
+
+```js
+host.addEventListener('click', (event) => {
+  const card = event.target.closest('[data-element-index]');
+  if (!card) return;
+  const index = Number(card.dataset.elementIndex);
+
+  if (event.target.closest('[data-next]')) {
+    frame.set(index, (frame.get(index) ?? 0) + 1);
+    renderItem(index, card);   // same height, so no relayout is needed
+  }
+});
+```
+
+Re-rendering a card in place is safe while its height is unchanged. If an
+interaction changes a card's height, the layout must be rebuilt — in canonical
+mode `getItemHeight` must return the new height first.
+
 ## Sizing and gutters
 
 Omit `columns` for responsive columns. The renderer derives the count from
@@ -222,7 +363,7 @@ your own data model.
 | `segmentSize` | `number` | `500` canonical, `24` dynamic | Cards per frontier segment. |
 | `maxChainSegments` | `number` | `4` | Dynamic mode distance that may be measured before starting a local run. |
 | `overscan` | `number` | `400` | Extra rendered pixels above and below the viewport. |
-| `rebuildSliceMs` | `number` | `6` | Per-frame work budget for rebuilding after a relayout. |
+| `rebuildSliceMs` | `number` | `6` | Per-frame budget for a canonical resize rebuild, and for bounded forward chaining. |
 
 Start with the defaults. Change `segmentSize`, `maxChainSegments`, or
 `rebuildSliceMs` only after profiling representative data and navigation.
@@ -233,10 +374,18 @@ A width change can alter the column count, column width, and every card height.
 Masonry therefore rebuilds its layout. It tracks the card nearest the viewport
 top and restores that card at the same screen offset after the rebuild.
 
-Rebuild work is split across animation frames using `rebuildSliceMs`. Existing
-cards stay mounted until the replacement layout is ready, avoiding a blank
-viewport during a large canonical rebuild. In dynamic mode, width changes also
-clear measured heights because text and other flow content can rewrap.
+The two modes rebuild differently because the work is not comparable.
+
+Canonical mode replays the height function from card 0, so a resize deep in a
+large dataset is a long arithmetic walk. That walk is split across animation
+frames using `rebuildSliceMs`, and the existing cards stay mounted until the
+replacement layout is ready, so the viewport never goes blank mid-rebuild.
+
+Dynamic mode cannot replay: every step of that walk is a DOM measurement, and
+measuring every card above the camera is not a budget problem but an unbounded
+one. It instead starts a local run at the camera's segment, the same way a far
+jump does, and completes in a single frame. Width changes also discard measured
+heights, because text and other flow content rewrap at a new column width.
 
 ## Performance model
 
@@ -248,6 +397,8 @@ clear measured heights because text and other flow content can rewrap.
 - Larger canonical segments reduce snapshot memory but increase replay work.
 - Larger dynamic segments increase the number of cards that may need offscreen
   measurement for a landing; the default is intentionally small.
+- A dynamic resize or far jump measures a few segments, not the distance
+  travelled. Neither cost grows with the dataset.
 - Increasing `overscan` can hide fast-scroll mounting but creates more DOM work.
 
 For large media cards, a wheel notch can move most of a viewport. If that feels

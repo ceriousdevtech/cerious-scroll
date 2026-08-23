@@ -147,10 +147,17 @@ Add matching outer gutters with padding on the generated content element:
 }
 ```
 
+Cards are recycled, and the engine sizes a card before the browser lays it out.
+That places three requirements on real content — reserve space for images from
+intrinsic dimensions, keep `renderItem` idempotent, and delegate events rather
+than binding per card. The [real-content demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-gallery-demo.html)
+shows all three with network images, Tailwind-styled cards, and per-card
+carousels over 50,000 items.
+
 See the [Masonry guide](docs/MASONRY.md) for both modes, the full option
 reference, rendering rules, navigation, resize behavior, and performance
-tradeoffs. Try the [canonical Masonry demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html)
-or [dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html).
+tradeoffs. Also try the [canonical demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html)
+and [dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html).
 
 ### Table layout
 

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerious-Scroll · Masonry · Real Content</title>
+    <meta name="description" content="Virtualized Masonry with real images, Tailwind-styled component cards, and image carousels — the patterns that make third-party UI work inside recycled cards.">
+    <link rel="stylesheet" href="shared-styles.css">
+    <!-- Get DNS and TLS out of the critical path. The first image otherwise pays
+         for connection setup before a byte of it is requested. -->
+    <link rel="preconnect" href="https://picsum.photos" crossorigin>
+    <link rel="preconnect" href="https://fastly.picsum.photos" crossorigin>
+    <script src="https://cdn.tailwindcss.com?plugins=line-clamp"></script>
+    <script>
+      // Disable Preflight. Tailwind's reset zeroes `html, body { height: 100% }`
+      // from shared-styles.css, which collapses the flex chain and leaves the
+      // scroll host at zero height — the engine then refuses to render. Any
+      // integration that layers Tailwind onto existing CSS wants this off.
+      tailwind.config = { corePlugins: { preflight: false } };
+    </script>
+    <style>
+        /* The engine owns each card's width, height and transform. Style the
+           inside of the card; never its box. */
+        .card-shell { overflow: hidden; }
+
+        /* Space for the image is reserved with aspect-ratio from known intrinsic
+           dimensions, so the card is its final height before the image arrives.
+           Masonry never re-measures a card that grew after mount, so a card whose
+           real height exceeds what getItemHeight promised simply overlaps the one
+           below. The "understate height" toggle shows exactly that. */
+        /* A per-card placeholder colour fills the reserved box instantly. Bytes do
+           not arrive any sooner, but the grid is never a field of empty rectangles,
+           which is most of what "slow" actually looks like. Real galleries use the
+           image's dominant colour or a tiny blurred preview; the principle is the
+           same. */
+        .media { position: relative; overflow: hidden; aspect-ratio: 1 / var(--ar);
+                 background: hsl(var(--ph-h) 28% 22%); }
+        .media img { display: block; width: 100%; height: 100%; object-fit: cover;
+                     opacity: 0; transition: opacity .28s ease; }
+        .media img.is-loaded { opacity: 1; }
+        /* Off by default. Turned on, cards are allowed to spill so the overlap is
+           visible rather than silently clipped. */
+        body.show-overflow .card-shell { overflow: visible; outline: 1px dashed rgba(248,113,113,.5); }
+
+        .dots { position: absolute; left: 0; right: 0; bottom: 8px; display: flex;
+                gap: 5px; justify-content: center; pointer-events: none; }
+        .dot  { width: 5px; height: 5px; border-radius: 999px; background: rgba(255,255,255,.45); }
+        .dot[data-on] { background: #fff; width: 14px; }
+        .navbtn { position: absolute; top: 50%; transform: translateY(-50%);
+                  width: 26px; height: 26px; border-radius: 999px; border: 0;
+                  background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+                  font-size: 13px; line-height: 26px; padding: 0; }
+        .navbtn:hover { background: rgba(0,0,0,.8); }
+        /* The title occupies a fixed two-line box. Canonical mode needs every card's
+           chrome to be the SAME height; free-flowing text is the usual reason a
+           "known" height turns out to be wrong. Set here rather than relying on a
+           utility class, so the box is deterministic regardless of plugin support. */
+        .card-title {
+            height: 2.6em; overflow: hidden; display: -webkit-box;
+            -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+        }
+        #gallery [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
+    </style>
+    <script src="demo-bootstrap.js?v=20260611" defer></script>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1>🖼️ Masonry · real content</h1>
+                <p>
+                    Network images, Tailwind-styled component cards, and interactive carousels —
+                    virtualized. Demonstrates the three things recycled cards demand:
+                    <strong>reserved media space</strong>, <strong>idempotent rendering</strong>,
+                    and <strong>delegated events</strong>.
+                </p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label>Cards:
+                    <select id="size">
+                        <option value="1000">1,000</option>
+                        <option value="50000" selected>50,000</option>
+                        <option value="500000">500,000</option>
+                    </select>
+                </label>
+                <label title="Return a height 40px smaller than the card really renders. Canonical mode trusts getItemHeight; if it lies, cards overlap.">
+                    <input id="understate" type="checkbox"> understate height (−40px)
+                </label>
+                <span>Jump to
+                    <input id="jump" type="number" min="0" value="25000" style="width:100px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+                <button id="topBtn" type="button">Top</button>
+                <button id="endBtn" type="button">End</button>
+                <span class="stat" id="stat">scroll to see live stats</span>
+            </div>
+
+            <div class="demo-scroll" id="gallery"></div>
+
+            <div class="demo-footer">
+                <span>Total: <strong id="totalLabel">50,000</strong></span>
+                <span id="detLabel">Determinism: –</span>
+                <span id="domLabel">DOM cards: –</span>
+                <span id="imgLabel">Images ready: –</span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260611"></script>
+    <script src="demo-bootstrap.js?v=20260611"></script>
+    <script>
+        (function () {
+            const { hash } = window.demoUtils;
+            const host = document.getElementById('gallery');
+
+            // A card is exactly image + chrome. Rather than hoping the rendered
+            // chrome matches this number, the number is ENFORCED: the chrome box is
+            // given this exact height and clips. Measuring instead is unreliable
+            // here — runtime CSS tools like the Tailwind CDN generate styles
+            // asynchronously, so an early probe measures an unstyled card.
+            const CHROME_H = 136;
+            const RATIOS = [3/4, 4/3, 1, 9/16, 16/9, 2/3];
+            const AUTHORS = ['A. Lovelace','L. Torvalds','G. Hopper','A. Turing','M. Hamilton','R. Perlman'];
+            const TAGS = ['landscape','portrait','street','studio','archive','macro','film','travel'];
+
+            let total = 50000;
+            let understate = false;
+            let scroller = null;
+
+            // NOTE ON loading="lazy": do not use it here. Native lazy loading defers
+            // until the browser considers an image near the viewport, and its
+            // heuristics do not fire reliably for elements inside a clipped,
+            // transformed container — measured: zero requests issued after four
+            // seconds, cards visible and empty. Virtualization is already the lazy
+            // loader; a card only exists when it is nearly on screen, so its image
+            // should be fetched immediately.
+
+            // Per-card UI state lives in the MODEL, keyed by card index — never on the
+            // element. Elements are pooled and reused for other cards, so anything
+            // stored on them belongs to whichever card had it last.
+            const carouselAt = new Map();
+            const liked = new Set();
+
+            function card(i) {
+                const frames = hash(i, 5) < 0.35 ? 2 + Math.floor(hash(i, 6) * 4) : 1;
+                return {
+                    ratio: RATIOS[Math.floor(hash(i, 1) * RATIOS.length)],
+                    author: AUTHORS[Math.floor(hash(i, 2) * AUTHORS.length)],
+                    tag: TAGS[Math.floor(hash(i, 3) * TAGS.length)],
+                    likes: Math.floor(hash(i, 4) * 900),
+                    frames
+                };
+            }
+
+            // Canonical mode: height is arithmetic, so the engine never has to mount a
+            // card to know how tall it is.
+            function getItemHeight(i, columnWidth) {
+                // Canonical mode takes this as truth and never checks it against the
+                // DOM. It must account for every part of the card: media box, padding,
+                // borders, and the clamped text block.
+                return Math.round(columnWidth * card(i).ratio) + CHROME_H - (understate ? 40 : 0);
+            }
+
+            // Round the request width up to a 100px bucket. A CDN that resizes on
+            // demand caches per exact URL, so an unbucketed width means every
+            // container size is a fresh origin render. Buckets cost a little
+            // downscaling and turn most requests into cache hits.
+            const bucketWidth = (w) => Math.ceil(w / 100) * 100;
+
+            // Shared by rendering AND prefetching. They must agree exactly or the
+            // warmed entry is a different URL and the card refetches.
+            function imgUrl(i, frame) {
+                const w = bucketWidth(Math.round((scroller && scroller.masonryColumnWidth) || 260));
+                return `https://picsum.photos/seed/cs${i}-${frame}/${w}/${Math.round(w * card(i).ratio)}`;
+            }
+
+            // Virtualization mounts a card only once it is nearly on screen, which
+            // is exactly when its image is needed — so the fetch starts too late to
+            // hide any latency. Warming a window beyond the mounted range decouples
+            // fetching from mounting: by the time a card exists, its bytes are in
+            // the HTTP cache.
+            // Keep this small. A browser allows roughly six concurrent connections
+            // per host, so speculative requests queue ahead of the ones actually
+            // being displayed: prefetching 30 ahead left 141 images in flight and
+            // 0 of 18 visible cards filled. Bounded window, low priority.
+            const PREFETCH_AHEAD = 12;
+            const PREFETCH_BEHIND = 6;
+            const warmed = new Set();
+
+            function warm(i) {
+                if (i < 0 || i >= total || warmed.has(i)) return;
+                warmed.add(i);
+                const im = new Image();
+                im.decoding = 'async';
+                // Visible cards request at high priority, so they preempt these.
+                im.fetchPriority = 'low';
+                im.src = imgUrl(i, 0);
+                if (warmed.size > 600) warmed.clear();   // bounded, like everything else
+            }
+
+            function prefetchAroundView() {
+                const idx = [...host.querySelectorAll('[data-element-index]')]
+                    .map((n) => Number(n.dataset.elementIndex));
+                if (!idx.length) return;
+                const lo = Math.min(...idx);
+                const hi = Math.max(...idx);
+                for (let i = hi + 1; i <= hi + PREFETCH_AHEAD; i++) warm(i);
+                for (let i = lo - PREFETCH_BEHIND; i < lo; i++) warm(i);
+            }
+
+            // renderItem must be idempotent: a pooled element arrives carrying the
+            // previous card's DOM. Rebuilding innerHTML wholesale is the simplest way
+            // to guarantee that; a partial update would leak state between cards.
+            function renderItem(i, el) {
+                const c = card(i);
+                // Ask the engine for the live column width so the CDN returns an
+                // image at the size actually being displayed.
+                const colW = Math.round((scroller && scroller.masonryColumnWidth) || 260);
+                const frame = carouselAt.get(i) || 0;
+                const isLiked = liked.has(i);
+
+                el.className = 'card-shell rounded-xl border border-white/10 bg-white/[0.04] ' +
+                               'shadow-lg shadow-black/20';
+                el.style.setProperty('--ar', String(c.ratio));
+                el.style.setProperty('--ph-h', String(Math.floor(hash(i, 9) * 360)));
+
+                const nav = c.frames > 1 ? `
+                    <button class="navbtn left-1.5" data-nav="-1" aria-label="Previous image">‹</button>
+                    <button class="navbtn right-1.5" data-nav="1" aria-label="Next image">›</button>
+                    <div class="dots">${Array.from({length: c.frames}, (_, k) =>
+                        `<span class="dot"${k === frame ? ' data-on' : ''}></span>`).join('')}</div>` : '';
+
+                el.innerHTML = `
+                    <div class="media">
+                        <img src="${imgUrl(i, frame)}"
+                             width="${colW}" height="${Math.round(colW * c.ratio)}"
+                             decoding="async" fetchpriority="high" alt="">
+                        ${nav}
+                    </div>
+                    <div class="p-3 overflow-hidden" data-chrome style="height:${CHROME_H}px">
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex h-6 w-6 items-center justify-center rounded-full
+                                         bg-sky-500/20 text-[10px] font-semibold text-sky-300">
+                                ${c.author.split(' ')[1][0]}
+                            </span>
+                            <span class="truncate text-xs text-slate-300">${c.author}</span>
+                            <span class="ml-auto rounded-full bg-white/10 px-2 py-0.5
+                                         text-[10px] uppercase tracking-wide text-slate-300">${c.tag}</span>
+                        </div>
+                        <p class="card-title mt-2 text-sm leading-snug text-slate-100">
+                            Frame ${i.toLocaleString()} — ${c.tag} study, ${c.frames > 1 ? c.frames + ' shots' : 'single shot'}
+                        </p>
+                        <div class="mt-2 flex items-center gap-3 text-xs text-slate-400">
+                            <button data-like class="inline-flex items-center gap-1 rounded px-1
+                                    ${isLiked ? 'text-rose-400' : 'hover:text-slate-200'}">
+                                ${isLiked ? '♥' : '♡'} ${c.likes + (isLiked ? 1 : 0)}
+                            </button>
+                            <span>#${i.toLocaleString()}</span>
+                        </div>
+                    </div>`;
+
+                revealOnLoad(el);
+            }
+
+            // Reveal each image once it has decoded. `once` matters: the element is
+            // recycled, so a listener that outlived its card would accumulate.
+            function revealOnLoad(el) {
+                const im = el.querySelector('img');
+                if (!im) return;
+                if (im.complete && im.naturalWidth > 0) im.classList.add('is-loaded');
+                else im.addEventListener('load', () => {
+                    im.classList.add('is-loaded');
+                    updateImageCount();      // the footer would otherwise stay stale
+                }, { once: true });
+            }
+
+            // ONE delegated listener on the host. Attaching handlers per card would
+            // leak them every time an element is recycled.
+            host.addEventListener('click', (e) => {
+                const cardEl = e.target.closest('[data-element-index]');
+                if (!cardEl) return;
+                const i = Number(cardEl.dataset.elementIndex);
+
+                const nav = e.target.closest('[data-nav]');
+                if (nav) {
+                    const frames = card(i).frames;
+                    const next = ((carouselAt.get(i) || 0) + Number(nav.dataset.nav) + frames) % frames;
+                    carouselAt.set(i, next);
+                    renderItem(i, cardEl);          // height is unchanged, so no relayout
+                    return;
+                }
+                if (e.target.closest('[data-like]')) {
+                    liked.has(i) ? liked.delete(i) : liked.add(i);
+                    renderItem(i, cardEl);
+                }
+            });
+
+            function build() {
+                if (scroller) scroller.dispose();
+                host.textContent = '';
+                carouselAt.clear();
+                warmed.clear();
+                const Ctor = window.CeriousScroll.CeriousScroll || window.CeriousScroll;
+                scroller = new Ctor(host, total, {
+                    layout: 'masonry',
+                    wheel: { smooth: true, notchThresholdPx: Infinity },
+                    masonry: {
+                        renderItem,
+                        getItemHeight,
+                        gap: 14,
+                        targetColumnWidth: 260,
+                        segmentSize: 500
+                    },
+                    onScroll: draw
+                });
+                draw();
+            }
+
+            // Count DOM state rather than tallying `load` events: a cached image
+            // completes before any listener added after insertion could see it.
+            function updateImageCount() {
+                const imgs = host.querySelectorAll('img');
+                let ready = 0;
+                imgs.forEach((im) => { if (im.naturalWidth > 0) ready++; });
+                document.getElementById('imgLabel').innerHTML =
+                    'Images ready: <strong>' + ready + '</strong> / ' + imgs.length +
+                    ' · warmed ' + warmed.size;
+            }
+
+            function draw() {
+                scroller.renderViewport(host.clientHeight, host, function () {});
+                const n = host.querySelectorAll('[data-element-index]').length;
+                // currentElement is a SEGMENT index in masonry mode, not a card.
+                // Report the topmost card actually on screen instead.
+                const first = host.querySelector('[data-element-index]');
+                const topCard = first ? Number(first.dataset.elementIndex) : 0;
+                document.getElementById('stat').textContent =
+                    'card ' + topCard.toLocaleString() +
+                    ' · ' + scroller.scrollPercentage.toFixed(1) + '%';
+                document.getElementById('domLabel').innerHTML =
+                    'DOM cards: <strong>' + n + '</strong> of ' + total.toLocaleString();
+                document.getElementById('detLabel').innerHTML =
+                    'Determinism: <strong>' + scroller.masonryDeterminism + '</strong>';
+                updateImageCount();
+                prefetchAroundView();
+            }
+
+            document.getElementById('size').addEventListener('change', (e) => {
+                total = parseInt(e.target.value, 10);
+                document.getElementById('totalLabel').textContent = total.toLocaleString();
+                build();
+            });
+            document.getElementById('understate').addEventListener('change', (e) => {
+                understate = e.target.checked;
+                document.body.classList.toggle('show-overflow', understate);
+                build();   // heights changed, so the layout must be rebuilt
+            });
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const i = parseInt(document.getElementById('jump').value, 10);
+                if (Number.isFinite(i)) { scroller.jumpToItem(i); draw(); }
+            });
+            document.getElementById('topBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(0); draw();
+            });
+            document.getElementById('endBtn').addEventListener('click', () => {
+                scroller.handleScrollPercentage(100); draw();
+            });
+
+            build();
+        })();
+    </script>
+</body>
+</html>

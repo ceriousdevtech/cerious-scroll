@@ -838,6 +838,22 @@ export class CeriousScroll {
   }
 
   /**
+   * Current column width in pixels, or `null` outside masonry mode.
+   *
+   * Exposed because real cards need it: requesting a CDN image at the column's
+   * actual width, choosing a `srcset` candidate, or deciding how much text to
+   * render all depend on it, and it changes with the container.
+   */
+  get masonryColumnWidth(): number | null {
+    return this.masonry ? this.masonry.columnWidth : null;
+  }
+
+  /** Current column count, or `null` outside masonry mode. */
+  get masonryColumns(): number | null {
+    return this.masonry ? this.masonry.columns : null;
+  }
+
+  /**
    * Determinism guarantee of the current masonry layout, or `null` outside
    * masonry mode. See {@link MasonryDeterminism}.
    *

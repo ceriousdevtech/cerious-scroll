@@ -149,8 +149,12 @@
             function draw() {
                 scroller.renderViewport(host.clientHeight, host, function () {});
                 const n = host.querySelectorAll('[data-element-index]').length;
+                // currentElement is a SEGMENT index in masonry mode, not a card.
+                // Report the topmost card actually on screen instead.
+                const first = host.querySelector('[data-element-index]');
+                const topCard = first ? Number(first.dataset.elementIndex) : 0;
                 document.getElementById('stat').textContent =
-                    'card ' + scroller.currentElement.toLocaleString() +
+                    'card ' + topCard.toLocaleString() +
                     ' · ' + scroller.scrollPercentage.toFixed(1) + '%';
                 document.getElementById('detLabel').innerHTML =
                     'Determinism: <strong>' + scroller.masonryDeterminism + '</strong>';

@@ -147,8 +147,12 @@
             }
 
             function refreshStat() {
+                // currentElement is a SEGMENT index in masonry mode, not a card.
+                // Report the topmost card actually on screen instead.
+                const first = host.querySelector('[data-element-index]');
+                const topCard = first ? Number(first.dataset.elementIndex) : 0;
                 document.getElementById('stat').textContent =
-                    'card ' + scroller.currentElement.toLocaleString() +
+                    'card ' + topCard.toLocaleString() +
                     ' · ' + scroller.scrollPercentage.toFixed(1) + '%';
                 const n = host.querySelectorAll('[data-element-index]').length;
                 document.getElementById('detLabel').innerHTML =
