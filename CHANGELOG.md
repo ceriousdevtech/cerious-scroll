@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-23
+
+### Added
+
+- **`masonryColumnWidth` and `masonryColumns`** on `CeriousScroll`, reporting the
+  live column geometry, or `null` outside Masonry. Card content routinely needs
+  the column width — to request a CDN image at the size actually displayed, to
+  pick a `srcset` candidate, or to decide how much text to render — and it
+  changes with the container.
+
+### Fixed
+
+- The bundled Masonry demos reported `currentElement` as a card index. In Masonry
+  mode that value is a SEGMENT index, so the figure shown was wrong by the
+  segment size. They now report the topmost card actually on screen.
+
+### Documentation
+
+- New guide section on real content: reserving space for images, using component
+  libraries and utility CSS inside recycled cards, and handling interaction
+  through delegated events with per-card state kept outside the element.
+- Guidance on making images arrive sooner, including why `loading="lazy"` should
+  not be combined with virtualization, and how prefetch windows must be bounded
+  and deprioritised to avoid starving the images actually on screen.
+- Corrected the resize section: dynamic mode anchors at the camera's segment
+  rather than slicing a rebuild across frames.
+- Added `masonry-gallery-demo.html`, a real-content gallery with network images,
+  utility-CSS component cards, and per-card carousels.
+
 ## [1.1.0] - 2026-08-22
 
 ### Added
