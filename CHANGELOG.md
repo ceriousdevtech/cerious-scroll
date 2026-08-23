@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-23
+
+### Fixed
+
+- **The package could not be imported in Node.** `dist/types/index.js` re-exported
+  its siblings without file extensions, and Node's ESM resolver does not add
+  them, so `import ... from '@ceriousdevtech/cerious-scroll'` failed with
+  `ERR_MODULE_NOT_FOUND` on `dist/types/callback-types`. This also took down the
+  React, Vue, and Angular wrappers, which import this package regardless of how
+  they bundle themselves. Bundlers such as Vite and webpack resolve extensionless
+  specifiers, which is why the demos and test suite never saw it.
+
+### Added
+
+- A packaging test asserting every relative specifier in `src` carries a `.js`
+  extension, so the same defect cannot reach a release again.
+
 ## [1.1.1] - 2026-08-23
 
 ### Added
