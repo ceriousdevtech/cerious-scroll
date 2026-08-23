@@ -674,7 +674,8 @@ export class CeriousScroll {
     if (this.masonry) {
       // Masonry mounts CARDS, not one node per virtual element. `renderElement`
       // is ignored: cards are populated by `masonry.renderItem`, which runs once
-      // per mount rather than once per frame.
+      // per visible mount rather than once per frame. Dynamic mode may also use
+      // it to populate the offscreen measurement probe.
       const usable = this.syncViewportHeight(windowHeight);
       this.masonry.render(usable, container, this);
       return this.masonryRange();

@@ -1,328 +1,314 @@
-# Masonry
+# Masonry layout
 
-**Copyright (c) 2024-2026 Cerious DevTech LLC. All rights reserved.**
+Masonry mode virtualizes a card collection while placing each card in the
+currently shortest column. It supports responsive column counts, variable card
+heights, bounded DOM usage, native scrollbar navigation, and content-anchored
+resizing.
 
-## Usage
+## Contents
+
+- [Quick start](#quick-start)
+- [Choose a height mode](#choose-a-height-mode)
+- [Rendering contract](#rendering-contract)
+- [Sizing and gutters](#sizing-and-gutters)
+- [Navigation and public state](#navigation-and-public-state)
+- [Options](#options)
+- [Resize behavior](#resize-behavior)
+- [Performance model](#performance-model)
+- [Troubleshooting](#troubleshooting)
+- [How segmentation works](#how-segmentation-works)
+
+## Quick start
+
+Set `layout: 'masonry'` and provide a `masonry.renderItem` callback. In this
+mode, the constructor's second argument is the number of cards.
 
 ```js
-const scroller = new CeriousScroll(host, 200000, {
+import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
+
+const host = document.querySelector('#gallery');
+const cards = getCards();
+let scroller;
+
+function render() {
+  // Masonry uses renderItem below. This callback is intentionally empty.
+  scroller.renderViewport(host.clientHeight, host, () => {});
+}
+
+scroller = new CeriousScroll(host, cards.length, {
   layout: 'masonry',
   masonry: {
-    // Must be PURE. Called for cards that are not in the DOM.
-    getItemHeight: (i, columnWidth) => Math.round(columnWidth / ratio(i)) + 44,
-    renderItem: (i, el) => { el.innerHTML = card(i); },
-    gap: 14,
+    renderItem: (index, element) => {
+      const card = cards[index];
+      element.className = 'card';
+      element.innerHTML = `<img src="${card.src}" alt="${card.alt}">`;
+    },
+    // Canonical mode: calculate the complete card height without using the DOM.
+    getItemHeight: (index, columnWidth) => {
+      const card = cards[index];
+      return columnWidth * (card.imageHeight / card.imageWidth) + 44;
+    },
+    gap: 16,
     targetColumnWidth: 280
   },
-  onScroll: () => scroller.renderViewport(host.clientHeight, host, () => {})
+  onScroll: render
 });
+
+render();
 ```
 
-`totalElements` is the **card** count. `jumpToItem(index)` navigates in card
-space; `itemCount` reports cards. Column count is responsive by default
-(`targetColumnWidth`, `minColumns`, `maxColumns`) or fixed via `columns`.
-
-`renderItem` populates a card once per mount, not per frame. The `renderElement`
-argument to `renderViewport` is ignored in this mode.
-
-## Determinism: two modes, two guarantees
-
-Masonry ships as two variants with **different determinism guarantees**. They are
-two products, not a feature and its degraded fallback, and the choice between
-them is a property of your CONTENT rather than a preference.
-
-| | **Oracle** — `canonical` | **Dynamic** — `local` |
-|---|---|---|
-| selected by | supplying `getItemHeight` | omitting it |
-| a card's column is a function of | the dataset | the dataset **and the route taken** |
-| card N reached two ways | same column, always | may differ |
-| random access | O(n) — walks every card before it | **O(1)** — lands and starts level |
-| persistent state | O(n / segmentSize) | O(n / segmentSize), smaller K |
-| heights from | your function | the DOM |
-
-Query it at runtime rather than inferring it:
-
-```js
-scroller.masonryDeterminism   // 'canonical' | 'local' | null (not masonry)
-```
-
-### Canonical (oracle)
-
-Every card has one true position, derived from the whole dataset. Card N sits in
-the same column no matter how the viewer arrived, so a position is shareable,
-linkable and reproducible across sessions and users.
-
-Paid for with preprocessing. The column frontier is walked from card 0, and
-reaching a distant card evaluates a height for every card before it — pure
-arithmetic, no DOM, but O(n). Measured: locating card 4,000,000 of 5,000,000
-costs 4,000,500 height evaluations. In practice that walk happens once, early,
-because the engine's own true-bottom probe reaches the last segment on the first
-render.
-
-Choose it when a card's position is part of the product: deep links, shared
-coordinates, screenshot-stable layouts — or simply when height is known from
-intrinsic dimensions.
-
-### Locally deterministic (dynamic)
-
-Heights come from the DOM, so no card can be priced without being built, and
-pricing four million cards to reach the four-millionth is not an option. Random
-access is constant-time instead: a landing far from anything already laid out
-starts a fresh run with level columns.
-
-The layout is deterministic **within a run** and always a valid masonry —
-uniform gutters, balanced columns, nothing overlapping. What it does not promise
-is that card N's column is independent of how you got there. Measured: jumping
-straight to card 4,000,000 of 5,000,000 touches 95 cards and takes 7.3ms.
-
-Choose it when height is only knowable by rendering, which is most text.
-
-**Consequence worth designing around:** under `'local'`, a feature that treats a
-position as shareable — a deep link to a card, a saved scroll coordinate, a
-pixel-comparison test — is not sound. Branch on `masonryDeterminism` rather than
-assuming.
-
-## Two height modes
-
-| | oracle | dynamic |
-|---|---|---|
-| `getItemHeight` | supplied | **omitted** |
-| heights from | your function | the DOM |
-| far jump to unvisited | exact | lands on level columns |
-| layout reads in scroll path | none | one per newly measured card |
-| scrollbar strip | sized in pixels | sized by card count |
-| suits | media with known aspect ratio | text, lists, anything |
-
-```js
-// Dynamic: no getItemHeight at all.
-new CeriousScroll(host, 50000, {
-  layout: 'masonry',
-  masonry: {
-    renderItem: (i, el) => { el.innerHTML = card(i); },
-    gap: 14,
-    targetColumnWidth: 300,
-    segmentSize: 100,        // smaller: a segment is the re-measure unit
-    estimatedItemHeight: 260 // only for segments the camera has not reached
-  }
-});
-```
-
-### How dynamic mode measures
-
-A card is measured **before** it is placed, never guessed. Heights are taken in
-an offscreen probe exactly one column wide, so the value is the height the card
-will have once positioned — and the visible tree is never disturbed, which
-matters because measurement happens while the frontier is being computed, before
-anything is drawn.
-
-`estimatedItemHeight` never affects a drawn card. It is used only for the height
-of segments the camera has not reached, in the same way an unmeasured row
-reports a default today.
-
-Measured heights are cached with a bounded, oldest-first eviction. Evicting is
-safe: a stored frontier is a SUM, so it stays valid — only placing cards inside
-a segment needs the individual values, and those are re-measured on return. A
-width change clears the cache outright, because a text card reflows when its
-column narrows.
-
-### Two invariants dynamic mode depends on
-
-**Frontiers are known for a contiguous RANGE, not "up to N".** A single
-high-water mark was correct while sequential chaining was the only way to
-advance it; anchoring breaks that, because it jumps the mark forward without
-filling the gap behind. Dragging back then reads an unwritten slot and puts NaN
-into every derived position — seen as the view snapping to somewhere unrelated.
-The layout tracks `[frontierBase, frontierReach]` and re-anchors when a target
-falls outside it.
-
-**A height query must never mutate the layout.** Asking the layout for a segment
-outside the range makes it anchor there, re-basing the range the camera is using.
-The engine probes heights constantly — the boundary guardian and the true-bottom
-walk both reach for the LAST segment — so one unguarded read re-anchors to the
-end of the dataset every frame and re-measures everything. `segmentHeight()`
-returns an estimate unless both ends of the span are already in range.
-
-Measured: with that guard removed, a single `handleScrollPercentage(40)` on
-200,000 cards measured all 200,066 of them.
-
-### Segment size is the measurement quantum
-
-A segment is laid out in full whenever it is touched, because its end frontier
-depends on every card in it. So `segmentSize` sets how much measuring a landing
-costs, and the dynamic default (24) is much smaller than the oracle one (500):
-it puts the overhead at roughly one measurement per card drawn, the same rate
-the row engine measures at. At 100 it was ~300 measurements to draw ~25 cards.
-
-Neighbouring segments that cannot reach the window are skipped for the same
-reason — laying one out costs a full segment of measurements for nothing.
-
-### What a jump looks like
-
-The scrollbar is indexed by **card, not by pixel** — the strip is sized from the
-card count and the thumb is a fraction of the dataset. That is why a dataset
-with nothing measured still maps the thumb correctly, and it is unchanged from
-how the row engine has always worked.
-
-So a jump is: percentage -> card index -> camera. No heights involved.
-
-The one thing masonry needs beyond that is the column frontier at the landing
-card. Ordinary scrolling walks forward a segment at a time and measures as it
-goes, so the frontier is real. A drag into never-visited content is different:
-chaining there honestly would mean measuring every card in between. Past
-`maxChainSegments` the landing segment starts from level columns instead.
-
-That flush is not the periodic seam this design exists to avoid. It happens once,
-at a card the viewer teleported to, with nothing above it on screen — they never
-scrolled across it. The residual: two viewers who reach the same card by
-different routes can see it in different columns.
-
-## Why segments
-
-Masonry is path-dependent: which column a card lands in depends on the column
-frontier left by every card before it. Storing that per card is O(n) memory,
-which the scroller refuses.
-
-The engine therefore scrolls over **segments** of `segmentSize` cards while the
-DOM mounts individual **cards**. `MasonryLayout` stores the real column frontier
-every K cards — `columns` floats per snapshot — and resumes the next run from it.
-The layout is bit-identical to one greedy pass from card 0: no seam anywhere,
-every gutter exactly `gap`.
-
-- Memory: `columns * (n / segmentSize)` floats — ~12KB for 1M cards at the default K.
-- The frontier table doubles as a prefix-sum table, so `getCumulativeHeight` is
-  an O(1) lookup rather than a walk.
-- Reaching a cold position is one sequential pass over everything above it;
-  `chainAhead(target, budgetMs)` spreads that across frames.
-
-Heights come from `getItemHeight`, never from the DOM — segment replay must
-price cards that were never mounted (a scrollbar drag landing mid-dataset). In
-exchange the scroll path performs no layout reads at all. If a height is only
-knowable by measuring, masonry mode is the wrong tool.
-
-### What a far jump actually costs
-
-Jumping to card 4,000,000 **does** visit cards 0-3,999,999 — there is no way
-around it, because a column frontier IS the running state of every card before
-it. What it does not do is touch the DOM: the visit is arithmetic (pick the
-shortest of N columns, add a height), so nothing is created, measured, or laid
-out. Only the cards in view are mounted.
-
-Measured on a 5M-card dataset, 4 columns, K=500:
-
-| target card | first jump | later jumps nearby | snapshot table |
-|---|---|---|---|
-| 100,000 | 4.4 ms | 0.116 ms | 6 KB |
-| 1,000,000 | 14.1 ms | 0.059 ms | 63 KB |
-| 4,000,000 | 51.3 ms | 0.068 ms | 250 KB |
-
-The cost is paid once. Afterwards the frontier table answers by lookup, so
-nearby jumps are ~0.07ms regardless of depth. And `chainAhead` splits the walk
-across frames — reaching card 4,000,000 takes 9 slices at a 6.1ms worst case,
-so nothing blocks.
-
-## Why not a seam
-
-The obvious alternative is to flush the columns level every K cards, making each
-segment self-contained. Seven strategies for doing that were built and measured;
-all were rejected. A boundary is a discontinuity by construction, and closing it
-costs one of three things — dead space, uniform gutters, or card size:
-
-| strategy | dead space | uniform gutters | worst card distortion |
-|---|---|---|---|
-| hard flush | 306px | 100% | 0% |
-| reflow tail columns | 89px | 100% | 0% |
-| probe for a level boundary | 38px | 100% | 0% |
-| resize trailing cards | 28px | 100% | 10.7% (2.3% of cards) |
-| widen trailing gaps | 2px | **93%** | 0% |
-
-*(photo aspect ratios, 3 columns, K=200)*
-
-Worse, minimizing dead space makes the columns end level, which turns the seam
-into a crisp horizontal rule across every column — the most visible artifact of
-the three, and one no seam metric captures.
-
-Two related dead ends, both measured:
-
-- **Reconstructing the layout from a local probe.** Greedy masonry contracts in
-  frontier SHAPE but not in column IDENTITY — the same heights end up on
-  different physical columns. 65% column mismatch, flat across probe depths from
-  100 to 2400 cards. Segments are mandatory.
-- **Chained boundary search.** Adaptive-grade seams, but 19ms cold jumps and an
-  O(n/K) boundary cache.
-
-## Resize
-
-A width change alters `columnWidth`, which every height depends on and therefore
-every frontier. Nothing survives; `MasonryLayout.resize()` drops it all.
-
-The camera cannot survive either — it is `(segment, offset)` in the old geometry.
-The renderer re-anchors on **content**: it tracks the card nearest the viewport
-top on every render and puts that same card back at the same screen position
-afterwards. It is the one card guaranteed not to move.
-
-The rebuild is sliced. Chaining to the camera is irreducibly sequential, so it
-is spread across frames at `rebuildSliceMs` (default 6ms) rather than blocking:
-
-| cards | segments | one blocking rebuild | worst 6ms slice | slices |
-|---|---|---|---|---|
-| 200K | 100 | 4.3 ms | 4.5 ms | 1 |
-| 1M | 500 | 11.9 ms | 6.1 ms | 2 |
-| 5M | 2,500 | 58.1 ms | 6.0 ms | 10 |
-| 20M | 10,000 | **229.0 ms** | **6.1 ms** | 38 |
-
-Total work is unchanged; it stops landing in one frame. Progress is durable —
-each completed segment is written to the table — so an abandoned rebuild costs
-nothing. The old cards stay mounted throughout and are swapped atomically, so the
-page holds a stale-but-coherent view rather than blanking.
-
-`totalHeight()` extrapolates from the chained prefix until a background pass
-reaches the end, because sizing the scrollbar would otherwise force the full walk.
-
-## Engine hooks this mode uses
-
-Masonry composes on the engine rather than forking the renderer. `ViewportRenderer`'s
-loop gains no branches, and `NavigationEngine`, `BoundaryGuardian`,
-`NativeScrollbar` and the four input controllers are unchanged and unaware.
-
-| hook | purpose |
-|---|---|
-| `heightProvider` | authoritative heights — bypasses the measured cache and its pruning |
-| content-sized scrollbar strip | element-count sizing quantizes when an element is not row-sized |
-| `jumpToPosition(el, offset)` | re-anchoring needs a sub-element offset |
-| `syncViewportHeight(h)` | consumers that drive their own DOM never call `renderViewport` |
-| `refreshScrollbarMetrics()` | total height can change while element count does not |
-| `wheel.notchThresholdPx` | large cards make instant wheel notches read as teleports |
-
-All are public and independently useful; masonry sets them up automatically.
-
-## Gutters and container width
-
-The renderer honours CSS padding on its own content box, so an outer gutter that
-matches the inner ones is just CSS:
+The host must have a nonzero height and be in the DOM before construction:
 
 ```css
-#scroll [data-cerious-masonry="content"] { padding: 14px 14px 0; }
+#gallery {
+  height: 70vh;
+  overflow: hidden;
+}
 ```
 
-Three details make that come out even rather than approximately even:
+Try the [canonical demo](../masonry-demo.html) and
+[dynamic-height demo](../masonry-dynamic-demo.html) locally, or open them from
+the [live demo index](https://ceriousdevtech.github.io/cerious-scroll/).
 
-- **Width is measured to the scrollbar strip**, not to the content box. The host
-  reserves padding for the strip, and that reservation need not equal the
-  strip's rendered width (17px of padding for a 15px strip is typical), so the
-  content box stops short of it. Measuring the real distance keeps the last
-  gutter equal to the rest.
-- **Column width is fractional.** Flooring leaves a remainder that has to land
-  somewhere, and wherever it lands one outer gutter is wider than the others.
-- **Geometry is re-measured once after the scrollbar attaches.** The renderer is
-  constructed before the strip exists, so its first measurement is necessarily
-  too wide. A resize observation cannot be relied on to correct it — on a reused
-  host the padding is already present, the content box never changes size, and
-  nothing fires.
+## Choose a height mode
 
-## Tuning
+The presence of `getItemHeight` selects the mode. This choice changes both how
+heights are obtained and what a card position means.
 
-- **`segmentSize`** (default 500) trades snapshot memory against the cost of
-  reaching a cold position. Larger means fewer snapshots and a longer chain.
-- **`overscan`** (default 400px) is the margin rendered beyond the viewport.
-- **`rebuildSliceMs`** (default 6) is the per-frame budget during a relayout.
-  Lower keeps frames free at the cost of a longer rebuild.
+| | Canonical (oracle) | Local (dynamic) |
+| --- | --- | --- |
+| Select by | Supply `getItemHeight` | Omit `getItemHeight` |
+| Height source | Your pure function | DOM measurement |
+| Card column depends on | Dataset and container geometry | Dataset, geometry, and navigation route |
+| Same card reached by two routes | Same column | May use a different column |
+| Far random access | O(n) arithmetic walk | O(1) landing with local layout |
+| Default `segmentSize` | 500 | 24 |
+| Best for | Images/media with intrinsic sizes, reproducible positions | Text and content whose height requires layout |
+
+Read the active guarantee rather than inferring it:
+
+```js
+scroller.masonryDeterminism; // 'canonical' | 'local' | null
+```
+
+### Canonical heights
+
+`getItemHeight(index, columnWidth)` must be pure and must return the complete
+card height in pixels. It can be called for cards that have never been mounted,
+so it must not read or measure the DOM.
+
+```js
+function getItemHeight(index, columnWidth) {
+  const item = cards[index];
+  const mediaHeight = columnWidth * item.mediaHeight / item.mediaWidth;
+  return mediaHeight + 48; // caption, padding, and borders
+}
+```
+
+Canonical mode walks the height function from card 0 to build the column
+frontier. That preprocessing is O(n), but it is arithmetic only: offscreen cards
+are not mounted or measured. Once calculated, a card has one reproducible
+column for a given dataset and container geometry.
+
+Choose canonical mode when you need deep links, saved positions, shared
+coordinates, or stable visual snapshots.
+
+### Dynamic heights
+
+Omit `getItemHeight` when the browser must lay out the card to know its height:
+
+```js
+const scroller = new CeriousScroll(host, cards.length, {
+  layout: 'masonry',
+  masonry: {
+    renderItem: renderCard,
+    estimatedItemHeight: 260,
+    targetColumnWidth: 300,
+    gap: 16
+  },
+  onScroll: render
+});
+```
+
+Before placing a new card, dynamic mode renders it into an invisible offscreen
+probe that is exactly one column wide and reads its height. The estimate is used
+only for unvisited segment scroll metrics; a visible card is measured before it
+is positioned.
+
+A far jump cannot measure every preceding card without becoming O(n). Instead,
+dynamic mode starts a local run with level columns when the target is farther
+than `maxChainSegments` from known layout. The result remains a valid balanced
+Masonry layout, but the target card's column can depend on the route used to
+reach it. Do not treat local-mode pixel positions or columns as shareable IDs.
+
+## Rendering contract
+
+Masonry owns the card elements and populates them with `masonry.renderItem`.
+Continue to call `renderViewport()` on initial render and from `onScroll`, but
+pass an empty third callback because the normal row callback is ignored.
+
+```js
+function render() {
+  scroller.renderViewport(host.clientHeight, host, () => {});
+}
+```
+
+`renderItem(index, element)` should be deterministic and idempotent:
+
+- Replace or reset stale content and classes because elements may be recycled.
+- Do not attach global listeners or perform network requests from the callback.
+- In dynamic mode, expect calls for both offscreen measurement and visible
+  mounts. Do not use element identity or callback count as application state.
+- Make asynchronous media dimensions predictable. Reserve space with an aspect
+  ratio, or rebuild the scroller when content changes the card's measured size.
+- In canonical mode, ensure the visual card fits the height returned by
+  `getItemHeight`.
+
+Only the visible cards plus `overscan` are mounted. `renderItem` is not called
+once per animation frame for cards that remain mounted.
+
+## Sizing and gutters
+
+Omit `columns` for responsive columns. The renderer derives the count from
+`targetColumnWidth`, constrained by `minColumns` and `maxColumns`. Supplying
+`columns` fixes the count and takes precedence over the responsive settings.
+
+The renderer accounts for padding on its generated content box. To make the
+outer gutter match a `16px` inner `gap`, add:
+
+```css
+#gallery [data-cerious-masonry="content"] {
+  padding: 16px 16px 0;
+}
+```
+
+Card width and position are managed by Cerious Scroll. Style the card's
+appearance and contents, but do not override its positioning styles.
+
+## Navigation and public state
+
+Use card-oriented APIs in Masonry mode:
+
+```js
+scroller.jumpToItem(12_500);      // place card at the viewport top
+scroller.jumpToItem(12_500, 80);  // place it 80px below the top
+render();                         // programmatic navigation does not call onScroll
+
+console.log(scroller.itemCount);
+console.log(scroller.masonryDeterminism);
+```
+
+`jumpToItem` is available only in Masonry mode. Do not use `jumpToElement` for
+cards: the engine's internal elements are card segments in this layout.
+`handleScrollPercentage(percent)` remains available, but call `render()` after
+it as shown above.
+
+The `MeasuredViewportRange` returned by `renderViewport()` describes internal
+segments, not a card-index range. Track card-level state in `renderItem` or in
+your own data model.
+
+## Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `renderItem` | `(index, element) => void` | required | Populate a card element. |
+| `getItemHeight` | `(index, columnWidth) => number` | omitted | Pure full-height function; supplying it selects canonical mode. |
+| `estimatedItemHeight` | `number` | `300` | Dynamic mode estimate for unvisited segment scroll metrics. |
+| `gap` | `number` | `16` | Horizontal and vertical gutter in pixels. |
+| `columns` | `number` | responsive | Fixed column count; overrides responsive settings. |
+| `targetColumnWidth` | `number` | `280` | Preferred width used to derive a responsive column count. |
+| `minColumns` | `number` | `1` | Minimum responsive column count. |
+| `maxColumns` | `number` | `8` | Maximum responsive column count. |
+| `segmentSize` | `number` | `500` canonical, `24` dynamic | Cards per frontier segment. |
+| `maxChainSegments` | `number` | `4` | Dynamic mode distance that may be measured before starting a local run. |
+| `overscan` | `number` | `400` | Extra rendered pixels above and below the viewport. |
+| `rebuildSliceMs` | `number` | `6` | Per-frame work budget for rebuilding after a relayout. |
+
+Start with the defaults. Change `segmentSize`, `maxChainSegments`, or
+`rebuildSliceMs` only after profiling representative data and navigation.
+
+## Resize behavior
+
+A width change can alter the column count, column width, and every card height.
+Masonry therefore rebuilds its layout. It tracks the card nearest the viewport
+top and restores that card at the same screen offset after the rebuild.
+
+Rebuild work is split across animation frames using `rebuildSliceMs`. Existing
+cards stay mounted until the replacement layout is ready, avoiding a blank
+viewport during a large canonical rebuild. In dynamic mode, width changes also
+clear measured heights because text and other flow content can rewrap.
+
+## Performance model
+
+- DOM use is bounded by the viewport, `overscan`, and recycled card pool.
+- Canonical mode stores a column-frontier snapshot per segment and evaluates
+  heights sequentially to reach cold positions.
+- Dynamic mode stores bounded measured heights and can establish a new local
+  frontier for constant-time far jumps.
+- Larger canonical segments reduce snapshot memory but increase replay work.
+- Larger dynamic segments increase the number of cards that may need offscreen
+  measurement for a landing; the default is intentionally small.
+- Increasing `overscan` can hide fast-scroll mounting but creates more DOM work.
+
+For large media cards, a wheel notch can move most of a viewport. If that feels
+abrupt, opt into smoothing for all wheel deltas:
+
+```js
+wheel: {
+  smooth: true,
+  notchThresholdPx: Infinity
+}
+```
+
+## Troubleshooting
+
+### The gallery is blank
+
+- Confirm the host has a nonzero computed height and is attached to the DOM.
+- Call `renderViewport()` once after constructing the scroller.
+- Ensure `masonry.renderItem` is present and does not throw.
+
+### Cards overlap or clip
+
+- In canonical mode, include every border, padding, caption, and fixed-height
+  region in `getItemHeight`.
+- Do not override the card element's engine-managed width, height, or transform.
+- Reserve space for images or other content that loads asynchronously.
+
+### A card changes columns after a far jump
+
+This is expected in dynamic mode (`masonryDeterminism === 'local'`). Supply a
+pure `getItemHeight` to select canonical mode when a card must have a globally
+reproducible column.
+
+### Dynamic rendering performs duplicate work
+
+Dynamic mode invokes `renderItem` in an offscreen probe to measure uncached
+cards, then uses it for visible mounts. Keep the callback cheap and free of
+side effects; cache expensive application-level formatting outside the DOM
+callback when needed.
+
+### The scrollbar or viewport does not update after a jump
+
+`jumpToItem()` and `handleScrollPercentage()` update navigation state but do
+not invoke `onScroll`. Call the same render function you use for `onScroll`.
+
+## How segmentation works
+
+Greedy Masonry is path-dependent: placing the next card requires the current
+height of every column. Keeping that state for every card would make memory
+grow linearly with the dataset.
+
+Cerious Scroll instead lets the engine navigate over segments while the
+Masonry renderer mounts individual cards. It stores column-frontier snapshots
+at segment boundaries. In canonical mode those snapshots reproduce the same
+layout as one greedy pass from card 0 without mounting offscreen cards. In
+dynamic mode snapshots cover locally measured runs, allowing far navigation
+without rendering all preceding content.
+
+The segment abstraction is internal. Application code should continue to use
+card counts, `renderItem`, `jumpToItem`, and `itemCount`.
+
+---
+
+Copyright © 2024–2026 Cerious DevTech LLC. All rights reserved.

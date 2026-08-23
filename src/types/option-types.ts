@@ -228,7 +228,11 @@ export interface MasonryOptions {
    * `docs/MASONRY.md`.
    */
   maxChainSegments?: number;
-  /** Populate a card element. Called once per mount, not per frame. */
+  /**
+   * Populate a card element. Called once per visible mount, not per frame.
+   * Dynamic-height mode also calls it on an offscreen probe when measuring an
+   * uncached card, so the callback must be idempotent and free of side effects.
+   */
   renderItem: (index: number, element: HTMLElement) => void;
   /** Gutter between cards, both axes. Default: 16. */
   gap?: number;
@@ -242,7 +246,8 @@ export interface MasonryOptions {
   maxColumns?: number;
   /**
    * Cards per segment. Trades snapshot memory against the cost of reaching a
-   * cold position: larger means fewer snapshots and a longer chain. Default: 500.
+   * cold position: larger means fewer snapshots and a longer chain. Defaults:
+   * 500 in canonical mode and 24 in dynamic-height mode.
    */
   segmentSize?: number;
   /** Extra pixels rendered above and below the viewport. Default: 400. */

@@ -4,243 +4,222 @@
 [![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://ceriousdevtech.github.io/cerious-scroll/)
 
-Virtual scrolling for lists too large to keep in the DOM. Position is an element index plus a pixel offset into that row — not a pixel from the top of the dataset — so variable heights don’t need a prefix-sum of every row. Memory stays bounded: only the visible window (plus overscan) is mounted, and measured heights live in a sliding cache.
+High-performance virtual scrolling for variable-height lists, native tables,
+and Masonry grids. Cerious Scroll keeps only the visible window and its
+overscan in the DOM, so DOM usage stays bounded as the dataset grows.
 
-Typical uses: data grids, chat, log viewers, trading tickers, analytics tables.
-
----
-
-## Demo
-
-**[Live demos →](https://ceriousdevtech.github.io/cerious-scroll/)** — basic virtual scroll, data grid, chat, log viewer, code viewer, e-commerce, finance ticker, git history, SQL results, and a side-by-side bake-off against Clusterize.js.
-
-To run locally:
-
-```bash
-npm install
-npm run build
-npx http-server . -p 8080   # then open http://localhost:8080/
-```
-
----
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) — engine internals, the element-based positioning algorithm, and the controller/observer model.
-- [Implementation Guide](docs/IMPLEMENTATION_GUIDE.md) — step-by-step usage, options, lifecycle, and integration patterns.
-
----
+Typical uses include data grids, chat, log viewers, media galleries, trading
+tickers, analytics tables, and other interfaces that cannot mount every item at
+once.
 
 ## Features
 
-- **True O(1) Memory Usage**  
-  Constant memory regardless of dataset size (tested with 100M+ elements)
-
-- **Consistent 60 FPS+ Performance**  
-  Sub-millisecond scroll calculations under real-world load
-
-- **Native Variable Height Support**  
-  No pre-calculation required — automatic, on-demand measurement
-
-- **Native `<table>` Layout (opt-in)**  
-  `layout: 'table'` renders real `<tr>`/`<td>` rows in one shared table — frozen header, native column alignment, auto-sized columns — while staying O(1). See [Table Layout](#table-layout-layout-table).
-
-- **Framework Agnostic**  
-  Works with Vanilla JS, Angular, React, Vue, or any framework
-
-- **Native Scrollbar Integration**  
-  Familiar UX with accurate bidirectional synchronization
-
-- **Element-Based Positioning Algorithm**  
-  Eliminates fragile pixel-math approaches
-
-- **No GPU Transforms (default mode)**  
-  The default `<div>` mode uses pure DOM positioning — no `translate3d` hacks. (The opt-in table layout uses a single `<tbody>` transform.)
-
-- **TypeScript Support**  
-  Full type definitions included
-
----
+- Bounded DOM and measurement-cache usage, including datasets with millions of items.
+- Variable-height rows measured on demand; no full-dataset prefix sum required.
+- Three layout modes: absolute rows, native tables, and responsive Masonry grids.
+- Native scrollbar, wheel, touch, and keyboard navigation.
+- Responsive resize handling and stable content anchoring.
+- Framework-agnostic TypeScript API, with React, Vue, and Angular wrappers.
 
 ## Installation
 
-### npm
 ```bash
 npm install @ceriousdevtech/cerious-scroll
 ```
 
-### From Source
-```bash
-# Clone the repository
-git clone https://github.com/ceriousdevtech/cerious-scroll.git
-cd cerious-scroll
+The package includes ES modules and TypeScript declarations. A browser bundle
+is also available from a CDN:
 
-# Install dependencies and build
-npm install
-npm run build
-
-# Use the built files from dist/
-```
-
-### Direct Download
-Download the latest release from [GitHub Releases](https://github.com/ceriousdevtech/cerious-scroll/releases) and include:
-```html
-<script src="path/to/cerious-scroll.bundle.js"></script>
-```
-
-Or via CDN:
 ```html
 <script src="https://unpkg.com/@ceriousdevtech/cerious-scroll@latest/dist/cerious-scroll.min.js"></script>
 ```
 
----
+## Quick start
 
-## Quick Start
+Create a fixed-height host, construct the scroller with the item count, and
+render once initially and again from `onScroll`. The engine measures each row
+after the render callback; the callback does not return a height.
 
-Constructor is `(container, totalElements, options?)`. There is no default-height argument. Drive rendering from `onScroll` — it runs for wheel, touch, keyboard, scrollbar, and resize. The engine measures `offsetHeight` after your callback; you do not need to return a height.
+```html
+<div id="scroll-container" style="height: 600px; overflow: hidden"></div>
+```
 
-```javascript
+```js
 import { CeriousScroll } from '@ceriousdevtech/cerious-scroll';
 
-const data = Array.from({ length: 10000 }, (_, i) => ({
-  id: i,
-  content: `Item ${i}`
+const data = Array.from({ length: 10_000 }, (_, index) => ({
+  id: index,
+  label: `Item ${index}`
 }));
+const container = document.querySelector('#scroll-container');
 
-const container = document.getElementById('scroll-container');
+let scroller;
 
 function render() {
   scroller.renderViewport(
     container.clientHeight,
     container,
     (index, element) => {
-      element.innerHTML = `<div class="item">${data[index].content}</div>`;
+      element.textContent = data[index].label;
     }
   );
 }
 
-const scroller = new CeriousScroll(container, data.length, {
-  onScroll: render,
+scroller = new CeriousScroll(container, data.length, { onScroll: render });
+render();
+```
+
+Use `jumpToElement(index)` or `handleScrollPercentage(percent)` for programmatic
+navigation, `updateTotalElements(count)` after changing a list's size, and
+`dispose()` when the scroller is no longer needed. Programmatic navigation does
+not call `onScroll`, so call your render function afterwards.
+
+## Layouts
+
+| Layout | Configuration | Best for |
+| --- | --- | --- |
+| Absolute (default) | omit `layout` or use `layout: 'absolute'` | Lists and variable-height rows |
+| Table | `layout: 'table'` | Native `<table>` semantics and aligned columns |
+| Masonry | `layout: 'masonry'` | Virtualized cards flowing into the shortest column |
+
+### Masonry layout
+
+In Masonry mode, the constructor count and `jumpToItem(index)` both refer to
+cards. Card DOM is owned by `masonry.renderItem`; the callback passed to
+`renderViewport` is required by the shared API but ignored.
+
+```js
+const cards = getCards();
+let scroller;
+
+function render() {
+  scroller.renderViewport(host.clientHeight, host, () => {});
+}
+
+scroller = new CeriousScroll(host, cards.length, {
+  layout: 'masonry',
+  masonry: {
+    renderItem: (index, element) => {
+      element.className = 'card';
+      element.textContent = cards[index].title;
+    },
+    getItemHeight: (index, columnWidth) => {
+      const card = cards[index];
+      return columnWidth * (card.imageHeight / card.imageWidth) + 48;
+    },
+    gap: 16,
+    targetColumnWidth: 280
+  },
+  onScroll: render
 });
 
 render();
 ```
 
-Jump with `jumpToElement(i)` or `handleScrollPercentage(n)`. Grow the dataset with `updateTotalElements(n)` rather than constructing a new scroller mid-drag. Tear down with `dispose()`.
+Masonry has two height and positioning guarantees:
 
----
+| Mode | Select it by | Height source | Position guarantee | Far random access |
+| --- | --- | --- | --- | --- |
+| Canonical | Supply `getItemHeight` | Pure height function | A card always occupies the same column | O(n) arithmetic preprocessing |
+| Local | Omit `getItemHeight` | DOM measurement | Column may depend on the route taken | O(1) landing |
 
-## Table Layout (`layout: 'table'`)
+Use canonical mode for media with known dimensions, deep links, shared
+positions, or screenshot-stable layouts. Use local mode when card height is
+only knowable after rendering, such as rich text. At runtime,
+`masonryDeterminism` is `'canonical'`, `'local'`, or `null` outside Masonry.
 
-By default, rows are absolutely-positioned `<div>`s. Opt into **real HTML tables** — `<table>` / `<tr>` / `<td>` with native column alignment and a frozen header — by passing `layout: 'table'`:
+For dynamic heights, omit `getItemHeight` and optionally provide an estimate:
 
-```javascript
-const scroller = new CeriousScroll(container, data.length, {
+```js
+masonry: {
+  renderItem: renderCard,
+  estimatedItemHeight: 260,
+  targetColumnWidth: 300,
+  gap: 16
+}
+```
+
+Add matching outer gutters with padding on the generated content element:
+
+```css
+#scroll-container [data-cerious-masonry="content"] {
+  padding: 16px 16px 0;
+}
+```
+
+See the [Masonry guide](docs/MASONRY.md) for both modes, the full option
+reference, rendering rules, navigation, resize behavior, and performance
+tradeoffs. Try the [canonical Masonry demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-demo.html)
+or [dynamic-height demo](https://ceriousdevtech.github.io/cerious-scroll/masonry-dynamic-demo.html).
+
+### Table layout
+
+Table mode renders real `<tr>` and `<td>` elements in one shared table, keeping
+the header and body columns aligned while virtualizing the body rows.
+
+```js
+const scroller = new CeriousScroll(container, rows.length, {
   layout: 'table',
   table: {
     tableClassName: 'my-table',
-    // Build the header row once into the engine's <thead> (it stays frozen).
     header: (thead) => {
       thead.innerHTML = '<tr><th>ID</th><th>Name</th><th>Email</th></tr>';
     },
-    // Measure column widths from the first window, then pin them: auto-sized
-    // but stable (no scroll jitter). Omit for plain `table-layout: auto`.
-    autoSizeColumns: true,
+    autoSizeColumns: true
   },
+  onScroll: render
 });
 
-// renderElement now receives a real <tr> — fill it with <td>s:
-scroller.renderViewport(container.clientHeight, container, (index, tr) => {
-  const row = data[index];
-  tr.innerHTML = `<td>${row.id}</td><td>${row.name}</td><td>${row.email}</td>`;
-});
+function render() {
+  scroller.renderViewport(container.clientHeight, container, (index, tr) => {
+    const row = rows[index];
+    tr.innerHTML = `<td>${row.id}</td><td>${row.name}</td><td>${row.email}</td>`;
+  });
+}
+
+render();
 ```
 
-**How it works**
+Use `border-collapse: separate` and give the generated `<thead>` an opaque
+background. `autoSizeColumns: true` measures the first window and pins its
+widths; `columnWidths` can provide explicit widths instead.
 
-- **One shared `<table>`.** The `<thead>` and the virtualized `<tbody>` live in the same table, so header and body columns align natively. The header is frozen automatically — only the `<tbody>` is transformed.
-- **Still O(1).** Only the visible window (~25 rows) is in the DOM regardless of dataset size. The window is shifted with a single `transform: translateY()` on the `<tbody>` — the one place table mode uses a GPU transform.
-- **Variable row heights** work exactly as in the default mode: each `<tr>` is measured, never estimated.
+## Documentation
 
-**Column widths**
+- [Implementation guide](docs/IMPLEMENTATION_GUIDE.md) — setup, options,
+  rendering, navigation, events, integrations, and troubleshooting.
+- [Masonry guide](docs/MASONRY.md) — canonical and dynamic Masonry behavior,
+  options, styling, navigation, and tuning.
+- [Architecture](docs/ARCHITECTURE.md) — positioning model, controllers,
+  observers, caches, and layout internals.
+- [Live demos](https://ceriousdevtech.github.io/cerious-scroll/) — examples for
+  lists, grids, chat, logs, tables, Masonry, and more.
 
-- `table-layout: auto` (default) sizes columns to content, but widths can shift slightly as wide content scrolls into the window (only the visible rows are measurable).
-- `autoSizeColumns: true` measures column widths once from the first window and pins them — auto-sized **and** stable, with no manual widths.
-- Or pass explicit `columnWidths: ['120px', '', '200px']` (`''` lets that column take the remainder).
+Framework wrappers have their own usage guides:
 
-**`table` options**
+- [React wrapper](https://github.com/ceriousdevtech/react-cerious-scroll)
+- [Vue wrapper](https://github.com/ceriousdevtech/vue-cerious-scroll)
+- [Angular wrapper](https://github.com/ceriousdevtech/ngx-cerious-scroll)
 
-| option | type | description |
-| --- | --- | --- |
-| `header` | `(thead) => void` | Populate the engine-created `<thead>` once (e.g. `thead.innerHTML = …`). It stays frozen. |
-| `autoSizeColumns` | `boolean` | Measure column widths once from the first window, then pin them (auto-sized + stable). |
-| `columnWidths` | `string[]` | Explicit fixed widths per column. `''`/`'auto'` distributes the remainder. |
-| `tableClassName` / `theadClassName` / `tbodyClassName` | `string` | Class hooks on the generated table elements. |
+## Local development
 
-**CSS notes**
+```bash
+npm install
+npm run build
+npm test
+npx http-server . -p 8080
+```
 
-- Use `border-collapse: separate` — collapsed borders are painted by the (untransformed) `<table>` and would not move with the scrolling rows.
-- Give the `<thead>` an **opaque** background so rows translating up underneath don't show through it.
-
-> **Framework users:** the React, Vue, and Angular wrappers expose *declarative* headers (`tableHeader` prop / `#header` slot / `[ceriousScrollHeaderTemplate]`) that render into the engine's `<thead>`. See each wrapper's README.
-
----
-
-## License
-
-Cerious Scroll™ is licensed under the **MIT License** by **Cerious DevTech LLC**.
-
-See [LICENSE](LICENSE) for details.
-
-info@ceriousdevtech.com
-
----
+Then open `http://localhost:8080/`.
 
 ## Contributing
 
-By submitting a pull request, you agree to the **Contributor License Agreement (CLA)**.
+Contributions are welcome. By submitting a pull request, you agree to the
+[Contributor License Agreement](CONTRIBUTING.md).
 
----
+## License
 
+Cerious Scroll™ is licensed under the [MIT License](LICENSE) by Cerious DevTech
+LLC. Questions can be sent to info@ceriousdevtech.com.
 
-## Masonry
-
-```js
-const scroller = new CeriousScroll(host, 200000, {
-  layout: 'masonry',
-  masonry: {
-    // Must be pure — called for cards that are not in the DOM.
-    getItemHeight: (i, columnWidth) => Math.round(columnWidth / ratio(i)) + 44,
-    renderItem: (i, el) => { el.innerHTML = card(i); },
-    gap: 14,
-    targetColumnWidth: 280
-  },
-  onScroll: () => scroller.renderViewport(host.clientHeight, host, () => {})
-});
-```
-
-Cards flow into the shortest column, each keeping its own height. `totalElements`
-is the card count; `jumpToItem(index)` navigates in card space. Column count is
-responsive by default (`targetColumnWidth`, `minColumns`, `maxColumns`) or fixed
-via `columns`, and a width change relayouts while holding the card nearest the
-viewport top in place.
-
-Masonry comes in two variants with **different determinism guarantees**, chosen
-by whether you supply `getItemHeight`:
-
-| | **oracle** (`canonical`) | **dynamic** (`local`) |
-|---|---|---|
-| heights from | your function | the DOM |
-| a card's column depends on | the dataset | the dataset **and the route** |
-| random access | O(n) preprocessing | **O(1)** |
-
-Supply `getItemHeight` when a card's position is part of your product — deep
-links, shared coordinates, reproducible layouts. Omit it when height is only
-knowable by rendering, which is most text. `scroller.masonryDeterminism` reports
-which guarantee is in force. See [docs/MASONRY.md](docs/MASONRY.md).
-
-## Copyright
-
-Copyright © 2024–2026  
-**Cerious DevTech LLC**  
-All rights reserved.
+Copyright © 2024–2026 Cerious DevTech LLC. All rights reserved.
