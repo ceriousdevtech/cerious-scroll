@@ -156,7 +156,10 @@ describe('masonry determinism contract', () => {
         const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(node.style.transform)!;
         const x = Math.round(parseFloat(m[1]));
         const list = byColumn.get(x) ?? [];
-        list.push({ y: parseFloat(m[2]), h: parseFloat(node.style.height) });
+        list.push({
+          y: parseFloat(m[2]),
+          h: node.style.height ? parseFloat(node.style.height) : node.offsetHeight
+        });
         byColumn.set(x, list);
       }
       expect(byColumn.size).toBeGreaterThan(0);

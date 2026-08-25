@@ -16,6 +16,7 @@ const GAP = 16;
 const heightOf = (i: number) => 120 + ((i * 37) % 9) * 45;
 
 let frames: FrameRequestCallback[] = [];
+const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
 
 /** Run queued frames until the queue drains. Returns how many rounds it took. */
 function flushFrames(max = 500): number {
@@ -85,9 +86,66 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
   vi.stubGlobal('cancelAnimationFrame', () => { /* noop */ });
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (originalOffsetHeight) {
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', originalOffsetHeight);
+  }
+});
 
 describe('MasonryRenderer resize', () => {
+  it('relayouts dynamic cards that resize after their initial render', () => {
+    let observerCallback: ResizeObserverCallback | null = null;
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) { observerCallback = callback; }
+      observe() { /* noop */ }
+      unobserve() { /* noop */ }
+      disconnect() { /* noop */ }
+    }
+    vi.stubGlobal('ResizeObserver', TestResizeObserver);
+
+    const heights = new Map<number, number>();
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        const index = Number(this.dataset.liveIndex);
+        return Number.isInteger(index) ? (heights.get(index) ?? 120) : 0;
+      }
+    });
+
+    const el = container(620);
+    const r = new MasonryRenderer(el, 100, {
+      renderItem: (i: number, node: HTMLElement) => { node.dataset.liveIndex = String(i); },
+      gap: GAP,
+      columns: 2,
+      segmentSize: 8,
+      estimatedItemHeight: 120
+    });
+    const { host } = makeHost();
+    r.observeResize(host, () => r.render(900, el, host));
+    r.render(900, el, host);
+
+    const before = r.locateItem(7)!.y;
+    const resized = el.querySelector('[data-element-index="0"]') as HTMLElement;
+    expect(resized.style.height).toBe('');
+
+    heights.set(0, 500);
+    observerCallback!([{ target: resized } as ResizeObserverEntry], {} as ResizeObserver);
+    flushFrames();
+
+    const grown = r.locateItem(7)!.y;
+    expect(grown).not.toBe(before);
+    expect(cardsIn(el)).toBeGreaterThan(0);
+
+    const remounted = el.querySelector('[data-element-index="0"]') as HTMLElement;
+    heights.set(0, 60);
+    observerCallback!([{ target: remounted } as ResizeObserverEntry], {} as ResizeObserver);
+    flushFrames();
+    expect(r.locateItem(7)!.y).not.toBe(grown);
+
+    r.dispose();
+  });
+
   it('relayouts on a width change and leaves the column count responsive', () => {
     const el = container(1200);
     const r = makeRenderer(el);

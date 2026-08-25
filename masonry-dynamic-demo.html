@@ -30,6 +30,19 @@
             padding-left: 10px; font-style: italic; color: #a5b3c2;
         }
         .cs-card__band { border-radius: 6px; margin-top: 8px; }
+        .cs-card--resized {
+            border-color: #f0b429;
+            box-shadow: inset 0 0 0 1px rgba(240,180,41,.35);
+        }
+        .cs-card__resize-demo {
+            box-sizing: border-box;
+            height: 220px;
+            margin-top: 10px;
+            padding: 14px;
+            border-radius: 7px;
+            color: #fff4c2;
+            background: linear-gradient(145deg, rgba(240,180,41,.32), rgba(219,109,40,.18));
+        }
         #scroll [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
     </style>
     <script src="demo-bootstrap.js?v=20260611" defer></script>
@@ -63,6 +76,10 @@
                 <button id="topBtn" type="button">Top</button>
                 <button id="endBtn" type="button">End</button>
                 <button id="reshuffleBtn" type="button" title="Re-roll every card's content">Reshuffle</button>
+                <span>Resize card
+                    <input id="resizeCard" type="number" min="0" max="49999" value="25000" style="width:100px">
+                    <button id="resizeBtn" type="button">Make taller</button>
+                </span>
                 <span class="stat" id="stat">scroll to see live stats</span>
             </div>
 
@@ -86,6 +103,7 @@
             let total = 50000;
             let seed = 1;
             let scroller = null;
+            const resizedCards = new Set();
 
             const WORDS = ('virtual scroll masonry column height measure viewport segment frontier ' +
                 'anchor gutter card render engine layout dataset pixel budget cache').split(' ');
@@ -98,7 +116,8 @@
             // Seven content kinds, each producing a very different height — and
             // none of them computable without laying the card out.
             function renderCard(i, el) {
-                el.className = 'cs-card';
+                const resized = resizedCards.has(i);
+                el.className = 'cs-card' + (resized ? ' cs-card--resized' : '');
                 const kind = Math.floor(hash(i, 3 + seed) * 7);
                 const head = '<div class="cs-card__kind"><span class="cs-card__id">' +
                     i.toLocaleString() + '</span>' + ['note','thread','list','quote','band','blurb','log'][kind] + '</div>';
@@ -121,6 +140,10 @@
                     }
                     case 5: body = '<p>' + text(i, 18, 12) + '</p>'; break;
                     default: body = '<p>' + text(i, 19, 30) + '</p>';
+                }
+                if (resized) {
+                    body += '<div class="cs-card__resize-demo"><strong>Resized after load</strong><p>' +
+                        text(i, 97, 20) + '</p></div>';
                 }
                 el.innerHTML = head + body;
             }
@@ -162,12 +185,26 @@
                     'DOM cards: <strong>' + n + '</strong> of ' + total.toLocaleString();
             }
 
+            function syncResizeButton() {
+                const i = parseInt(document.getElementById('resizeCard').value, 10);
+                document.getElementById('resizeBtn').textContent = resizedCards.has(i)
+                    ? 'Restore height'
+                    : 'Make taller';
+            }
+
             document.getElementById('size').addEventListener('change', (e) => {
                 total = parseInt(e.target.value, 10);
+                resizedCards.clear();
+                document.getElementById('resizeCard').max = String(total - 1);
                 document.getElementById('totalLabel').textContent = total.toLocaleString();
+                syncResizeButton();
                 build();
             });
-            document.getElementById('reshuffleBtn').addEventListener('click', () => { seed++; build(); });
+            document.getElementById('reshuffleBtn').addEventListener('click', () => {
+                seed++;
+                resizedCards.clear();
+                build();
+            });
             document.getElementById('goBtn').addEventListener('click', () => {
                 const i = parseInt(document.getElementById('jump').value, 10);
                 if (Number.isFinite(i)) { scroller.jumpToItem(i); draw(); }
@@ -177,6 +214,21 @@
             });
             document.getElementById('endBtn').addEventListener('click', () => {
                 scroller.handleScrollPercentage(100); draw();
+            });
+            document.getElementById('resizeCard').addEventListener('input', syncResizeButton);
+            document.getElementById('resizeBtn').addEventListener('click', () => {
+                const input = document.getElementById('resizeCard');
+                const i = Math.max(0, Math.min(total - 1, parseInt(input.value, 10)));
+                if (!Number.isFinite(i)) return;
+
+                input.value = String(i);
+                if (resizedCards.has(i)) resizedCards.delete(i); else resizedCards.add(i);
+                const card = host.querySelector('[data-element-index="' + i + '"]');
+                if (card) renderCard(i, card);
+                syncResizeButton();
+                document.getElementById('stat').textContent = card
+                    ? 'card ' + i.toLocaleString() + ' resized in place'
+                    : 'card ' + i.toLocaleString() + ' queued · scroll to reveal';
             });
 
             build();

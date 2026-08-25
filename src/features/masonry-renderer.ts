@@ -37,6 +37,9 @@ export class MasonryRenderer {
 
   private lastWidth = 0;
   private resizeRaf: number | null = null;
+  private cardResizeRaf: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private resizedCards = new Map<number, number>();
 
   /** Topmost card still intersecting the viewport, and where it sat. */
   private anchor: { index: number; screenY: number } | null = null;
@@ -517,6 +520,7 @@ export class MasonryRenderer {
           this.options.renderItem(it.index, el);
           content.appendChild(el);
           this.mounted.set(it.index, el);
+          if (this.dynamic) this.resizeObserver?.observe(el);
         }
         // No offsetHeight read: the oracle already supplied the height.
         this.write(el, it, screenY + this.pad.top);
@@ -530,6 +534,7 @@ export class MasonryRenderer {
     for (let i = 0; i < this.evict.length; i++) {
       const index = this.evict[i];
       const el = this.mounted.get(index)!;
+      this.resizeObserver?.unobserve(el);
       if (el.parentNode) el.parentNode.removeChild(el);
       this.pool.push(el);
       this.mounted.delete(index);
@@ -542,7 +547,11 @@ export class MasonryRenderer {
   private write(el: HTMLElement, it: PlacedItem, screenY: number): void {
     const transform = `translate(${it.x + this.pad.left + this.centerOffset}px, ${screenY}px)`;
     if (el.style.transform !== transform) el.style.transform = transform;
-    const h = it.height + 'px';
+    // In dynamic mode the wrapper must remain intrinsically sized. A fixed
+    // height would hide later changes (image loads, expanded content, web-font
+    // reflow) from ResizeObserver, because overflowing children do not resize
+    // their fixed-height parent.
+    const h = this.dynamic ? '' : it.height + 'px';
     if (el.style.height !== h) el.style.height = h;
     const w = it.width + 'px';
     if (el.style.width !== w) el.style.width = w;
@@ -587,17 +596,71 @@ export class MasonryRenderer {
     if (typeof ResizeObserver === 'undefined') return () => {};
     const target = this.content ?? this.host;
 
+    const ro = new ResizeObserver((entries) => {
+      let containerChanged = false;
+      for (const entry of entries) {
+        if (entry.target === target) {
+          containerChanged = true;
+          continue;
+        }
+        if (!this.dynamic) continue;
+        const el = entry.target as HTMLElement;
+        const index = Number(el.dataset.elementIndex);
+        if (!Number.isInteger(index) || this.mounted.get(index) !== el) continue;
+        const height = el.offsetHeight;
+        if (Number.isFinite(height) && height >= 0) this.resizedCards.set(index, height);
+      }
 
-    const ro = new ResizeObserver(() => {
       // A drag-resize fires continuously and a width change costs a relayout.
-      if (this.resizeRaf !== null) return;
-      this.resizeRaf = requestAnimationFrame(() => {
-        this.resizeRaf = null;
-        this.handleResize(host, onRender);
-      });
+      if (containerChanged && this.resizeRaf === null) {
+        this.resizeRaf = requestAnimationFrame(() => {
+          this.resizeRaf = null;
+          this.handleResize(host, onRender);
+        });
+      }
+      if (this.resizedCards.size > 0 && this.cardResizeRaf === null) {
+        this.cardResizeRaf = requestAnimationFrame(() => {
+          this.cardResizeRaf = null;
+          this.handleCardResizes(host, onRender);
+        });
+      }
     });
     ro.observe(target);
-    return () => ro.disconnect();
+    this.mounted.forEach((el) => { if (this.dynamic) ro.observe(el); });
+    this.resizeObserver = ro;
+    return () => {
+      ro.disconnect();
+      if (this.resizeObserver === ro) this.resizeObserver = null;
+    };
+  }
+
+  /** Apply post-render intrinsic height changes and rebuild the local window. */
+  private handleCardResizes(host: MasonryHost, onRender: () => void): void {
+    if (!this.dynamic || this.rebuilding || this.resizedCards.size === 0) {
+      this.resizedCards.clear();
+      return;
+    }
+
+    let changed = false;
+    this.resizedCards.forEach((height, index) => {
+      const previous = this.heights!.get(index);
+      if (previous === undefined || Math.abs(previous - height) > 0.5) {
+        this.heights!.set(index, height);
+        if (previous === undefined) this.heightOrder.push(index);
+        changed = true;
+      }
+    });
+    this.resizedCards.clear();
+    if (!changed) return;
+
+    // A changed height can alter the column choice and y-position of every card
+    // after it. Dynamic masonry is locally deterministic, so invalidate and
+    // re-anchor at the current reading position instead of replaying the whole
+    // dataset from item zero.
+    this.pendingAnchor = this.anchor;
+    this.layout.invalidate();
+    this.rebuilding = true;
+    this.scheduleRebuild(host, onRender);
   }
 
   /**
@@ -715,6 +778,7 @@ export class MasonryRenderer {
     this.rebuilding = false;
 
     this.mounted.forEach((el) => {
+      this.resizeObserver?.unobserve(el);
       if (el.parentNode) el.parentNode.removeChild(el);
       this.pool.push(el);
     });
@@ -828,10 +892,14 @@ export class MasonryRenderer {
 
   dispose(): void {
     if (this.resizeRaf !== null) cancelAnimationFrame(this.resizeRaf);
+    if (this.cardResizeRaf !== null) cancelAnimationFrame(this.cardResizeRaf);
     if (this.rebuildRaf !== null) cancelAnimationFrame(this.rebuildRaf);
     if (this.tailRaf !== null) cancelAnimationFrame(this.tailRaf);
     this.mounted.forEach((el) => { if (el.parentNode) el.parentNode.removeChild(el); });
     this.mounted.clear();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.resizedCards.clear();
     this.pool.length = 0;
     if (this.probe && this.probe.parentNode) this.probe.parentNode.removeChild(this.probe);
     this.probe = null;

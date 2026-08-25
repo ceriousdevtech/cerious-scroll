@@ -68,6 +68,9 @@ function makeScroller(total = 5000, over: Record<string, unknown> = {}) {
 
 const cards = (el: HTMLElement) =>
   [...el.querySelectorAll('[data-element-index]')] as HTMLElement[];
+const cardHeight = (el: HTMLElement) => el.style.height
+  ? parseFloat(el.style.height)
+  : el.offsetHeight;
 
 beforeEach(() => { document.body.innerHTML = ''; stubMeasurement(); });
 afterEach(() => {
@@ -85,7 +88,7 @@ describe('dynamic-height masonry', () => {
     for (const node of drawn) {
       const i = Number(node.dataset.elementIndex);
       // 300 is the configured estimate; every drawn card must beat it.
-      expect(parseFloat(node.style.height)).toBe(CONTENT_H(i));
+      expect(cardHeight(node)).toBe(CONTENT_H(i));
     }
     s.dispose();
   });
@@ -99,7 +102,7 @@ describe('dynamic-height masonry', () => {
       const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(node.style.transform)!;
       const x = Math.round(parseFloat(m[1]));
       (byColumn.get(x) ?? byColumn.set(x, []).get(x)!).push({
-        y: parseFloat(m[2]), h: parseFloat(node.style.height)
+        y: parseFloat(m[2]), h: cardHeight(node)
       });
     }
     const gaps = new Set<number>();
@@ -174,7 +177,7 @@ describe('dynamic-height masonry', () => {
     // Still measured, still exact, after crossing many segment boundaries.
     for (const node of cards(el)) {
       const i = Number(node.dataset.elementIndex);
-      expect(parseFloat(node.style.height)).toBe(CONTENT_H(i));
+      expect(cardHeight(node)).toBe(CONTENT_H(i));
     }
     s.dispose();
   });
@@ -205,7 +208,7 @@ describe('dynamic-height masonry', () => {
       for (const node of nodes) {
         const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(node.style.transform)!;
         expect(Number.isNaN(parseFloat(m[2]))).toBe(false);
-        expect(Number.isNaN(parseFloat(node.style.height))).toBe(false);
+        expect(Number.isNaN(cardHeight(node))).toBe(false);
       }
       seen.push(nodes.length);
     }
@@ -302,7 +305,7 @@ describe('dynamic-height masonry', () => {
         const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(node.style.transform)!;
         const x = Math.round(parseFloat(m[1]));
         deepest.set(x, Math.max(deepest.get(x) ?? -Infinity,
-          parseFloat(m[2]) + parseFloat(node.style.height)));
+          parseFloat(m[2]) + cardHeight(node)));
       }
       expect(deepest.size).toBeGreaterThan(0);
       // Mid-dataset there is no ragged tail to excuse a short column.
