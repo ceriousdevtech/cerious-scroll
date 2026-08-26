@@ -426,7 +426,18 @@ export class MasonryRenderer {
 
   /** Positioned wrapper the cards live in, created on first render. */
   private ensureContent(container: HTMLElement): HTMLElement {
-    if (this.content && this.content.parentNode === container) return this.content;
+    if (this.content) {
+      const parent = this.content.parentElement;
+      // Native touch mode wraps the existing Masonry viewport in a private
+      // scrollable ancestor. It is still the same live viewport for this host;
+      // recreating it outside the proxy would strand touch hit-testing and
+      // leave an orphan layer behind.
+      const insideNativeTouchProxy = Boolean(
+        parent?.hasAttribute('data-cerious-native-touch-proxy') &&
+        parent.parentElement === container
+      );
+      if (parent === container || insideNativeTouchProxy) return this.content;
+    }
     const el = document.createElement('div');
     el.setAttribute('data-cerious-masonry', 'content');
     el.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden';

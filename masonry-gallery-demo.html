@@ -49,7 +49,8 @@
         .navbtn { position: absolute; top: 50%; transform: translateY(-50%);
                   width: 26px; height: 26px; border-radius: 999px; border: 0;
                   background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
-                  font-size: 13px; line-height: 26px; padding: 0; }
+                  font-size: 13px; line-height: 26px; padding: 0;
+                  touch-action: manipulation; }
         .navbtn:hover { background: rgba(0,0,0,.8); }
         /* The title occupies a fixed two-line box. Canonical mode needs every card's
            chrome to be the SAME height; free-flowing text is the usual reason a
@@ -109,7 +110,7 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260611"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260825-append-sync"></script>
     <script src="demo-bootstrap.js?v=20260611"></script>
     <script>
         (function () {
@@ -143,7 +144,6 @@
             // stored on them belongs to whichever card had it last.
             const carouselAt = new Map();
             const liked = new Set();
-
             function card(i) {
                 const frames = hash(i, 5) < 0.35 ? 2 + Math.floor(hash(i, 6) * 4) : 1;
                 return {
@@ -262,7 +262,69 @@
                         </div>
                     </div>`;
 
+                // Direct button handlers are intentional here. iOS can be
+                // inconsistent about bubbling a synthesized click out of a
+                // momentum-scrolling overflow ancestor, even though the button
+                // visibly enters its pressed state. Buttons are recreated with
+                // the card markup, so these listeners are collected with them.
+                el.querySelectorAll('[data-nav]').forEach((button) => {
+                    button.addEventListener('click', handleCarouselClick);
+                });
                 revealOnLoad(el);
+            }
+
+            function setActiveDot(el, frame) {
+                el.querySelectorAll('.dot').forEach((dot, index) => {
+                    if (index === frame) dot.setAttribute('data-on', '');
+                    else dot.removeAttribute('data-on');
+                });
+            }
+
+            function handleCarouselClick(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const button = e.currentTarget;
+                const cardEl = button.closest('[data-element-index]');
+                if (!cardEl) return;
+                const i = Number(cardEl.dataset.elementIndex);
+                const frames = card(i).frames;
+                const previous = carouselAt.get(i) || 0;
+                const next = (previous + Number(button.dataset.nav) + frames) % frames;
+                carouselAt.set(i, next);
+                setActiveDot(cardEl, next); // immediate tap feedback
+
+                // Keep the current frame visible until the next one has loaded.
+                // Replacing the whole card made mobile network latency look like
+                // a failed tap and could commit after a pooled card was recycled.
+                const url = imgUrl(i, next);
+                const pending = new Image();
+                pending.decoding = 'async';
+                pending.fetchPriority = 'high';
+                pending.alt = '';
+                const current = cardEl.querySelector('img');
+                if (current) {
+                    pending.width = current.width;
+                    pending.height = current.height;
+                }
+
+                const commit = () => {
+                    if (cardEl.dataset.elementIndex !== String(i)) return;
+                    if ((carouselAt.get(i) || 0) !== next) return;
+                    const live = cardEl.querySelector('img');
+                    if (!live || !pending.naturalWidth) return;
+                    pending.classList.add('is-loaded');
+                    live.replaceWith(pending);
+                    updateImageCount();
+                };
+                pending.addEventListener('load', commit, { once: true });
+                pending.addEventListener('error', () => {
+                    if (cardEl.dataset.elementIndex !== String(i)) return;
+                    if ((carouselAt.get(i) || 0) !== next) return;
+                    carouselAt.set(i, previous);
+                    setActiveDot(cardEl, previous);
+                }, { once: true });
+                pending.src = url;
+                if (pending.complete && pending.naturalWidth > 0) commit();
             }
 
             // Reveal each image once it has decoded. `once` matters: the element is
@@ -284,14 +346,6 @@
                 if (!cardEl) return;
                 const i = Number(cardEl.dataset.elementIndex);
 
-                const nav = e.target.closest('[data-nav]');
-                if (nav) {
-                    const frames = card(i).frames;
-                    const next = ((carouselAt.get(i) || 0) + Number(nav.dataset.nav) + frames) % frames;
-                    carouselAt.set(i, next);
-                    renderItem(i, cardEl);          // height is unchanged, so no relayout
-                    return;
-                }
                 if (e.target.closest('[data-like]')) {
                     liked.has(i) ? liked.delete(i) : liked.add(i);
                     renderItem(i, cardEl);

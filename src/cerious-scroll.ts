@@ -21,6 +21,7 @@ import { NavigationEngine } from './engine/navigation-engine.js';
 import { ViewportStateCalculator } from './core/viewport-state.js';
 import { WheelController } from './controllers/wheel-controller.js';
 import { TouchController } from './controllers/touch-controller.js';
+import { NativeTouchController } from './controllers/native-touch-controller.js';
 import { ContentObserverManager } from './observers/content-observer.js';
 import { KeyboardController } from './controllers/keyboard-controller.js';
 import { ResizeController } from './controllers/resize-controller.js';
@@ -118,6 +119,7 @@ export class CeriousScroll {
   private viewportStateCalculator: ViewportStateCalculator;
   private wheelController: WheelController;
   private touchController: TouchController;
+  private nativeTouchController?: NativeTouchController;
   private contentObserverManager: ContentObserverManager;
 
   /**
@@ -230,6 +232,12 @@ export class CeriousScroll {
       () => this.viewportRenderer.calculateTrueBottomPosition(this.viewportHeight),
       CeriousScroll.VIRTUAL_TRACK_HEIGHT,
       () => {
+        // Scrollbar drags use jumpToPosition(..., skipScrollbarSync=true), so
+        // they deliberately bypass NavigationEngine's normal sync callback.
+        // Keep the independent native-touch surface aligned here; otherwise a
+        // scrollbar jump away from the top leaves the proxy at physical
+        // scrollTop 0 and the next touch can rubber-band in mid-dataset.
+        this.nativeTouchController?.syncPosition();
         this.options.onScroll?.();
       }
     );
@@ -272,6 +280,7 @@ export class CeriousScroll {
         if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
           this.nativeScrollbar.syncNativeScrollbar();
         }
+        this.nativeTouchController?.syncPosition();
       },
       getTrueBottomPosition: () => this.viewportRenderer.calculateTrueBottomPosition(this.viewportHeight)
     });
@@ -309,6 +318,13 @@ export class CeriousScroll {
     });
     
     this.touchController = new TouchController({
+      scroll: (deltaY: number, viewportHeight: number) => this.scroll(deltaY, viewportHeight),
+      calculateScrollPercentage: () => this.calculateScrollPercentage(),
+      getCurrentElement: () => this.currentElement,
+      getScrollOffset: () => this.scrollOffset
+    });
+
+    this.nativeTouchController = new NativeTouchController({
       scroll: (deltaY: number, viewportHeight: number) => this.scroll(deltaY, viewportHeight),
       calculateScrollPercentage: () => this.calculateScrollPercentage(),
       getCurrentElement: () => this.currentElement,
@@ -397,13 +413,22 @@ export class CeriousScroll {
     }
 
     if (this.options.touch?.enabled !== false) {
-      this.touchCleanup = this.touchController.attach(
-        container,
-        () => {
-          this.options.onScroll?.();
-        },
-        this.options.touch
+      const requestedTouchMode = this.options.touch?.mode;
+      const nativeContent = container.querySelector<HTMLElement>(
+        '[data-cerious-scroll-content], [data-cerious-masonry="content"]'
       );
+      // Native touch is the default for the dedicated content structure used
+      // by the framework bindings, demo bootstrap, and Masonry. Legacy direct
+      // hosts without that structure retain manual touch automatically; an
+      // explicit native-proxy request still reaches attach() and its useful
+      // validation error.
+      const canUseNativeProxy = nativeContent?.parentElement === container;
+      const useNativeProxy = requestedTouchMode === 'native-proxy' ||
+        (requestedTouchMode !== 'manual' && canUseNativeProxy);
+      const touchController = useNativeProxy ? this.nativeTouchController : this.touchController;
+      this.touchCleanup = touchController.attach(container, () => {
+        this.options.onScroll?.();
+      }, this.options.touch);
     }
     
     if (this.masonry) {
@@ -633,6 +658,12 @@ export class CeriousScroll {
     this.navigationEngine.updateConfig(next, this.viewportHeight);
     this.viewportRenderer.updateTotalElements(next);
     this.nativeScrollbar.updateNativeScrollbarHeight(next);
+    // Resizing a native scroll surface changes the meaning of its existing
+    // scrollTop. Re-anchor both native input surfaces immediately to the
+    // unchanged logical camera so an asynchronous browser scroll event cannot
+    // reinterpret the old pixel position and move the viewport. Each surface
+    // already defers its write while its own gesture is active.
+    this.syncScrollbar();
   }
 
   /** Reset camera to element 0, offset 0. */
@@ -899,6 +930,7 @@ export class CeriousScroll {
     if (this.nativeScrollbar.container && !this.nativeScrollbar.isSyncing) {
       this.nativeScrollbar.syncNativeScrollbar();
     }
+    this.nativeTouchController?.syncPosition();
   }
 
   /**

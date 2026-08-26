@@ -151,6 +151,26 @@ describe("CeriousScroll layout: 'masonry'", () => {
     s.dispose();
   });
 
+  it('keeps the Masonry viewport inside native-proxy touch mode', () => {
+    const el = host();
+    const s = new CeriousScroll(el, 5000, {
+      ...opts(),
+      touch: { mode: 'native-proxy' },
+      keyboard: { enabled: false },
+      wheel: { enabled: false },
+      autoResize: false,
+      observeContentChanges: false,
+    });
+
+    const proxy = el.querySelector('[data-cerious-native-touch-proxy]');
+    expect(proxy).not.toBeNull();
+    s.renderViewport(900, el, () => {});
+    const masonryViewports = el.querySelectorAll('[data-cerious-masonry="content"]');
+    expect(masonryViewports).toHaveLength(1);
+    expect(masonryViewports[0].parentElement).toBe(proxy);
+    s.dispose();
+  });
+
   it('requires the masonry option, and rejects a competing heightProvider', () => {
     expect(() => new CeriousScroll(host(), 100, { layout: 'masonry' })).toThrow(/requires/);
     expect(() => new CeriousScroll(host(), 100, {

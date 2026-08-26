@@ -100,6 +100,91 @@ describe('CeriousScroll Integration Tests', () => {
       expect(scroller).toBeDefined();
       scroller.dispose();
     });
+
+    it('selects native-proxy touch mode by default without attaching canceling touch listeners', () => {
+      const container = document.createElement('div');
+      const content = document.createElement('div');
+      content.setAttribute('data-cerious-scroll-content', '');
+      container.appendChild(content);
+      document.body.appendChild(container);
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(content, 'clientHeight', { configurable: true, value: 600 });
+      const addSpy = vi.spyOn(container, 'addEventListener');
+
+      const scroller = new CeriousScroll(container, 1000, {
+        keyboard: { enabled: false },
+        wheel: { enabled: false },
+        attachScrollbar: false,
+        autoResize: false,
+        observeContentChanges: false,
+      });
+
+      expect(container.querySelector('[data-cerious-native-touch-proxy]')).not.toBeNull();
+      expect(addSpy.mock.calls.some(([type]) => type === 'touchstart' || type === 'touchmove')).toBe(false);
+      scroller.dispose();
+      expect(content.parentElement).toBe(container);
+      container.remove();
+    });
+
+    it('allows manual touch mode as an explicit fallback', () => {
+      const container = document.createElement('div');
+      const content = document.createElement('div');
+      content.setAttribute('data-cerious-scroll-content', '');
+      container.appendChild(content);
+      document.body.appendChild(container);
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(content, 'clientHeight', { configurable: true, value: 600 });
+      const addSpy = vi.spyOn(container, 'addEventListener');
+
+      const scroller = new CeriousScroll(container, 1000, {
+        touch: { mode: 'manual' },
+        keyboard: { enabled: false },
+        wheel: { enabled: false },
+        attachScrollbar: false,
+        autoResize: false,
+        observeContentChanges: false,
+      });
+
+      expect(container.querySelector('[data-cerious-native-touch-proxy]')).toBeNull();
+      expect(addSpy.mock.calls.some(([type]) => type === 'touchstart')).toBe(true);
+      scroller.dispose();
+      container.remove();
+    });
+
+    it('realigns the native touch surface after a scrollbar-driven jump', async () => {
+      const container = document.createElement('div');
+      const content = document.createElement('div');
+      content.setAttribute('data-cerious-scroll-content', '');
+      container.appendChild(content);
+      document.body.appendChild(container);
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(content, 'clientHeight', { configurable: true, value: 600 });
+
+      const scroller = new CeriousScroll(container, 1000, {
+        touch: { mode: 'native-proxy' },
+        keyboard: { enabled: false },
+        wheel: { enabled: false },
+        autoResize: false,
+        observeContentChanges: false,
+      });
+      const strip = container.querySelector<HTMLElement>('[data-cerious-scrollbar="container"]')!;
+      const proxy = container.querySelector<HTMLElement>('[data-cerious-native-touch-proxy]')!;
+      Object.defineProperty(strip, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(strip, 'scrollHeight', { configurable: true, value: 10_600 });
+      Object.defineProperty(proxy, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(proxy, 'scrollHeight', { configurable: true, value: 2_000_600 });
+
+      expect(proxy.scrollTop).toBe(0);
+      strip.scrollTop = 5000;
+      strip.dispatchEvent(new Event('scroll'));
+      await waitForAnimationFrame();
+
+      expect(scroller.currentElement).toBeGreaterThan(0);
+      expect(proxy.scrollTop).toBe(1_000_000);
+      scroller.detachScrollbar(container);
+      scroller.dispose();
+      container.remove();
+    });
   });
 
   describe('Basic Scrolling', () => {
@@ -539,6 +624,38 @@ describe('CeriousScroll Integration Tests', () => {
       expect(scroller.jumpToElement(1999).element).toBe(1999);
 
       scroller.dispose();
+    });
+
+    it('keeps the logical camera anchored and re-syncs native surfaces after append', () => {
+      const container = document.createElement('div');
+      const content = document.createElement('div');
+      content.setAttribute('data-cerious-scroll-content', '');
+      container.appendChild(content);
+      document.body.appendChild(container);
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(content, 'clientHeight', { configurable: true, value: 600 });
+
+      const scroller = new CeriousScroll(container, 1000, {
+        keyboard: { enabled: false },
+        wheel: { enabled: false },
+        autoResize: false,
+        observeContentChanges: false,
+      });
+      scroller.currentElement = 400;
+      scroller.scrollOffset = 23;
+
+      const scrollbarSync = vi.spyOn((scroller as any).nativeScrollbar, 'syncNativeScrollbar');
+      const proxySync = vi.spyOn((scroller as any).nativeTouchController, 'syncPosition');
+
+      scroller.updateTotalElements(1200);
+
+      expect(scroller.currentElement).toBe(400);
+      expect(scroller.scrollOffset).toBe(23);
+      expect(scrollbarSync).toHaveBeenCalledTimes(1);
+      expect(proxySync).toHaveBeenCalledTimes(1);
+
+      scroller.dispose();
+      container.remove();
     });
 
     it('is a no-op for an unchanged count and validates its argument', () => {

@@ -41,6 +41,15 @@ export interface KeyboardNavigationOptions {
 export interface TouchNavigationOptions {
   /** Enable/disable touch navigation (default: true) */
   enabled?: boolean;
+  /**
+   * Touch input implementation. `manual` preserves the original delta and
+   * JavaScript-momentum controller. `native-proxy` makes the dedicated content
+   * element a child of a hidden native overflow surface, preserving ordinary
+   * content hit-testing while using the browser's real touch physics.
+   * Default: `native-proxy` when the host has a dedicated content element;
+   * legacy direct hosts without one fall back to `manual`.
+   */
+  mode?: 'manual' | 'native-proxy';
   /** Enable momentum/inertia scrolling (default: true) */
   enableMomentum?: boolean;
   /** Friction coefficient for momentum decay (0-1, default: 0.95) */

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-08-25
+
+### Added
+
+- Native-proxy touch scrolling. A hidden native overflow ancestor supplies
+  platform touch momentum while forwarding pixel deltas through the existing
+  virtual navigation engine. Interactive content remains the browser's real
+  hit-test target.
+
+### Changed
+
+- Native-proxy touch is now the default for hosts with a dedicated content
+  element. Legacy hosts without one automatically retain the manual controller;
+  use `touch.mode: 'manual'` to opt out explicitly.
+
+### Fixed
+
+- Native-proxy touch now clamps Safari's elastic `scrollTop` values to the
+  physical range, preventing bottom/top rubber-band rebound from being applied
+  to the virtual camera as reverse scrolling.
+- Scrollbar-driven jumps now realign the native-touch proxy as part of the
+  scrollbar render path, preventing a stale physical top/bottom boundary from
+  appearing in the middle of the dataset.
+- Native-proxy scroll events now require ownership by an observed touch pan or
+  its momentum. Safari focus/scroll-anchoring adjustments after tapping mutable
+  content are rebased instead of moving the virtual camera and creating a false
+  boundary at the tapped card.
+- Native-proxy boundary synchronization now uses exact dataset boundaries, so
+  tiny nonzero percentages in very large datasets do not snap the physical
+  proxy to its top and rubber-band in the middle of the content.
+- Appending or removing rows with `updateTotalElements()` now re-anchors the
+  native scrollbar and touch proxy to the unchanged logical camera, preventing
+  a resized native surface from moving the viewport.
+
 ## [1.1.2] - 2026-08-23
 
 ### Fixed
@@ -345,4 +379,5 @@ For questions about upgrading or changes in specific versions:
 Copyright © 2024-2026 Cerious DevTech LLC. All rights reserved.
 
 [1.0.0]: https://github.com/ceriousdevtech/cerious-scroll/releases/tag/v1.0.0
-[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.0.0...HEAD
+[1.1.3]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.2...v1.1.3
+[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.3...HEAD
