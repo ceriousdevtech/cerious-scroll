@@ -4,8 +4,74 @@
     {
       "name": "demos",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8777"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8777"
+      ],
       "port": 8777
+    },
+    {
+      "name": "react-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--config",
+        "/Users/jared/Repos/ceriousdevtech/react-cerious-scroll/demo/vite.config.ts",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
+      "port": 5199
+    },
+    {
+      "name": "vue-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--config",
+        "/Users/jared/Repos/ceriousdevtech/vue-cerious-scroll/demo/vite.config.ts",
+        "--port",
+        "5198",
+        "--strictPort"
+      ],
+      "port": 5198
+    },
+    {
+      "name": "angular-demo",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/jared/Repos/ceriousdevtech/ngx-cerious-scroll && npx ng serve demo --port 4300"
+      ],
+      "port": 4300
+    },
+    {
+      "name": "prod-react",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/jared/Repos/ceriousdevtech/react-cerious-scroll/demo/dist && python3 -m http.server 9001"
+      ],
+      "port": 9001
+    },
+    {
+      "name": "prod-vue",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/jared/Repos/ceriousdevtech/vue-cerious-scroll/demo/dist && python3 -m http.server 9002"
+      ],
+      "port": 9002
+    },
+    {
+      "name": "prod-angular",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/jared/Repos/ceriousdevtech/ngx-cerious-scroll/dist/demo/browser && python3 -m http.server 9003"
+      ],
+      "port": 9003
     }
   ]
 }

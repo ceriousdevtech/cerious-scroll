@@ -3,6 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/%40ceriousdevtech%2Fcerious-scroll.svg)](https://www.npmjs.com/package/@ceriousdevtech/cerious-scroll)
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://ceriousdevtech.github.io/cerious-scroll/)
+[![Benchmark](https://img.shields.io/badge/benchmark-run%20it%20yourself-78f3d2)](https://ceriousdevtech.github.io/cerious-scroll/benchmark.html)
 
 High-performance virtual scrolling for variable-height lists, native tables,
 and Masonry grids. Cerious Scroll keeps only the visible window and its
@@ -201,6 +202,12 @@ widths; `columnWidths` can provide explicit widths instead.
   observers, caches, and layout internals.
 - [Live demos](https://ceriousdevtech.github.io/cerious-scroll/) — examples for
   lists, grids, chat, logs, tables, Masonry, and more.
+- [Performance benchmark](https://ceriousdevtech.github.io/cerious-scroll/benchmark.html)
+  is a reproducible in-browser harness. It measures mount time, per-frame cost,
+  random-access latency, DOM footprint, and heap across two sweeps: one that
+  grows the dataset from 1,000 to 10,000,000 rows, and one that grows the row
+  template from a 4-node row to a 60-node card. Results export as CSV, JSON, or
+  Markdown.
 
 Framework wrappers have their own usage guides:
 

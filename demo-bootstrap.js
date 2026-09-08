@@ -200,6 +200,71 @@
   root.mountDemo = mountDemo;
   root.demoUtils = { hash: hash, randInt: randInt, pick: pick };
 
+  // ---- Analytics ----------------------------------------------------------
+  // Every page in this site loads this file, so the tag lives here rather than
+  // being pasted into each document. Nine of eighteen pages previously carried
+  // no tag at all, the benchmark among them, which left half the site invisible
+  // in reporting.
+  const GA_ID = 'G-S1NK61TS72';
+
+  /**
+   * Classify the current page from its filename, so reports can separate the
+   * benchmark from the demos without pattern-matching URLs in the GA console.
+   */
+  function pageIdentity() {
+    const file = (root.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+    const name = file.replace(/\.html$/, '');
+    if (!name || name === 'index') return { type: 'gallery', id: 'gallery' };
+    if (name === 'benchmark') return { type: 'benchmark', id: 'benchmark' };
+    // 'data-grid-demo' -> 'data-grid', 'comparison-demo' -> 'comparison'
+    return { type: 'demo', id: name.replace(/-demo$/, '') };
+  }
+
+  function initAnalytics() {
+    // Local development traffic never reaches reporting.
+    const host = root.location.hostname;
+    if (root.location.protocol === 'file:' ||
+        !host || host === 'localhost' || host === '127.0.0.1' || host === '[::1]') {
+      return;
+    }
+    // If a page still carries its own inline tag, let it win rather than
+    // loading gtag twice and double-counting the page view.
+    if (document.querySelector('script[src*="googletagmanager.com/gtag/js"]')) return;
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
+    document.head.appendChild(script);
+
+    root.dataLayer = root.dataLayer || [];
+    function gtag() { root.dataLayer.push(arguments); }
+    root.gtag = gtag;
+
+    const page = pageIdentity();
+    gtag('js', new Date());
+    // These ride along on the automatic page_view. page_type and page_id are
+    // custom parameters: they have to be registered as custom dimensions in the
+    // GA4 admin before they appear in reports.
+    gtag('config', GA_ID, {
+      page_type: page.type,
+      page_id: page.id,
+      page_title: document.title,
+    });
+  }
+
+  /**
+   * Send a one-off event. No-ops when analytics did not initialise, so callers
+   * never have to check first.
+   */
+  function trackEvent(name, params) {
+    if (typeof root.gtag !== 'function') return;
+    root.gtag('event', name, params || {});
+  }
+
+  root.trackEvent = trackEvent;
+
+  initAnalytics();
+
   // ---- Topbar + FPS meter -------------------------------------------------
   // Auto-renders the shared topbar (brand, FPS meter, "All demos", npm link)
   // into the first `<header class="topbar" data-auto-topbar>` element on the
@@ -210,6 +275,7 @@
     const bar = document.querySelector('header.topbar[data-auto-topbar]');
     if (!bar) return;
     const onGallery = bar.hasAttribute('data-gallery');
+    const onBenchmark = /benchmark\.html$/.test(location.pathname);
     bar.innerHTML =
       '<a class="topbar__brand" href="index.html">CeriousScroll <small>Vanilla JS demos</small></a>' +
       '<div class="topbar__spacer"></div>' +
@@ -218,6 +284,9 @@
         '<span class="fps-meter__unit">FPS</span>' +
       '</span>' +
       (onGallery ? '' : '<a class="topbar__link" href="index.html">← All demos</a>') +
+      // The benchmark is not one of the demos, so it gets its own way in from
+      // every page rather than living in the gallery grid.
+      (onBenchmark ? '' : '<a class="topbar__link topbar__link--accent" href="benchmark.html">Benchmark</a>') +
       '<a class="topbar__link" href="' + NPM_URL + '" target="_blank" rel="noreferrer">npm ↗</a>';
     startFpsMeter();
   }
