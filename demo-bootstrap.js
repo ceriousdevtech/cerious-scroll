@@ -249,6 +249,9 @@
       page_type: page.type,
       page_id: page.id,
       page_title: document.title,
+      // Lets the vanilla site be compared against the React, Vue and Angular
+      // demo apps inside a single GA property.
+      wrapper: 'vanilla',
     });
   }
 
