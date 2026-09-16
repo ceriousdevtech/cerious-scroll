@@ -15,6 +15,22 @@
 import type { MasonryOptions, HeightProvider, MasonryDeterminism } from '../types/index.js';
 import { MasonryLayout, PlacedItem } from './masonry-layout.js';
 
+/**
+ * The height a mounted card was laid out against, parked on the element.
+ *
+ * A symbol rather than a dataset entry: this is read and written on the render
+ * path, and `dataset` stringifies and writes a real attribute every time.
+ */
+const PLACED_HEIGHT = Symbol('cerious-masonry-placed-height');
+
+function setPlacedHeight(el: HTMLElement, height: number): void {
+  (el as unknown as Record<symbol, number>)[PLACED_HEIGHT] = height;
+}
+
+function placedHeightOf(el: HTMLElement): number | undefined {
+  return (el as unknown as Record<symbol, number | undefined>)[PLACED_HEIGHT];
+}
+
 /** Engine surface this renderer drives. Kept narrow so the coupling is visible. */
 export interface MasonryHost {
   readonly currentElement: number;
@@ -75,6 +91,15 @@ export class MasonryRenderer {
   private static readonly MAX_WINDOW_SEGMENTS = 12;
   /** Segments before the end kept real, so tail corrections use real heights. */
   private static readonly TAIL_REAL_SEGMENTS = 4;
+  /** Segments prepended at once when the camera scrolls above the chain's base. */
+  private static readonly BACK_CHUNK_SEGMENTS = 8;
+  /**
+   * Furthest back a single extension will reach. Past this the camera did not
+   * scroll there, it JUMPED, and building the block would mean measuring every
+   * card in between for content the viewer skipped over — the same trade
+   * `maxChainSegments` makes in the forward direction.
+   */
+  private static readonly MAX_BACK_SEGMENTS = 64;
   /** Offscreen element used to measure a card without disturbing the view. */
   private probe: HTMLElement | null = null;
   private readonly dynamic: boolean;
@@ -256,9 +281,23 @@ export class MasonryRenderer {
     this.heights!.set(index, height);
     this.heightOrder.push(index);
     if (this.heightOrder.length > MasonryRenderer.HEIGHT_CACHE_MAX) {
-      // Oldest-first eviction. Safe: frontiers already folded these into a sum.
-      const drop = this.heightOrder.splice(0, this.heightOrder.length >> 1);
-      for (let i = 0; i < drop.length; i++) this.heights!.delete(drop[i]);
+      // Oldest-first eviction, skipping anything currently on screen. Frontiers
+      // already folded these into a sum, so dropping a value is safe for the
+      // layout — but a MOUNTED card is still being observed, and dropping its
+      // height loses the baseline its next observation is judged against.
+      const want = this.heightOrder.length >> 1;
+      const keep: number[] = [];
+      let dropped = 0;
+      for (let i = 0; i < this.heightOrder.length; i++) {
+        const idx = this.heightOrder[i];
+        if (dropped < want && !this.mounted.has(idx)) {
+          this.heights!.delete(idx);
+          dropped++;
+          continue;
+        }
+        keep.push(idx);
+      }
+      this.heightOrder = keep;
     }
     return height;
   }
@@ -314,9 +353,20 @@ export class MasonryRenderer {
 
     if (!this.layout.hasFrontier(first)) {
       const reach = this.layout.frontierReach;
-      const withinReach =
-        reach >= 0 && first >= this.layout.frontierBase && first - reach <= this.maxChainSegments;
-      if (withinReach) this.layout.chainAhead(first, this.sliceMs);
+      const base = this.layout.frontierBase;
+      if (reach >= 0 && first >= base && first - reach <= this.maxChainSegments) {
+        this.layout.chainAhead(first, this.sliceMs);
+      } else if (reach >= 0 && first < base && base - first <= MasonryRenderer.MAX_BACK_SEGMENTS) {
+        // Scrolling UP out of the range — the one direction a chain cannot be
+        // walked. Anchoring at `first` is the obvious move and the wrong one: it
+        // re-bases the range and re-packs the columns the reader is looking at.
+        // Prepend a block instead, which leaves every frontier from the base
+        // down exactly as it was. Done in CHUNKS, so a long scroll up pays for
+        // it a few times rather than once per segment.
+        this.layout.extendBack(
+          Math.max(base - first, MasonryRenderer.BACK_CHUNK_SEGMENTS)
+        );
+      }
       if (!this.layout.hasFrontier(first)) this.layout.anchorFlushAt(first);
     }
 
@@ -556,6 +606,10 @@ export class MasonryRenderer {
   }
 
   private write(el: HTMLElement, it: PlacedItem, screenY: number): void {
+    // The height this card was laid out against. handleCardResizes compares
+    // observations to THIS rather than to the bounded height cache, so an
+    // eviction can never masquerade as a card that grew.
+    if (this.dynamic) setPlacedHeight(el, it.height);
     const transform = `translate(${it.x + this.pad.left + this.centerOffset}px, ${screenY}px)`;
     if (el.style.transform !== transform) el.style.transform = transform;
     // In dynamic mode the wrapper must remain intrinsically sized. A fixed
@@ -654,10 +708,27 @@ export class MasonryRenderer {
 
     let changed = false;
     this.resizedCards.forEach((height, index) => {
-      const previous = this.heights!.get(index);
-      if (previous === undefined || Math.abs(previous - height) > 0.5) {
+      // Compare against the height the card was PLACED with, not against the
+      // height cache. The cache is bounded and evicts, so a miss there means
+      // only "not remembered" — and treating a miss as a change invalidates the
+      // layout and reorders the grid under the reader for a card that never
+      // moved. The placed height is carried by the element itself, so it is
+      // exact for every mounted card and cannot be evicted out from under this.
+      const el = this.mounted.get(index);
+      const placed = el ? placedHeightOf(el) : undefined;
+      const previous = placed ?? this.heights!.get(index);
+
+      if (previous === undefined) {
+        // Nothing mounted and nothing remembered: record it, but there is no
+        // baseline to call this a change against.
+        if (!this.heights!.has(index)) this.heightOrder.push(index);
         this.heights!.set(index, height);
-        if (previous === undefined) this.heightOrder.push(index);
+        return;
+      }
+      if (Math.abs(previous - height) > 0.5) {
+        if (!this.heights!.has(index)) this.heightOrder.push(index);
+        this.heights!.set(index, height);
+        if (el) setPlacedHeight(el, height);
         changed = true;
       }
     });
@@ -765,7 +836,14 @@ export class MasonryRenderer {
             Math.max(0, this.layout.segmentCount() - 1)
           )
         : 0;
-      this.layout.anchorFlushAt(target);
+      // Anchor one segment ABOVE the camera's, not at it. render() always
+      // sweeps from `camera - 1`, and a segment below the range base cannot be
+      // chained to — so anchoring exactly at the camera guarantees that the
+      // very next frame re-anchors at `camera - 1`, re-bases the range, and
+      // discards the frontier the camera's offset was just computed against.
+      // The reader's card visibly jumps and the columns reshuffle. Starting one
+      // segment earlier puts the whole drawn window inside one range.
+      this.layout.anchorFlushAt(Math.max(0, target - 1));
       this.finishRebuild(host, onRender);
       return;
     }
@@ -812,8 +890,21 @@ export class MasonryRenderer {
    * Chain to the very end in the background so the scrollbar stops being an
    * estimate. Smaller slice: this competes with real scrolling, and nothing
    * depends on it finishing.
+   *
+   * ORACLE MODE ONLY. In dynamic mode a frontier costs a real DOM measurement
+   * per card, so chaining to the end means probing the ENTIRE dataset — tens of
+   * thousands of forced layouts that never stop, in 3ms slices that land in
+   * every frame the user is scrolling through. Worse, those measurements evict
+   * the height cache the visible cards were just priced from, and a card that
+   * remounts with no cached height reads as a height CHANGE, which invalidates
+   * the layout and reorders the grid mid-scroll.
+   *
+   * Nothing wants the total anyway: {@link heightProvider} deliberately omits
+   * `totalHeight` in dynamic mode, so the strip is sized by card count and the
+   * exact pixel total is never asked for.
    */
   scheduleTailChain(host: MasonryHost): void {
+    if (this.dynamic) return;
     if (this.tailRaf !== null) return;
     this.tailRaf = requestAnimationFrame(() => {
       this.tailRaf = null;

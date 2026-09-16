@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-09-16
+
+### Fixed
+
+- **Dynamic-height Masonry re-packed its columns while the viewer scrolled.**
+  Cards visibly jumped between columns mid-scroll. Four independent causes, all
+  on the scroll path:
+  - The background tail chain ran in dynamic mode, where every frontier costs a
+    real DOM measurement. With the viewport parked at the first card it had
+    already probed 35,000 cards and was still going, in slices landing in each
+    frame the viewer scrolled through. It is now oracle-mode only, which is the
+    only mode that ever wanted it: `heightProvider()` already omits `totalHeight`
+    when heights are measured, so the strip is sized by card count and the exact
+    pixel total is never asked for.
+  - A card remounting after its entry was evicted from the bounded height cache
+    read as a card that had GROWN, which invalidated the layout and re-packed the
+    grid for a card that never moved. Observations are now compared against the
+    height the card was actually placed with, carried on the element itself, so
+    an eviction cannot masquerade as a resize — and a genuine resize is still
+    caught. Heights for mounted cards are no longer evicted at all.
+  - A relayout anchored the chain AT the camera's segment, but a render always
+    sweeps from `camera - 1`. That neighbour was therefore out of range, so the
+    very next frame re-anchored, re-based, and discarded the frontier the
+    camera's offset had just been computed against. Rebuilds now anchor one
+    segment earlier, putting the whole drawn window inside one range.
+  - Scrolling UP out of an anchored range re-anchored once per segment — the
+    base walking backwards a step at a time, each step dropping the item cache
+    and re-measuring the window. See below.
+
+### Added
+
+- **Backwards growth for Masonry's frontier chain.** A frontier is a running
+  total of everything above it, so there is no history behind the chain's base to
+  extend from, and scrolling up out of an anchored range previously re-anchored.
+  `MasonryLayout.extendBack()` prepends the missing segments as a block packed
+  UPWARD — the mirror of the ordinary algorithm, filling the column whose top
+  edge hangs lowest. Packing against a known bottom edge is what makes the seam
+  free: every column meets the existing base frontier at exactly `gap`, where
+  packing downward into it would leave all but one column short. The raggedness
+  ends up at the TOP of the block, above everything drawn, where the next
+  extension consumes it just as exactly. Every frontier from the base onward is
+  left bit-identical, so no card already on screen moves.
+
+  Growth happens in chunks of 8 segments, and a gap wider than 64 segments still
+  anchors instead — past that the viewer jumped rather than scrolled, and
+  building the block would mean measuring content they skipped over. Masonry's
+  `'local'` determinism contract is unchanged: these segments have never been
+  placed under the current range, so there is no earlier arrangement to
+  contradict.
+
+- Tests covering scroll-path layout stability: the same camera must draw the same
+  grid, gutters stay exactly `gap` across a backwards seam, and backwards growth
+  is chunked rather than per-segment.
+
 ## [1.1.3] - 2026-08-25
 
 ### Added
@@ -380,4 +434,5 @@ Copyright © 2024-2026 Cerious DevTech LLC. All rights reserved.
 
 [1.0.0]: https://github.com/ceriousdevtech/cerious-scroll/releases/tag/v1.0.0
 [1.1.3]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.2...v1.1.3
-[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.3...HEAD
+[1.1.4]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.3...v1.1.4
+[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.4...HEAD

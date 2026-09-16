@@ -86,6 +86,11 @@ export class MasonryLayout {
    */
   private frontierKnown = -1;
   private chainBase = 0;
+  /**
+   * Segments below this were packed UPWARD by {@link extendBack} and must be
+   * read back the same way. `0` means the whole range is ordinary forward work.
+   */
+  private reverseBelow = 0;
 
   /** Full geometry for the few segments actually being drawn. */
   private itemCache = new Map<number, PlacedItem[]>();
@@ -149,13 +154,23 @@ export class MasonryLayout {
    * @returns Pixels from the top of the dataset.
    */
   segmentOrigin(segment: number): number {
-    if (segment <= 0) return 0;
+    // Not an unconditional 0: a backwards extension gives segment 0 a real
+    // origin above the anchor, which is negative in the range's own coordinates.
+    if (segment <= 0) return this.hasFrontier(0) ? this.readOrigin(0) : 0;
     const clamped = Math.min(segment, this.segmentCount());
     this.ensureFrontier(clamped);
-    const off = clamped * this.opts.columns;
-    // Past-the-end uses the DEEPEST column so total height covers the ragged
-    // tail; interior boundaries use the shallowest, which is what tiles exactly.
-    const atEnd = clamped >= this.segmentCount();
+    return this.readOrigin(clamped);
+  }
+
+  /**
+   * Fold a stored frontier into a single origin.
+   *
+   * Past-the-end uses the DEEPEST column so total height covers the ragged tail;
+   * interior boundaries use the shallowest, which is what tiles exactly.
+   */
+  private readOrigin(segment: number): number {
+    const off = segment * this.opts.columns;
+    const atEnd = segment >= this.segmentCount();
     let v = this.frontiers[off];
     for (let c = 1; c < this.opts.columns; c++) {
       const o = this.frontiers[off + c];
@@ -306,6 +321,7 @@ export class MasonryLayout {
     this.frontiers.length = 0;
     this.frontierKnown = -1;
     this.chainBase = 0;
+    this.reverseBelow = 0;
     this.itemCache.clear();
   }
 
@@ -334,7 +350,78 @@ export class MasonryLayout {
     // range covered is abandoned rather than silently claimed.
     this.chainBase = segment;
     this.frontierKnown = segment;
+    // The old range is abandoned, and with it any block that was mirrored into
+    // it. A fresh anchor starts ordinary forward work again.
+    this.reverseBelow = 0;
     this.itemCache.clear();
+    return true;
+  }
+
+  /**
+   * Grow the contiguous range BACKWARDS, without moving anything already in it.
+   *
+   * Scrolling up out of an anchored range is the one case ordinary scrolling
+   * cannot chain through: a frontier is a running total of everything ABOVE it,
+   * so there is no history behind the base to extend from. Re-anchoring at the
+   * new low point is what the caller would otherwise do, and it re-bases the
+   * range — which throws away the frontier the camera's offset was computed
+   * against and re-packs the columns the reader is looking at.
+   *
+   * This packs the missing segments UPWARD from the base instead: the mirror of
+   * the ordinary algorithm, filling the column whose top edge hangs lowest and
+   * growing away from the viewer. Mirroring is what makes the seam free —
+   * placing cards against a known bottom edge means every column meets the base
+   * frontier at exactly `gap`, where packing downward into it would leave all
+   * but one column short. The raggedness that has to go somewhere ends up at
+   * the TOP of the block, above everything drawn, where the next extension
+   * consumes it just as exactly.
+   *
+   * Masonry stays locally deterministic either way: these segments have never
+   * been placed under this range, so there is no earlier arrangement to
+   * contradict. The difference is only that the viewer sees new content appear
+   * above them rather than the grid they were reading re-flow.
+   *
+   * @param segments How many segments to prepend. Larger amortizes better: the
+   *   work is one pass over the block, and a block is only ever built once.
+   * @returns Whether the range grew.
+   */
+  extendBack(segments: number): boolean {
+    const base = this.chainBase;
+    if (base <= 0 || !this.hasFrontier(base)) return false;
+    const span = Math.max(1, Math.floor(segments));
+    const back = Math.max(0, base - span);
+    if (back >= base) return false;
+
+    const { columns, columnWidth, gap, segmentSize: K, totalItems, getItemHeight } = this.opts;
+    const colTop = this.chainColH;
+    const off = base * columns;
+    for (let c = 0; c < columns; c++) colTop[c] = this.frontiers[off + c];
+
+    for (let s = base - 1; s >= back; s--) {
+      const lo = s * K;
+      const hi = Math.min(lo + K, totalItems);
+      for (let i = hi - 1; i >= lo; i--) {
+        // Mirror of "shortest column": fill the one whose top hangs LOWEST,
+        // because that is the one with the most room left above it.
+        let c = 0;
+        for (let k = 1; k < columns; k++) if (colTop[k] > colTop[c]) c = k;
+        colTop[c] -= Math.max(1, getItemHeight(i, columnWidth)) + gap;
+      }
+      const o = s * columns;
+      for (let c = 0; c < columns; c++) this.frontiers[o + c] = colTop[c];
+    }
+
+    // The block is packed the other way round, so replaying it forwards would
+    // not reproduce it. Segments below this mark are read back through the
+    // mirrored walk instead — see layoutSegment.
+    if (base > this.reverseBelow) this.reverseBelow = base;
+    this.chainBase = back;
+    // Only the block's own geometry is stale; everything from the base down is
+    // untouched and must stay cached, or the camera's segment pays to be
+    // measured again for a layout that did not change.
+    for (const seg of [...this.itemCache.keys()]) {
+      if (seg < base) this.itemCache.delete(seg);
+    }
     return true;
   }
 
@@ -490,6 +577,10 @@ export class MasonryLayout {
     const { columns, columnWidth, gap, segmentSize: K, totalItems, getItemHeight } = this.opts;
 
     this.ensureFrontier(segment);
+    if (segment < this.reverseBelow) {
+      this.layoutSegmentUpward(segment, out);
+      return;
+    }
     const colH = this.colH;
     const off = segment * columns;
     let originY = Number.POSITIVE_INFINITY;
@@ -514,6 +605,59 @@ export class MasonryLayout {
       });
       colH[c] += h + gap;
     }
-    this.storeFrontier(segment + 1, colH);
+    // Only when the boundary is not already established. Normally it is not and
+    // this is the write that advances the chain — but a segment laid out at the
+    // BOTTOM of a backwards extension ends against a frontier that was
+    // deliberately preserved (see {@link extendBack}), and recomputing it there
+    // would drag every segment below it, and the whole visible window with them.
+    // Everywhere else the recomputed value is identical to the stored one: the
+    // same heights from the same start produce the same sum.
+    if (!this.hasFrontier(segment + 1)) this.storeFrontier(segment + 1, colH);
+  }
+
+  /**
+   * Place one segment's cards by the mirrored walk {@link extendBack} used.
+   *
+   * Reads the boundary BELOW the segment and grows upward from it, so the cards
+   * land exactly where the extension put them. Replaying such a segment forwards
+   * would produce a different packing and a torn seam, which is the whole reason
+   * `reverseBelow` exists.
+   */
+  private layoutSegmentUpward(segment: number, out: PlacedItem[]): void {
+    const { columns, columnWidth, gap, segmentSize: K, totalItems, getItemHeight } = this.opts;
+
+    const colTop = this.colH;
+    const below = (segment + 1) * columns;
+    for (let c = 0; c < columns; c++) colTop[c] = this.frontiers[below + c];
+
+    const start = segment * K;
+    const end = Math.min(start + K, totalItems);
+    const first = out.length;
+    for (let i = end - 1; i >= start; i--) {
+      let c = 0;
+      for (let k = 1; k < columns; k++) if (colTop[k] > colTop[c]) c = k;
+      const h = Math.max(1, getItemHeight(i, columnWidth));
+      const y = colTop[c] - gap - h;
+      out.push({
+        index: i,
+        column: c,
+        x: c * (columnWidth + gap),
+        y,
+        width: columnWidth,
+        height: h
+      });
+      colTop[c] = y;
+    }
+
+    // Built bottom-up; hand it back in index order like every other segment.
+    for (let lo = first, hi = out.length - 1; lo < hi; lo++, hi--) {
+      const t = out[lo]; out[lo] = out[hi]; out[hi] = t;
+    }
+
+    // y is absolute so far — rebase it on the segment origin, which is the
+    // topmost card, exactly as the forward walk reports it.
+    let originY = Number.POSITIVE_INFINITY;
+    for (let c = 0; c < columns; c++) if (colTop[c] < originY) originY = colTop[c];
+    for (let i = first; i < out.length; i++) out[i].y -= originY;
   }
 }
