@@ -108,6 +108,12 @@ export class CeriousScroll {
   private placement: RowPlacement;
   /** Non-null only in `layout: 'masonry'`. Owns the card DOM. */
   private masonry: MasonryRenderer | null = null;
+  /**
+   * A content element this engine created because the host had none, and the
+   * host it was created for. Rows render into it instead of the host.
+   */
+  private ownedContent: HTMLElement | null = null;
+  private ownedContentHost: HTMLElement | null = null;
   /** Card count in masonry mode; `totalElements` holds the SEGMENT count. */
   private totalItems = 0;
   private performanceCache: PerformanceCache;
@@ -406,27 +412,76 @@ export class CeriousScroll {
       );
     }
 
-    if (this.options.wheel?.enabled !== false) {
-      this.wheelCleanup = this.setupWheelHandler(container, () => {
-        this.options.onScroll?.();
-      }, this.options.wheel);
+    // Give the host a content element if it has none. The native surface needs
+    // one element it can hold still while it scrolls beneath, and a host that
+    // renders rows straight into itself offers nothing to hold. Creating it
+    // here is what makes native scrolling the default for EVERY host rather
+    // than only the ones whose markup happens to suit it — a plain
+    // `new CeriousScroll(div, n)` used to fall back to the JavaScript path
+    // silently, which is the worst way for a default to not apply.
+    //
+    // Masonry is exempt: its renderer builds and owns its own viewport.
+    if (!this.masonry && !container.querySelector('[data-cerious-scroll-content]')) {
+      const owned = document.createElement('div');
+      owned.setAttribute('data-cerious-scroll-content', '');
+      // Matches what the framework wrappers build, so the engine measures and
+      // lays out identically however the element got there.
+      owned.style.cssText = 'position:relative;width:100%;height:100%;overflow-y:clip;overflow-x:auto';
+      container.appendChild(owned);
+      this.ownedContent = owned;
+      this.ownedContentHost = container;
     }
 
-    if (this.options.touch?.enabled !== false) {
-      const requestedTouchMode = this.options.touch?.mode;
-      const nativeContent = container.querySelector<HTMLElement>(
-        '[data-cerious-scroll-content], [data-cerious-masonry="content"]'
+    const nativeContent = container.querySelector<HTMLElement>(
+      '[data-cerious-scroll-content], [data-cerious-masonry="content"]'
+    );
+    // Native touch is the default for the dedicated content structure used
+    // by the framework bindings, demo bootstrap, and Masonry. Legacy direct
+    // hosts without that structure retain manual touch automatically; an
+    // explicit native-proxy request still reaches attach() and its useful
+    // validation error.
+    // Depth does not matter: the surface wraps whichever host child contains
+    // the content element, so a host may nest it (a horizontal-scroll wrapper
+    // around a wide grid) and still get native scrolling.
+    const canUseNativeProxy = !!nativeContent;
+
+    const requestedTouchMode = this.options.touch?.mode;
+    const touchEnabled = this.options.touch?.enabled !== false;
+    const useNativeProxyTouch = touchEnabled && (
+      requestedTouchMode === 'native-proxy' ||
+      (requestedTouchMode !== 'manual' && canUseNativeProxy)
+    );
+
+    // The wheel scrolls the native surface. Not a mode, not a preference: the
+    // browser's own physics is the platform's, and reproducing it from raw
+    // deltas was only ever an approximation of one platform at a time.
+    //
+    // `canUseNativeProxy` is effectively always true now — the engine builds the
+    // element the surface needs when a host has none — but it is still checked,
+    // because the alternative to a JavaScript fallback in some DOM nobody
+    // anticipated is a list that does not scroll at all.
+    const wheelEnabled = this.options.wheel?.enabled !== false;
+    const useNativeProxyWheel = wheelEnabled && canUseNativeProxy;
+
+    if (wheelEnabled) {
+      // Resolved HERE, not in the controller: only this scope knows whether the
+      // surface can exist, and the controller is told rather than guessing.
+      this.wheelCleanup = this.wheelController.attach(
+        container,
+        () => { this.options.onScroll?.(); },
+        this.options.wheel,
+        useNativeProxyWheel
       );
-      // Native touch is the default for the dedicated content structure used
-      // by the framework bindings, demo bootstrap, and Masonry. Legacy direct
-      // hosts without that structure retain manual touch automatically; an
-      // explicit native-proxy request still reaches attach() and its useful
-      // validation error.
-      const canUseNativeProxy = nativeContent?.parentElement === container;
-      const useNativeProxy = requestedTouchMode === 'native-proxy' ||
-        (requestedTouchMode !== 'manual' && canUseNativeProxy);
-      const touchController = useNativeProxy ? this.nativeTouchController : this.touchController;
-      this.touchCleanup = touchController.attach(container, () => {
+    }
+
+    // One surface, either driver. Wheel needs it even when touch does not want
+    // it (or is switched off entirely), so attachment is driven by the union.
+    if (useNativeProxyTouch || useNativeProxyWheel) {
+      this.touchCleanup = this.nativeTouchController.attach(container, () => {
+        this.options.onScroll?.();
+      }, this.options.touch, { acceptWheel: useNativeProxyWheel });
+    } else if (touchEnabled) {
+      this.touchCleanup = this.touchController.attach(container, () => {
         this.options.onScroll?.();
       }, this.options.touch);
     }
@@ -715,7 +770,9 @@ export class CeriousScroll {
     this.placement.invalidateTopInset?.();
     const insetBefore = this.placement.getTopInset ? this.placement.getTopInset() : 0;
     const effectiveWindowHeight = Math.max(1, windowHeight - insetBefore);
-    const range = this.viewportRenderer.renderViewport(effectiveWindowHeight, container, renderElement);
+    const range = this.viewportRenderer.renderViewport(
+      effectiveWindowHeight, this.renderTarget(container), renderElement
+    );
 
     // Re-sync the engine's viewport height to the area rows actually fill
     // (`windowHeight` minus the current inset). We compare against the live
@@ -833,6 +890,21 @@ export class CeriousScroll {
    * indices, matching the engine's element space; card-level detail belongs to
    * the caller's own render callback.
    */
+  /**
+   * Where rows actually go.
+   *
+   * A caller that hands us the host is describing WHERE it wants rows, not
+   * demanding a particular node. When this engine created the content element
+   * the host lacked, that intent is served by the element inside — and it has
+   * to be, because the native surface holds that element still and anything
+   * left outside it would not move with the rows. A caller that names some
+   * other element is being specific, and is left alone.
+   */
+  private renderTarget(container: HTMLElement): HTMLElement {
+    if (this.ownedContent && container === this.ownedContentHost) return this.ownedContent;
+    return container;
+  }
+
   private masonryRange(): MeasuredViewportRange {
     this.updateDisplay();
     return {
@@ -1012,7 +1084,9 @@ export class CeriousScroll {
     onScroll?: (result: ScrollResult) => void,
     wheelOptions?: WheelNavigationOptions
   ): () => void {
-    return this.wheelController.attach(container, onScroll, wheelOptions);
+    // Standalone use cannot assume the native surface is mounted around this
+    // container, so it gets the self-contained path.
+    return this.wheelController.attach(container, onScroll, wheelOptions, false);
   }
 
   /**
@@ -1057,6 +1131,12 @@ export class CeriousScroll {
       try { this.debugCleanup(); } catch { /* noop */ }
       this.debugCleanup = undefined;
     }
+
+    // After the controllers have detached — the surface puts the content element
+    // back where it found it, and only then is this safe to remove.
+    if (this.ownedContent?.parentNode) this.ownedContent.parentNode.removeChild(this.ownedContent);
+    this.ownedContent = null;
+    this.ownedContentHost = null;
 
     this.clearAllCaches();
   }

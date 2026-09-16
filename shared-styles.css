@@ -20,6 +20,28 @@
   --accent: #78f3d2;
   --accent-2: #8cb7ff;
   --shadow: 0 24px 80px rgba(0,0,0,.38);
+  /**
+   * Form-control fills, deliberately OPAQUE.
+   *
+   * A <select> popup is drawn by the browser, not the page, and on Windows and
+   * Linux it paints the list using the control's own background. A translucent
+   * fill has nothing to composite against there, so it resolves to white — and
+   * the options, inheriting `--text`, come out near-white on white. The values
+   * are the opaque equivalents of the translucent fills they replace, so the
+   * closed control looks the same as it always did.
+   */
+  --control-bg: #23262c;
+  --control-menu: #191d23;
+}
+
+/**
+ * Option lists. Windows and Linux honour these; macOS draws its own popup and
+ * ignores them, which is why the bug only ever showed up on Windows.
+ */
+option,
+optgroup {
+  background-color: var(--control-menu);
+  color: var(--text);
 }
 
 * {
@@ -363,7 +385,7 @@ body {
   border: 1px solid var(--line);
   border-radius: .6rem;
   font-size: 0.85rem;
-  background: rgba(255,255,255,.04);
+  background: var(--control-bg);
   color: var(--text);
 }
 
@@ -1628,6 +1650,8 @@ body {
   padding: 6px 10px; font-size: 0.85rem; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
 }
+/* Opaque, for the same reason as --control-bg: this one opens a popup. */
+.cmp-toolbar select { background: var(--control-bg); }
 .cmp-toolbar button:hover { background: var(--panel-strong); border-color: var(--accent); }
 .cmp-toolbar button.primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));

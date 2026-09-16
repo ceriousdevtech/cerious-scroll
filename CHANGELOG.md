@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-09-16
+
+### Changed
+
+- **Wheel input is now scrolled by the browser, with no option to opt out.**
+  There is no `wheel.mode`: one behaviour, nothing to configure, and nothing
+  your markup has to provide.
+
+  The wheel scrolls the same hidden native surface the touch proxy uses, and the
+  engine consumes its `scrollTop` deltas — so the BROWSER applies the platform's
+  wheel physics. The old path had to infer the input device from delta magnitude,
+  a heuristic the source itself flagged as wrong for mice with a free-spin wheel,
+  and then ease the result with one hand-fitted curve. That curve
+  (`smoothFactor: 0.22`) was documented as tracking macOS, which is precisely why
+  wheel scrolling never matched the platform on Windows. Chrome and Edge animate
+  a discrete notch on Windows but not on macOS, Firefox uses a different curve
+  again, and a precision touchpad's continuous deltas pass through unanimated.
+  OS and driver settings no script can read, such as how many lines a notch
+  travels, now apply too.
+
+  **Nothing is required of your markup.** The surface needs one element it can
+  hold still while it scrolls beneath, and the engine arranges that: a host with
+  no `[data-cerious-scroll-content]` gets one created for it, and a host that
+  NESTS one — a horizontal-scroll wrapper around a wide grid, say — has its own
+  child wrapped rather than the buried element. Both shapes previously fell back
+  to the JavaScript path silently, which meant a plain `new CeriousScroll(div, n)`
+  never saw native scrolling at all. When the engine creates the element, a
+  `renderViewport(h, host, …)` call is redirected into it, since rows have to be
+  inside the surface to move with it; naming any other element is left alone.
+
+  **Nothing of yours is restyled.** The surface brings its own sticky layer and
+  puts your element inside it, rather than rewriting `position` on markup it did
+  not author — an element that sizes itself by being positioned
+  (`position: absolute; inset: 0`, common for a grid that fills its host) would
+  otherwise collapse to its content height.
+
+  **`smooth`, `smoothFactor`, and `notchThresholdPx` are now deprecated
+  no-ops.** They tuned the easing curve that no longer runs. They are still
+  accepted so existing configuration does not throw, and a JavaScript easing
+  path survives internally for a container the surface cannot attach to — which
+  the engine now prevents by building the element it needs, so in practice it is
+  unreachable.
+
+  Nothing else changes: the camera, the render callback, and
+  `cerious-viewport-change` behave as before, and horizontal deltas are still
+  forwarded by the engine, since the surface is `overflow-x: hidden` and the
+  scrollable element sits inside it.
+
+### Added
+
+- `overscroll-behavior: contain` on the native proxy surface, so reaching a
+  virtual boundary cannot chain the scroll to the page.
+- Native TOUCH scrolling reaches the same two host shapes for the first time, as
+  a consequence of the above — it carried the direct-child requirement from the
+  day it shipped in 1.1.3.
+
+### Fixed
+
+- **Demo `<select>` popups were unreadable on Windows.** The dark theme gave the
+  controls a translucent fill, and a `<select>` popup is drawn by the browser
+  rather than the page: on Windows and Linux it paints the list from the
+  control's own background, so a translucent fill resolved to white while the
+  options kept the theme's near-white text. macOS draws its own popup and
+  ignores both, which is why it only showed up on Windows. The shared stylesheet
+  now carries opaque `--control-bg` / `--control-menu` tokens and explicit
+  `option`/`optgroup` colours; the closed control looks the same as before,
+  because the tokens are the opaque equivalents of the fills they replace. Demo
+  chrome only — no library change.
+
+- **A flaky wheel-smoothing test.** The two easing tests drove the real
+  `requestAnimationFrame` and asserted the shape of the curve, but the follow is
+  frame-rate independent by design — a long frame is not a slower step, it is a
+  bigger one. Under parallel test load a starved frame collapsed several steps
+  into one and `max(steps) === steps[0]` stopped holding: measured at three
+  failures in eight full-suite runs, while passing twelve out of twelve in
+  isolation. The frame clock is now stubbed so every frame is exactly one 60fps
+  tick, which also let the "decelerating" claim be asserted properly (each step
+  no larger than the one before) instead of loosely. Tests only.
+
 ## [1.1.4] - 2026-09-16
 
 ### Fixed
@@ -435,4 +514,5 @@ Copyright © 2024-2026 Cerious DevTech LLC. All rights reserved.
 [1.0.0]: https://github.com/ceriousdevtech/cerious-scroll/releases/tag/v1.0.0
 [1.1.3]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.2...v1.1.3
 [1.1.4]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.3...v1.1.4
-[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.4...HEAD
+[1.1.5]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.4...v1.1.5
+[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.5...HEAD

@@ -180,6 +180,39 @@ const scroller = new CeriousScroll(container, totalItems, {
 });
 ```
 
+### Wheel and touch scrolling
+
+Both are handled by the browser, not by the engine. The engine puts a hidden
+native scroll surface behind your content, lets the browser scroll it, and
+follows its `scrollTop`. So wheel notches, trackpad gestures and touch pans all
+get the platform's own physics — Chrome and Edge animate a discrete notch on
+Windows but not on macOS, Firefox uses a different curve again, and a precision
+touchpad's continuous deltas are passed through unanimated. OS and driver
+settings no script can read, such as how many lines a notch travels, apply too.
+
+**There is nothing to configure and nothing your markup has to provide.** The
+surface needs one element it can hold still while it scrolls beneath, and the
+engine arranges that:
+
+| Your host | What happens |
+|---|---|
+| Bare `<div>` | the engine creates `[data-cerious-scroll-content]` and renders rows into it |
+| `[data-cerious-scroll-content]` as a direct child | wrapped as-is |
+| Content element nested (e.g. inside a horizontal-scroll wrapper) | the host's own child containing it is wrapped |
+
+When the engine creates the element, a `renderViewport(h, host, …)` call is
+redirected into it — passing the host says *where* you want rows, and they have
+to be inside the surface to move with it. Passing any other element is treated as
+a specific instruction and left alone.
+
+Horizontal deltas are still forwarded by the engine: the surface is
+`overflow-x: hidden` and the scrollable element sits inside it, so a sideways
+gesture has no native target. Only a horizontal-dominant gesture is claimed, so
+the vertical part of a diagonal swipe still reaches the surface.
+
+`wheel.smooth`, `wheel.smoothFactor` and `wheel.notchThresholdPx` are deprecated
+no-ops. They tuned a JavaScript easing curve that no longer runs.
+
 ---
 
 ## Rendering Patterns

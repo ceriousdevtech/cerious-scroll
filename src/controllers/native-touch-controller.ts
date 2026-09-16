@@ -1,7 +1,12 @@
 /**
- * Native touch scrolling without making the virtual content itself the scroll
- * range. A hidden, local overflow surface receives the trusted browser gesture;
- * its scrollTop deltas are forwarded to the existing navigation engine.
+ * Native scrolling without making the virtual content itself the scroll range.
+ * A hidden, local overflow surface receives the trusted browser gesture; its
+ * scrollTop deltas are forwarded to the existing navigation engine.
+ *
+ * Touch is the original driver. Wheel can opt in through
+ * `wheel.mode: 'native-proxy'`, which is worth doing because the surface is a
+ * real scroll container: the browser applies its own per-platform wheel physics
+ * to it, rather than the engine trying to reproduce them from raw deltas.
  */
 
 import { ScrollResult, TouchNavigationOptions } from '../types/index.js';
@@ -17,6 +22,13 @@ export class NativeTouchController {
   private static readonly SURFACE_HEIGHT_PX = 2_000_000;
   private static readonly PROGRAMMATIC_TOLERANCE_PX = 2;
   private static readonly IDLE_MS = 180;
+  /**
+   * Longer than {@link IDLE_MS}, because wheel input is intermittent where
+   * momentum is continuous. A notch animation runs for a beat after the last
+   * event, and closing the gesture underneath it re-centres the surface —
+   * which cancels the browser's in-flight scroll and shows up as a stutter.
+   */
+  private static readonly WHEEL_IDLE_MS = 400;
   private static _stylesInjected = false;
 
   private proxy: HTMLElement | null = null;
@@ -64,25 +76,44 @@ export class NativeTouchController {
   attach(
     container: HTMLElement,
     onScroll?: (result: ScrollResult) => void,
-    _options?: TouchNavigationOptions
+    _options?: TouchNavigationOptions,
+    driver?: { acceptWheel?: boolean }
   ): () => void {
     NativeTouchController.ensureStylesInjected();
 
     const content = container.querySelector<HTMLElement>(
       '[data-cerious-scroll-content], [data-cerious-masonry="content"]'
     );
-    if (!content || content.parentElement !== container) {
+    if (!content) {
       throw new Error(
-        "CeriousScroll: touch.mode 'native-proxy' requires a direct child " +
+        "CeriousScroll: touch.mode 'native-proxy' requires a " +
         '[data-cerious-scroll-content] element (Masonry supplies its own viewport)'
       );
     }
 
+    /**
+     * The element the surface actually wraps: the host's own child that
+     * CONTAINS the rows, which is not always the content element itself.
+     *
+     * A host is free to put something between itself and the content element —
+     * a horizontal-scroll wrapper around a wide grid is the common one — and
+     * that is a legitimate structure, not a mistake. Wrapping the content
+     * element in place would bury the surface inside that wrapper, where it
+     * would be sized by it and fight its overflow. Wrapping the host's own
+     * child instead keeps the surface exactly where it has always been, one
+     * level below the host, whatever sits beneath it.
+     */
+    let viewport: HTMLElement = content;
+    while (viewport.parentElement && viewport.parentElement !== container) {
+      viewport = viewport.parentElement;
+    }
+    if (viewport.parentElement !== container) {
+      throw new Error(
+        'CeriousScroll: the [data-cerious-scroll-content] element must live inside the host'
+      );
+    }
+
     const originalContainerPosition = container.style.position;
-    const originalContentPosition = content.style.position;
-    const originalContentTop = content.style.top;
-    const originalContentZIndex = content.style.zIndex;
-    const originalContentTouchAction = content.style.touchAction;
 
     if (getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -97,6 +128,7 @@ export class NativeTouchController {
       overflow-x: hidden;
       touch-action: auto;
       overflow-anchor: none;
+      overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
     `;
 
@@ -108,22 +140,32 @@ export class NativeTouchController {
       pointer-events: none;
     `;
 
-    // The proxy takes the content element's exact former slot. Moving the
-    // content does not invalidate references retained by framework wrappers.
-    container.insertBefore(proxy, content);
-    proxy.appendChild(content);
+    /**
+     * Our own sticky layer, holding the host's element rather than restyling it.
+     *
+     * Making the host's element sticky is what an earlier version did, and it
+     * silently broke any element that sized itself by being positioned — a grid
+     * laid out with `position: absolute; inset: 0` collapsed to its header row
+     * the moment `position` was overwritten. The engine has no business
+     * rewriting layout properties on markup it did not author, so it brings its
+     * own element and leaves the host's exactly as it found it.
+     *
+     * `position: sticky` also makes this the containing block for absolutely
+     * positioned children, which is what lets an `inset: 0` child keep working.
+     */
+    const stickyViewport = document.createElement('div');
+    stickyViewport.setAttribute('data-cerious-native-touch-viewport', '');
+    stickyViewport.style.cssText =
+      'position:sticky;top:0;z-index:1;width:100%;height:100%;' +
+      'touch-action:auto;overflow-anchor:none;';
+
+    // The proxy takes the viewport's exact former slot. Moving it does not
+    // invalidate references retained by framework wrappers.
+    container.insertBefore(proxy, viewport);
+    stickyViewport.appendChild(viewport);
+    proxy.appendChild(stickyViewport);
     proxy.appendChild(surface);
     this.proxy = proxy;
-
-    // Keep the virtual viewport stationary while the browser scrolls the
-    // invisible surface beneath it. Rows remain normal descendants and keep
-    // receiving mouse, pointer, click, focus, and touch events.
-    content.style.position = 'sticky';
-    content.style.top = '0px';
-    content.style.zIndex = originalContentZIndex || '1';
-    content.style.touchAction = 'auto';
-    const originalContentOverflowAnchor = content.style.overflowAnchor;
-    content.style.overflowAnchor = 'none';
 
     let lastScrollTop = 0;
     let ignoredScrollTop: number | null = null;
@@ -138,6 +180,12 @@ export class NativeTouchController {
     let touchActive = false;
     let touchMovedScroll = false;
     let momentumActive = false;
+    // Wheel has no touchstart/touchend to bracket it, so ownership is a window
+    // opened by each wheel event and closed by idle or `scrollend`. Without it
+    // a wheel-driven scroll looks exactly like the browser adjustments the
+    // touch gate exists to reject.
+    const acceptWheel = driver?.acceptWheel === true;
+    let wheelActive = false;
 
     const viewportHeight = (): number => {
       const h = content.clientHeight;
@@ -187,6 +235,7 @@ export class NativeTouchController {
     };
 
     const finishGesture = (): void => {
+      wheelActive = false;
       if (!this.driving) return;
       if (rafId !== null) {
         caf(rafId);
@@ -197,12 +246,13 @@ export class NativeTouchController {
       this.syncPosition();
     };
 
-    const scheduleIdle = (): void => {
+    const scheduleIdle = (ms = NativeTouchController.IDLE_MS): void => {
       if (idleTimer !== null) window.clearTimeout(idleTimer);
       idleTimer = window.setTimeout(() => {
         idleTimer = null;
+        wheelActive = false;
         finishGesture();
-      }, NativeTouchController.IDLE_MS);
+      }, ms);
     };
 
     const handleScroll = (): void => {
@@ -229,10 +279,11 @@ export class NativeTouchController {
       lastScrollTop = current;
       if (delta === 0) return;
 
-      // A real touch pan is the only owner of this local scroll surface. Focus,
-      // scroll anchoring, scrollIntoView, and other browser adjustments must be
-      // rebased back to the engine position rather than interpreted as input.
-      if (!touchActive && !momentumActive) {
+      // A real touch pan or wheel gesture is the only owner of this local scroll
+      // surface. Focus, scroll anchoring, scrollIntoView, and other browser
+      // adjustments must be rebased back to the engine position rather than
+      // interpreted as input.
+      if (!touchActive && !momentumActive && !wheelActive) {
         this.syncPosition();
         return;
       }
@@ -241,7 +292,24 @@ export class NativeTouchController {
       if (touchActive) touchMovedScroll = true;
       pendingDelta += delta;
       if (rafId === null) rafId = raf(flush);
-      scheduleIdle();
+      scheduleIdle(
+        wheelActive && !touchActive && !momentumActive
+          ? NativeTouchController.WHEEL_IDLE_MS
+          : NativeTouchController.IDLE_MS
+      );
+    };
+
+    /**
+     * Open the wheel ownership window.
+     *
+     * Passive on purpose: preventing the default here would take back the very
+     * native scrolling this mode exists to use. The event is only a signal that
+     * the scrolls about to arrive are the user's.
+     */
+    const handleWheel = (): void => {
+      if (!acceptWheel) return;
+      wheelActive = true;
+      scheduleIdle(NativeTouchController.WHEEL_IDLE_MS);
     };
 
     const handleTouchStart = (): void => {
@@ -257,6 +325,7 @@ export class NativeTouchController {
       }
       this.driving = false;
       momentumActive = false;
+      wheelActive = false;
       touchActive = true;
       touchMovedScroll = false;
       const max = Math.max(0, proxy.scrollHeight - proxy.clientHeight);
@@ -294,6 +363,7 @@ export class NativeTouchController {
 
     proxy.addEventListener('scroll', handleScroll, { passive: true });
     proxy.addEventListener('scrollend', finishGesture, { passive: true });
+    if (acceptWheel) proxy.addEventListener('wheel', handleWheel, { passive: true });
     proxy.addEventListener('touchstart', handleTouchStart, { passive: true });
     proxy.addEventListener('touchend', handleTouchEnd, { passive: true });
     proxy.addEventListener('touchcancel', handleTouchCancel, { passive: true });
@@ -315,6 +385,7 @@ export class NativeTouchController {
     return () => {
       proxy.removeEventListener('scroll', handleScroll);
       proxy.removeEventListener('scrollend', finishGesture);
+      if (acceptWheel) proxy.removeEventListener('wheel', handleWheel);
       proxy.removeEventListener('touchstart', handleTouchStart);
       proxy.removeEventListener('touchend', handleTouchEnd);
       proxy.removeEventListener('touchcancel', handleTouchCancel);
@@ -325,15 +396,10 @@ export class NativeTouchController {
       this.syncProxyPosition = null;
       this.proxy = null;
 
-      content.style.position = originalContentPosition;
-      content.style.top = originalContentTop;
-      content.style.zIndex = originalContentZIndex;
-      content.style.touchAction = originalContentTouchAction;
-      content.style.overflowAnchor = originalContentOverflowAnchor;
-
+      // Nothing to restore on the host's own element — it was never restyled.
       // Reinsert immediately before the proxy, which is precisely where the
-      // content lived before attachment, then discard the private surface.
-      container.insertBefore(content, proxy);
+      // viewport lived before attachment, then discard the private surface.
+      container.insertBefore(viewport, proxy);
       proxy.remove();
       container.style.position = originalContainerPosition;
     };

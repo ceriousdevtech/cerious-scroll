@@ -167,7 +167,10 @@ describe("CeriousScroll layout: 'masonry'", () => {
     s.renderViewport(900, el, () => {});
     const masonryViewports = el.querySelectorAll('[data-cerious-masonry="content"]');
     expect(masonryViewports).toHaveLength(1);
-    expect(masonryViewports[0].parentElement).toBe(proxy);
+    // One viewport, and it is inside the surface. Depth is the surface's
+    // business; what matters is that Masonry did not rebuild its viewport
+    // outside it, which would strand hit-testing and orphan a layer.
+    expect(masonryViewports[0].closest('[data-cerious-native-touch-proxy]')).toBe(proxy);
     s.dispose();
   });
 

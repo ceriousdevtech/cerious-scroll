@@ -478,15 +478,19 @@ export class MasonryRenderer {
   private ensureContent(container: HTMLElement): HTMLElement {
     if (this.content) {
       const parent = this.content.parentElement;
-      // Native touch mode wraps the existing Masonry viewport in a private
+      // The native surface wraps the existing Masonry viewport in a private
       // scrollable ancestor. It is still the same live viewport for this host;
-      // recreating it outside the proxy would strand touch hit-testing and
-      // leave an orphan layer behind.
-      const insideNativeTouchProxy = Boolean(
-        parent?.hasAttribute('data-cerious-native-touch-proxy') &&
-        parent.parentElement === container
-      );
-      if (parent === container || insideNativeTouchProxy) return this.content;
+      // recreating it outside the surface would strand hit-testing and leave an
+      // orphan layer behind.
+      //
+      // Matched by SEARCHING for the surface rather than by naming its exact
+      // depth: it inserts a sticky layer of its own between the proxy and the
+      // viewport, and a check written against one particular shape silently
+      // stops recognising it the day that shape changes — which is how this
+      // read as "not mine" and rebuilt the viewport outside the surface.
+      const surface = this.content.closest('[data-cerious-native-touch-proxy]');
+      const insideNativeSurface = Boolean(surface && surface.parentElement === container);
+      if (parent === container || insideNativeSurface) return this.content;
     }
     const el = document.createElement('div');
     el.setAttribute('data-cerious-masonry', 'content');

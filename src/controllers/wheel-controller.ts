@@ -61,10 +61,16 @@ export class WheelController {
    * @param wheelOptions Optional overrides.
    * @returns Detach function.
    */
+  /**
+   * @param nativeProxy Whether a native surface is mounted around `container`
+   *   and will be doing the scrolling. Not an option: the engine decides, and
+   *   there is nothing for a caller to choose between.
+   */
   attach(
     container: HTMLElement,
     onScroll?: (result: ScrollResult) => void,
-    wheelOptions?: WheelNavigationOptions
+    wheelOptions?: WheelNavigationOptions,
+    nativeProxy = false
   ): () => void {
     const options: Required<Pick<WheelNavigationOptions, 'enabled' | 'emitViewportChangeEvent' | 'coalesceViewportChangeEvent' | 'smooth' | 'smoothFactor' | 'notchThresholdPx'>> = {
       enabled: wheelOptions?.enabled !== false,
@@ -82,6 +88,10 @@ export class WheelController {
 
     if (!options.enabled) {
       return () => {};
+    }
+
+    if (nativeProxy) {
+      return this.attachHorizontalOnly(container);
     }
 
     let rafId: number | null = null;
@@ -308,5 +318,50 @@ export class WheelController {
       emittedDy = 0;
       container.removeEventListener('wheel', handleWheel);
     };
+  }
+
+  /**
+   * Hand the vertical axis to the browser.
+   *
+   * The engine's own smoothing is not merely bypassed here, it is REPLACED: the
+   * wheel now scrolls the native proxy surface, and the touch controller
+   * forwards that surface's scrollTop deltas. So this listener must not call
+   * `preventDefault` on a vertical gesture, or there is nothing left to scroll.
+   *
+   * Horizontal still belongs to us. Wide content (a spreadsheet, a table) puts
+   * `overflow-x` on the inner content element, which is INSIDE the proxy, and
+   * the proxy itself is `overflow-x: hidden` — so a sideways gesture has no
+   * native target and has to be forwarded by hand exactly as it is in manual
+   * mode. Only a horizontal-dominant gesture is consumed; anything with more
+   * vertical than horizontal travel is left alone so a diagonal trackpad swipe
+   * still scrolls the list.
+   */
+  private attachHorizontalOnly(container: HTMLElement): () => void {
+    let cachedInner: HTMLElement | null = null;
+
+    const getInner = (): HTMLElement | null => {
+      if (cachedInner && cachedInner.isConnected) return cachedInner;
+      cachedInner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
+      return cachedInner;
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      const dx = event.deltaX;
+      if (dx === 0) return;
+      const inner = getInner();
+      const hTarget: HTMLElement | null =
+        inner && inner.scrollWidth > inner.clientWidth
+          ? inner
+          : (container.scrollWidth > container.clientWidth ? container : null);
+      if (!hTarget) return;
+
+      hTarget.scrollLeft += dx;
+      // Claim the event only when the gesture is actually sideways, so the
+      // vertical component of a diagonal swipe still reaches the proxy.
+      if (Math.abs(dx) > Math.abs(event.deltaY)) event.preventDefault();
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
   }
 }

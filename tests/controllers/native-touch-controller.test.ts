@@ -49,7 +49,9 @@ describe('NativeTouchController', () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(click).toHaveBeenCalledTimes(1);
     expect(button.parentElement).toBe(content);
-    expect(content.parentElement).toBe(proxy);
+    // Inside the surface, not necessarily its immediate child — the surface
+    // owns its internal layering and is free to change it.
+    expect(content.closest('[data-cerious-native-touch-proxy]')).toBe(proxy);
     expect(proxy.parentElement).toBe(host);
     cleanup();
   });

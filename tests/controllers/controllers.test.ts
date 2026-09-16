@@ -130,6 +130,64 @@ describe('WheelController', () => {
   });
 
   describe('Smooth scrolling (native feel)', () => {
+    /**
+     * Deterministic frame clock.
+     *
+     * These tests assert the SHAPE of the easing curve — front-loaded,
+     * decelerating, exact total — and that shape is a function of the elapsed
+     * time each frame reports. The follow is deliberately frame-rate
+     * independent (`alpha = 1 - exp(-dt/tau)`), so a long frame is not a slower
+     * step, it is a BIGGER one: under parallel test load a starved frame
+     * collapses several steps into one and `max(steps) === steps[0]` stops
+     * holding. Driven by the real rAF these passed alone and failed roughly
+     * three times in eight full-suite runs.
+     *
+     * Stubbing the clock rather than loosening the assertions keeps the
+     * curve's shape under test, which is the whole point of them.
+     */
+    const FRAME_MS = 1000 / 60;
+    let frames: FrameRequestCallback[] = [];
+    let clock = 0;
+    let nowSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+    beforeEach(() => {
+      frames = [];
+      clock = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      vi.stubGlobal('cancelAnimationFrame', () => { /* noop */ });
+      nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    });
+
+    afterEach(() => {
+      nowSpy?.mockRestore();
+      nowSpy = null;
+      vi.unstubAllGlobals();
+      frames = [];
+    });
+
+    /**
+     * Run queued frames until the loop stops asking for another, advancing the
+     * clock exactly one 60fps tick per frame.
+     *
+     * @returns How many frames it took to settle.
+     */
+    function settle(maxFrames = 500): number {
+      let ran = 0;
+      while (frames.length > 0 && ran < maxFrames) {
+        const batch = frames;
+        frames = [];
+        for (const cb of batch) {
+          clock += FRAME_MS;
+          cb(clock);
+          ran++;
+        }
+      }
+      return ran;
+    }
+
     // A stateful engine stub: the smooth follow checks whether the engine
     // actually moved (boundary clamp), so the tracked position must advance as
     // deltas are applied — otherwise the loop would treat every step as a
@@ -156,24 +214,13 @@ describe('WheelController', () => {
       return { steps, handler };
     }
 
-    // The exponential tail emits sub-pixel frames (0px steps) between the final
-    // 1px landings, so we pump until the full distance has been delivered rather
-    // than guessing an idle threshold. No overshoot is possible (the follow
-    // approaches from below), so the sum rises monotonically to exactly target.
-    async function pumpUntil(steps: number[], expectedTotal: number, maxFrames = 120): Promise<void> {
-      for (let i = 0; i < maxFrames; i++) {
-        if (steps.reduce((a, b) => a + b, 0) === expectedTotal) return;
-        await waitForAnimationFrame();
-      }
-    }
-
-    it('delivers a trackpad delta over several decelerating frames with no end jump', async () => {
+    it('delivers a trackpad delta over several decelerating frames with no end jump', () => {
       const { steps, handler } = setupSmooth();
 
       // Trackpad input (pixel mode, small delta) takes the smooth path; a discrete
       // mouse-wheel notch would instead apply instantly (covered separately).
       handler(createMockTrackpadWheelEvent(90));
-      await pumpUntil(steps, 90);
+      settle();
 
       // Full distance delivered, exactly — no loss and no overshoot.
       const total = steps.reduce((a, b) => a + b, 0);
@@ -190,9 +237,17 @@ describe('WheelController', () => {
       // guard against the old end-of-curve "dump" that produced a visible jump.
       expect(Math.max(...steps)).toBe(steps[0]);
       expect(steps[steps.length - 1]).toBeLessThanOrEqual(3);
+
+      // Every frame moves no further than the one before it. This is the real
+      // statement of "decelerating", and it is only assertable now that the
+      // frame clock is fixed — under a variable one a single starved frame
+      // legitimately produces a larger step than its predecessor.
+      for (let i = 1; i < steps.length; i++) {
+        expect(steps[i]).toBeLessThanOrEqual(steps[i - 1]);
+      }
     });
 
-    it('accumulates rapid successive trackpad deltas and still settles exactly on target', async () => {
+    it('accumulates rapid successive trackpad deltas and still settles exactly on target', () => {
       const { steps, handler } = setupSmooth();
 
       // Three trackpad deltas in quick succession (before the follow settles).
@@ -200,7 +255,7 @@ describe('WheelController', () => {
       handler(createMockTrackpadWheelEvent(90));
       handler(createMockTrackpadWheelEvent(90));
 
-      await pumpUntil(steps, 270);
+      settle();
 
       const total = steps.reduce((a, b) => a + b, 0);
       expect(total).toBe(270); // every pixel of input delivered, none lost or doubled
@@ -208,27 +263,29 @@ describe('WheelController', () => {
       expect(steps[steps.length - 1]).toBeLessThanOrEqual(3); // gentle landing
     });
 
-    it('applies a discrete mouse-wheel notch instantly even when smooth is on', async () => {
+    it('applies a discrete mouse-wheel notch instantly even when smooth is on', () => {
       const { steps, handler } = setupSmooth();
 
       // A large integer pixel delta is a mouse-wheel notch: it must land in one
       // step (no inertial tail) so the list stops the instant the wheel stops.
       handler(createMockWheelEvent(120)); // no deltaMode / large int px => wheel
-      await waitForAnimationFrame();
 
+      // Asserted with no frame run at all: "instantly" means the engine was
+      // called synchronously from the event, so a queued frame would be a bug.
       expect(steps).toEqual([120]);
+      expect(settle()).toBe(0);
     });
 
-    it('treats a large FRACTIONAL pixel delta as a mouse wheel (free-spin wheels)', async () => {
+    it('treats a large FRACTIONAL pixel delta as a mouse wheel (free-spin wheels)', () => {
       const { steps, handler } = setupSmooth();
 
       // Free-spin / hyperscroll mice emit big fractional pixel deltas. These must
       // classify as a wheel (instant), not a trackpad — magnitude wins over the
       // fractional value.
       handler(createMockTrackpadWheelEvent(500.5)); // pixel mode, large, fractional
-      await waitForAnimationFrame();
 
       expect(steps).toEqual([500.5]);
+      expect(settle()).toBe(0);
     });
   });
 });

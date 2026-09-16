@@ -79,6 +79,64 @@ export interface WheelNavigationOptions {
   /** Enable/disable wheel navigation (default: true) */
   enabled?: boolean;
 
+  /** Enable momentum/inertia scrolling (default: true) */
+  enableMomentum?: boolean;
+  /** Friction coefficient for momentum decay (0-1, default: 0.95) */
+  momentumFriction?: number;
+  /** Minimum velocity to trigger momentum in px/ms (default: 0.1) */
+  momentumThreshold?: number;
+  /**
+   * Optional resolver for a sibling element that owns horizontal native scroll
+   * (i.e. `overflow-x: scroll`). When provided, the controller performs axis
+   * detection on the first significant touch movement; if the gesture is
+   * horizontal-dominant, deltaX is forwarded to the returned element's
+   * scrollLeft (instead of vertical scrolling), enabling mobile horizontal
+   * scrolling without disabling vertical touch.
+   */
+  getHorizontalScrollTarget?: () => HTMLElement | null | undefined;
+  /**
+   * Pixel distance the touch must travel before the controller locks the
+   * gesture to an axis. Default: 8.
+   */
+  axisLockThreshold?: number;
+}
+
+/**
+ * Configuration options for wheel navigation
+ */
+export interface WheelNavigationOptions {
+  /** Enable/disable wheel navigation (default: true) */
+  enabled?: boolean;
+
+  /**
+   * Wheel input implementation.
+   *
+   * `manual` (default) reads `wheel` events, classifies the device by delta
+   * magnitude, and eases the result in JavaScript — see `smooth`,
+   * `smoothFactor`, and `notchThresholdPx`, none of which apply to the other
+   * mode.
+   *
+   * `native-proxy` stops intercepting the vertical axis and lets the wheel
+   * scroll the same hidden native surface the touch proxy uses, forwarding its
+   * `scrollTop` deltas to the engine. The browser then applies its OWN wheel
+   * physics, which is the point: a discrete notch is animated by Chrome and
+   * Edge on Windows but not on macOS, Firefox uses a different curve again, and
+   * a precision touchpad's continuous deltas are passed through unanimated.
+   * That also picks up per-device and OS settings no script can read, such as
+   * how many lines a notch travels. In `manual` mode all of that has to be
+   * guessed from the delta, and a mouse with a free-spin wheel is guessed wrong.
+   *
+   * Nothing is required of the host: the engine creates the content element the
+   * surface needs when there is none, and wraps an existing one wherever it
+   * sits, so a host may nest it (a horizontal-scroll wrapper around a wide
+   * grid). Horizontal deltas are forwarded by the wheel controller in either
+   * mode.
+   *
+   * Default: `native-proxy`. Set `manual` explicitly to keep the JavaScript
+   * easing.
+   */
+  mode?: 'manual' | 'native-proxy';
+
   /**
    * Emit the 'cerious-viewport-change' CustomEvent on the container.
    * Default: true (keeps existing behavior).
@@ -93,15 +151,16 @@ export interface WheelNavigationOptions {
   coalesceViewportChangeEvent?: boolean;
 
   /**
-   * Animate wheel deltas over multiple frames instead of applying them
-   * instantly. Matches the smooth feel of native browser overflow scrolling,
-   * where one wheel notch eases over ~150ms. Default: true.
+   * @deprecated No effect. Wheel input is scrolled by the browser, which
+   * animates it according to the platform — there is nothing here to turn on.
+   * Retained only for the internal fallback described on {@link smoothFactor}.
    */
   smooth?: boolean;
 
   /**
    * Pixel delta at or above which a wheel event is treated as a discrete mouse
-   * notch and applied INSTANTLY, bypassing `smooth`. Default: 100.
+   * @deprecated No effect. The browser knows what the input device is, so
+   * nothing has to be guessed from the delta any more.
    *
    * The default exists because a mouse wheel that keeps gliding after the user
    * stops feels wrong, and one notch is only a few 40px rows. When rows are
@@ -110,9 +169,12 @@ export interface WheelNavigationOptions {
    */
   notchThresholdPx?: number;
   /**
-   * Per-frame interpolation factor for smooth wheel scrolling (0-1). Larger
-   * values consume the remaining delta faster (snappier); smaller values feel
-   * gentler. Default: 0.22 (~tracks native macOS feel).
+   * @deprecated No effect in normal use.
+   *
+   * The engine scrolls a real native surface and follows it, so there is no
+   * curve to fit. A JavaScript easing path survives ONLY as a fallback for a
+   * host the surface cannot attach to, which the engine now prevents by
+   * building the element it needs — so in practice this is unreachable.
    */
   smoothFactor?: number;
 }

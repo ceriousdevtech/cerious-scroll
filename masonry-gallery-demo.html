@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cerious-Scroll · Masonry · Real Content</title>
     <meta name="description" content="Virtualized Masonry with real images, Tailwind-styled component cards, and image carousels — the patterns that make third-party UI work inside recycled cards.">
-    <link rel="stylesheet" href="shared-styles.css">
+    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
     <!-- Get DNS and TLS out of the critical path. The first image otherwise pays
          for connection setup before a byte of it is requested. -->
     <link rel="preconnect" href="https://picsum.photos" crossorigin>
@@ -62,7 +62,7 @@
         }
         #gallery [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
     </style>
-    <script src="demo-bootstrap.js?v=20260611" defer></script>
+    <script src="demo-bootstrap.js?v=20260916e" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -110,8 +110,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260825-append-sync"></script>
-    <script src="demo-bootstrap.js?v=20260611"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
+    <script src="demo-bootstrap.js?v=20260916e"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;

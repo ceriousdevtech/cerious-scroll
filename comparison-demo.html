@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cerious Scroll vs Clusterize.js — Side-by-side stress test</title>
-  <link rel="stylesheet" href="shared-styles.css" />
+  <link rel="stylesheet" href="shared-styles.css?v=20260916e" />
   <!-- Clusterize.js (the long-standing "DOM-clustering" virtual scroll lib). -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/clusterize.js@1.0.0/clusterize.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/clusterize.js@1.0.0/clusterize.min.js"></script>
-  <script src="dist/cerious-scroll.bundle.js?v=20260825-append-sync"></script>
+  <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
   <style>
     :root {
       --brand-1: #78f3d2;
@@ -44,6 +44,8 @@
       border: 1px solid var(--line); background: rgba(255,255,255,.06); cursor: pointer;
       font-family: inherit;
     }
+    /* Opaque + explicit text colour: this one opens a browser-drawn popup. */
+    .cmp-toolbar select { background: var(--control-bg); color: var(--text); }
     .cmp-toolbar button:hover { background: rgba(255,255,255,.11); border-color: var(--brand-1); }
     .cmp-toolbar button.primary {
       background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
@@ -226,7 +228,7 @@
     .cmp-side--cerious .cmp-warn { background: rgba(35, 134, 54, 0.92); color: #fff; }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="demo-bootstrap.js?v=20260611" defer></script>
+  <script src="demo-bootstrap.js?v=20260916e" defer></script>
 </head>
 <body>
   <header class="topbar" data-auto-topbar></header>
@@ -543,6 +545,7 @@
     const csHostEl = document.getElementById('csHost');
     const cluCountEl = document.getElementById('cluCount');
     const csCountEl = document.getElementById('csCount');
+
 
     function rebuildFor(scenario) {
       stopLive();

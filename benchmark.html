@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Performance Benchmark · Cerious-Scroll</title>
   <meta name="description" content="Reproducible in-browser benchmark for cerious-scroll. Measures frame cost, mount time, random-access latency, DOM footprint and heap across 1K to 10M rows.">
-  <link rel="stylesheet" href="shared-styles.css">
+  <link rel="stylesheet" href="shared-styles.css?v=20260916e">
   <style>
     /* Declared in shared-styles.css too, but repeated here so the page still
        renders native controls, scrollbars and popups dark if used standalone. */
@@ -842,10 +842,9 @@
       padding: 4px 8px;
       border-radius: .4rem;
       border: 1px solid var(--line);
-      background-color: #23262c;
+      background-color: var(--control-bg);
       color: var(--text);
     }
-    .bx-form select option { background-color: #191d23; color: #f6f8fb; }
     .bx-form input[type='text'] { width: 130px; }
     .bx-form__check { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
     .bx-form input[type='checkbox'],
@@ -1133,7 +1132,7 @@
       .tile__v { font-size: 1.3rem; }
     }
   </style>
-  <script src="demo-bootstrap.js?v=20260611" defer></script>
+  <script src="demo-bootstrap.js?v=20260916e" defer></script>
 </head>
 <body>
   <header class="topbar" data-auto-topbar></header>
@@ -1598,7 +1597,7 @@
     </div>
   </main>
 
-  <script src="dist/cerious-scroll.bundle.js?v=20260825-append-sync"></script>
+  <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
   <script>
   (function () {
     'use strict';
