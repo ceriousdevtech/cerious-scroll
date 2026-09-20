@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Performance Benchmark · Cerious-Scroll</title>
   <meta name="description" content="Reproducible in-browser benchmark for cerious-scroll. Measures frame cost, mount time, random-access latency, DOM footprint and heap across 1K to 10M rows.">
-  <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+  <link rel="stylesheet" href="shared-styles.css?v=20260922">
   <style>
     /* Declared in shared-styles.css too, but repeated here so the page still
        renders native controls, scrollbars and popups dark if used standalone. */
@@ -1132,7 +1132,8 @@
       .tile__v { font-size: 1.3rem; }
     }
   </style>
-  <script src="demo-bootstrap.js?v=20260916e" defer></script>
+  <script src="demo-icons.js?v=20260922" defer></script>
+  <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
   <header class="topbar" data-auto-topbar></header>
@@ -1143,7 +1144,7 @@
       <!-- ============================ Intro ============================ -->
       <section class="bench__hero">
         <span class="tagline">Live benchmark</span>
-        <h1>Cerious-Scroll performance benchmark</h1>
+        <h1><span data-demo-icon="benchmark"></span>Cerious-Scroll performance benchmark</h1>
         <p>
           Everything on this page is measured in <em>your</em> browser when you press Run. Nothing is
           pre-recorded. The harness drives the same engine the demos use and reports per-frame cost,
@@ -1597,7 +1598,7 @@
     </div>
   </main>
 
-  <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
+  <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
   <script>
   (function () {
     'use strict';
@@ -1843,7 +1844,7 @@
       'Index rebuilt', 'Snapshot uploaded',
     ];
 
-    // No explicit height — the engine must measure this card from the DOM.
+    // No explicit height. The engine must measure this card from the DOM.
     function renderRich(index, container) {
       const color = PALETTE[index % PALETTE.length];
       const lines = 1 + Math.floor(hash(index, 11) * 4);
@@ -1886,8 +1887,8 @@
     }
 
     // -------------------------------------------------- complex templates
-    // Everything below is built from local DOM only — no network images, no
-    // fonts to fetch — so a benchmark run is deterministic and works offline.
+    // Everything below is built from local DOM only (no network images, no
+    // fonts to fetch, so a benchmark run is deterministic and works offline.
     const SVG_NS = 'http://www.w3.org/2000/svg';
 
     function el(tag, cls, text) {
@@ -2254,7 +2255,7 @@
 
     function buildRig(total, profileKey) {
       const profile = PROFILES[profileKey];
-      // Tear the previous rig down properly — dispose the engine and detach its
+      // Tear the previous rig down properly: dispose the engine and detach its
       // scrollbar, not just drop the host, or the old instance keeps observing.
       if (state.rig) { try { state.rig.destroy(); } catch (e) {} state.rig = null; }
       Array.from(stage.querySelectorAll('.bench-host')).forEach((n) => n.remove());
@@ -3961,7 +3962,7 @@
         btn.textContent = '\u2713 Copied';
       } else {
         // Clipboard access can be denied outright (insecure origin, permissions
-        // policy). Don't lose the results — hand them over as a file instead.
+        // policy). Don't lose the results: hand them over as a file instead.
         download(filename, text, mime);
         btn.textContent = '\u2713 Downloaded instead';
       }

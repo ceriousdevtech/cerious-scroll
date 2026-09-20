@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Market Ticker · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,7 +12,7 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>📈 Live Market Ticker</h1>
+                <h1><span data-demo-icon="finance"></span>Live Market Ticker</h1>
                 <p>5,000 symbols with streaming prices and sparklines.</p>
             </div>
 
@@ -25,8 +25,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const FIN_TOTAL = 5000;
@@ -103,6 +105,28 @@
                 demo.refresh();
             }, 1200);
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "High-frequency updates against a moving window",
+        "intro": "A ticker updates far more often than it scrolls, and almost every update is for a row that is not on screen. The efficient shape is therefore the inverse of the usual one: write incoming prices into your data unconditionally, and repaint only what is mounted, only as often as a person can see. <code>refresh()</code> re-runs the renderer for the mounted rows, so driving it from a timer decouples your paint rate from your message rate entirely.",
+        "code": "\n    const scroller = new CeriousScroll(host, symbols.length, {\n      render: function (index, container) {\n        const s = symbols[index];\n        container.textContent = '';\n        container.appendChild(buildTickerRow(s, prices[s.id]));\n      }\n    });\n\n    // Messages arrive at whatever rate the feed sends them.\n    socket.onmessage = function (e) {\n      const tick = JSON.parse(e.data);\n      prices[tick.id] = tick;          // just update the data\n    };\n\n    // Paint at a rate a human can actually read, not at the feed's rate.\n    setInterval(function () { scroller.refresh(); }, 250);\n  ",
+        "notes": [
+                "Do not call <code>refresh()</code> per message. Coalesce on a timer or a rAF; the mounted window is what costs, not the message.",
+                "Flash-on-change effects should be driven from your data (compare to the previous value), not from a CSS animation on a recycled node.",
+                "Sparklines are cheapest as an inline SVG path built from a fixed-length ring buffer per symbol.",
+                "Sorting by a live value means indices change constantly: key any selection on the symbol id."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

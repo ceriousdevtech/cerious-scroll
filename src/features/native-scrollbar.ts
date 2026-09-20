@@ -23,13 +23,21 @@ export class NativeScrollbar {
   private static readonly ELEMENT_HEIGHT_MULTIPLIER = 10;
   // Browsers clamp element height (Chrome ~33.5M px). Stay well under it: past
   // the cap the strip silently stops growing and the mapping compresses again.
-  private static readonly MAX_STRIP_HEIGHT_PX = 30_000_000;
+  /**
+   * Ceiling on the strip's scroll range.
+   *
+   * Browsers silently clamp an element past their own maximum — measured at
+   * 16,777,214px (2^24 − 2) in Chrome — so asking for more does not buy
+   * resolution, it just means the number the engine reasons about and the
+   * number the browser honours stop matching. Kept under the lowest ceiling in
+   * circulation (Firefox's ~17.9M).
+   */
+  private static readonly MAX_STRIP_HEIGHT_PX = 15_000_000;
   // Tolerance (px) for recognising the async echo of a programmatic scrollTop
   // write. The browser may clamp/round our written value, so the echo's
   // scrollTop can differ from the target by a sub-pixel; a small window
   // absorbs that without misclassifying a genuine user drag.
   private static readonly PROGRAMMATIC_SCROLL_TOLERANCE_PX = 2;
-  private static readonly BOTTOM_THRESHOLD_PERCENTAGE = 99;
   private static readonly PERCENTAGE_MAX = 100;
   // Window (ms) after a genuine user scroll on the strip during which an
   // engine→scrollbar sync defers to the user. On desktop the user drags the
@@ -49,6 +57,10 @@ export class NativeScrollbar {
   private static _stylesInjected = false;
 
   private _scrollbarContainer: HTMLElement | null = null;
+  /** Edge the strip is pinned to, remembered so later gutter syncs know which side to pad. */
+  private _gutterSide: 'left' | 'right' = 'right';
+  /** Custom property carrying the strip's width to anything laid out inside the host. */
+  private static readonly GUTTER_VAR = '--cerious-gutter';
   private _thumbElement: HTMLElement | null = null;
   // Transparent overlay on the right edge of the container (touch only) that
   // makes the whole sibling-scrollbar strip a drag target — so a tap anywhere
@@ -101,10 +113,6 @@ export class NativeScrollbar {
   // layout width. Measured as a 0-width difference on a probe element. We must
   // not reserve a gutter in that case, or it leaves a dead gap with no visible
   // scrollbar. Cached alongside the width measurement.
-  private _cachedOverlayScrollbars: boolean | undefined = undefined;
-  private _lastScrollTop: number = 0;
-  private _lastRenderedElement: number = -1;
-  private _lastRenderedOffset: number = -1;
   // Track scroll-event listeners so we can remove them on detach to prevent
   // listener leaks when the scrollbar is recreated.
   private _scrollListener: ((e: Event) => void) | null = null;
@@ -250,14 +258,50 @@ export class NativeScrollbar {
    * @returns Pixels.
    */
   private computeSurfaceHeight(container: HTMLElement): number {
+    // Nothing to scroll: give the strip no range at all, so the platform paints no thumb.
+    //
+    // The floor below exists so the thumb renders for a list whose element units would otherwise
+    // fit the strip. Applied unconditionally it also guarantees a thumb for a list that genuinely
+    // FITS — a folder holding one message got a permanent bar filling ~98% of its track, which
+    // says nothing and cannot be moved.
+    //
+    // `canScroll()` asks the engine rather than guessing: the true-bottom camera is the top of the
+    // dataset exactly when the whole of it is already on screen.
+    if (!this.canScroll()) return container.clientHeight;
+
     // Exceed the container so the thumb renders even for small lists.
     const minHeight = container.clientHeight + NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
     const contentHeight = this._contentHeightSource ? this._contentHeightSource() : undefined;
     const surface = (contentHeight !== undefined && Number.isFinite(contentHeight) && contentHeight > 0)
-      ? Math.min(contentHeight, NativeScrollbar.MAX_STRIP_HEIGHT_PX)
+      ? contentHeight
       // Element count is the right proxy when an element is roughly a row.
       : (this.totalElements + 1) * NativeScrollbar.ELEMENT_HEIGHT_MULTIPLIER;
-    return Math.max(Math.round(surface), minHeight);
+
+    // Capped on BOTH branches. The cap used to guard only the content-height
+    // path, so a large dataset sized by element count asked for a strip the
+    // browser would not give it — ten million rows requested 100,000,010px and
+    // silently got 16,777,214. Nothing broke, because the thumb math reads
+    // measured geometry, but the engine was reasoning about a number that did
+    // not exist.
+    const capped = Math.min(surface, NativeScrollbar.MAX_STRIP_HEIGHT_PX);
+    return Math.max(Math.round(capped), minHeight);
+  }
+
+  /**
+   * Whether the dataset can be scrolled at all.
+   *
+   * `computeTrueBottomPosition` walks back from the last element until it has filled the viewport;
+   * when the whole dataset fits it runs out of elements and reports `{ element: 0, offset: 0 }` —
+   * the camera is already at the bottom while sitting at the top, so there is nowhere to go. It
+   * returns `null` while any tail element is still unmeasured, which is not the same claim, so
+   * that case keeps the scrollable behaviour and is corrected on the next resize.
+   *
+   * @returns `false` only when the engine is certain everything is already visible.
+   */
+  private canScroll(): boolean {
+    const trueBottom = this.getTrueBottomPosition();
+    if (!trueBottom) return true;
+    return !(trueBottom.element === 0 && trueBottom.offset === 0);
   }
 
   /**
@@ -308,29 +352,19 @@ export class NativeScrollbar {
 
     // A 0-width difference means the platform uses overlay scrollbars (they
     // float over content and reserve no space). Record that so the gutter is
-    // skipped; the strip itself still gets a usable width (the default) so the
-    // OS can paint its overlay bar over the content's right edge on scroll.
-    this._cachedOverlayScrollbars = scrollbarWidth === 0;
+    // A 0-width difference means the platform uses overlay scrollbars. Nothing
+    // needs to be remembered about that: `syncGutter` measures the strip's own
+    // painted width every time, which is 0 on such a platform and releases the
+    // gutter on its own — and keeps working if the setting changes mid-session,
+    // which a cached flag would not.
 
     this._cachedScrollbarWidth = scrollbarWidth || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH;
     return this._cachedScrollbarWidth;
   }
 
-  /**
-   * Whether the platform uses overlay scrollbars (no reserved width). Triggers
-   * the measurement lazily if needed.
-   */
-  private hasOverlayScrollbars(): boolean {
-    if (this._cachedOverlayScrollbars === undefined) {
-      this.getScrollbarWidth(); // populates _cachedOverlayScrollbars
-    }
-    return this._cachedOverlayScrollbars ?? false;
-  }
-
   /** Drop cached OS scrollbar width (zoom / display change). */
   clearScrollbarWidthCache(): void {
     this._cachedScrollbarWidth = undefined;
-    this._cachedOverlayScrollbars = undefined;
   }
 
   /**
@@ -370,7 +404,11 @@ export class NativeScrollbar {
    * Attach the sibling strip (and touch overlay thumb when appropriate).
    * @param container Host element.
    */
-  attachNativeScrollbar(container: HTMLElement): void {
+  /**
+   * @param side Which edge the strip sits on. Defaults to `'right'`; RTL hosts
+   *   pass `'left'`, which is where a right-to-left reader expects it.
+   */
+  attachNativeScrollbar(container: HTMLElement, side: 'left' | 'right' = 'right'): void {
     const existingScrollbar = container.querySelector('[data-cerious-scrollbar="container"]');
     if (existingScrollbar) {
       existingScrollbar.remove();
@@ -395,7 +433,7 @@ export class NativeScrollbar {
 
     this._scrollbarContainer = this.createNativeScrollbar(container, {
       width: touch ? '0px' : `${detectedWidth}px`,
-      position: 'right',
+      position: side,
       style: {
         background: 'transparent',
         borderLeft: 'none',
@@ -445,7 +483,10 @@ export class NativeScrollbar {
       ${position}: 0;
       width: ${width};
       height: 100%;
-      overflow-y: scroll;
+      /* auto, not scroll: with no range the strip must show nothing. A platform with classic
+         (space-taking) scrollbars paints the track for overflow:scroll whether or not it can
+         actually move. */
+      overflow-y: auto;
       overflow-x: hidden;
       z-index: ${style['zIndex'] || NativeScrollbar.DEFAULT_Z_INDEX};
       background: ${style['background'] || 'transparent'};
@@ -473,30 +514,14 @@ export class NativeScrollbar {
       container.style.position = 'relative';
     }
 
-    // Add padding to container to make room for scrollbar and prevent overlap.
-    // Skip on touch — the strip is zero-width and the overlay thumb floats over
-    // content. Also skip for platform OVERLAY scrollbars (e.g. macOS trackpad):
-    // they float over content and reserve no width, so reserving a gutter would
-    // leave a dead gap with no visible bar. The strip keeps a usable width so
-    // the OS still paints its overlay bar over the content's right edge.
-    const overlay = this.hasOverlayScrollbars();
-    const reserveGutter = !touch && !overlay;
-
     // Mount the strip BEFORE reserving space for it. The gutter has to match the
     // strip's RENDERED width, and only a mounted element reports that — the
     // configured width excludes any `borderLeft` the caller styled on. The strip
     // is absolutely positioned, so mounting it first cannot disturb layout.
     container.appendChild(scrollbarContainer);
 
-    if (reserveGutter) {
-      NativeScrollbar.reserveGutter(
-        container,
-        position === 'left' ? 'left' : 'right',
-        scrollbarContainer.offsetWidth ||
-          parseInt(width) ||
-          NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH
-      );
-    }
+    this._gutterSide = position === 'left' ? 'left' : 'right';
+    this.syncGutter(scrollbarContainer, parseInt(width) || undefined);
 
     // The expensive half of a scroll: map the latest scrollTop to a virtual
     // position and render the viewport. Coalesced to ONE run per animation frame
@@ -553,8 +578,6 @@ export class NativeScrollbar {
       const currentOffset = this.getScrollOffset();
       if (targetElement !== currentElement || targetOffset !== currentOffset) {
         const result = this.scrollHandlers.jumpToPosition(targetElement, targetOffset, true);
-        this._lastRenderedElement = result.element;
-        this._lastRenderedOffset = result.offset;
         container.dispatchEvent(new CustomEvent('viewport-change', {
           detail: { element: result.element, scrollOffset: result.offset, percentage }
         }));
@@ -612,7 +635,6 @@ export class NativeScrollbar {
       // for the duration of the gesture.
       this._lastUserScrollTs = NativeScrollbar._now();
 
-      this._lastScrollTop = scrollTop;
 
       // Keep the custom thumb visually in sync with the strip position on
       // every user scroll (wheel, drag-on-sibling, touch-driven via
@@ -683,6 +705,15 @@ export class NativeScrollbar {
       return;
     }
 
+    // Re-decide whether there is anything to scroll, now that rows have been measured.
+    //
+    // The strip is built before the first render, when no tail height is known and the true-bottom
+    // camera is therefore unknowable — so attach has to assume the list scrolls. This is the first
+    // moment the answer is real, and it is the hook the engine already calls whenever geometry
+    // settles (resize, a dataset change, a row changing height), so a list that has just become
+    // short enough to fit loses its bar here and one that has outgrown the viewport gains it.
+    this.refreshSurface(container);
+
     const percentage = this.getScrollPercentage();
     if (!Number.isFinite(percentage)) return;
     const maxScroll = container.scrollHeight - container.clientHeight;
@@ -696,7 +727,6 @@ export class NativeScrollbar {
       // clamp/round our target) so the scroll listener recognises — and
       // ignores — the asynchronous echo this assignment triggers.
       this._lastProgrammaticScrollTop = container.scrollTop;
-      this._lastScrollTop = this._lastProgrammaticScrollTop;
       this._syncingScrollbar = false;
     }
 
@@ -705,6 +735,80 @@ export class NativeScrollbar {
     // is what fires during touch-driven content scroll, where the OS will
     // never paint a thumb for the sibling strip.
     this._updateThumbVisuals();
+  }
+
+  /**
+   * Reserve a gutter only while the strip is actually showing a bar, and give it back when it is
+   * not.
+   *
+   * Asking the mounted strip how much room its bar takes (`offsetWidth - clientWidth`) answers
+   * every case at once, and answers it by measurement rather than by inference: a touch device
+   * and a platform with OVERLAY scrollbars both report zero because their bars float over content
+   * and reserve nothing, and so does a list short enough to have no scroll range at all. Only a
+   * classic, space-taking bar reports a width, and only then does content need moving aside.
+   *
+   * @param strip The mounted strip element.
+   * @param fallbackWidth Configured width, used when the strip reports none.
+   */
+  /**
+   * Re-decide whether the dataset overflows, and resize the strip (and its gutter) to match.
+   *
+   * Safe and cheap to call after every render: the true-bottom camera is cached against the
+   * viewport height and measurement version, and neither the surface height nor the padding is
+   * written unless the answer actually changed.
+   */
+  refreshScrollRange(): void {
+    if (this._scrollbarContainer) this.refreshSurface(this._scrollbarContainer);
+  }
+
+  /**
+   * Re-measure the strip's scrollable surface and bring the reserved gutter with it.
+   *
+   * @param strip The mounted strip element.
+   */
+  private refreshSurface(strip: HTMLElement): void {
+    const surface = strip.querySelector('[data-cerious-scrollbar="content"]') as HTMLElement | null;
+    if (!surface) return;
+
+    const height = `${this.computeSurfaceHeight(strip)}px`;
+    if (surface.style.height !== height) surface.style.height = height;
+
+    const canScroll = this.canScroll();
+
+    // Say it outright rather than leaving it to `auto`. A surface exactly as tall as the strip has
+    // nothing to scroll, yet the platform still reserves a bar for it — measured at 10px of a
+    // strip 11px wide. `hidden` is the only thing that reliably takes it away.
+    const overflowY = canScroll ? 'auto' : 'hidden';
+    if (strip.style.overflowY !== overflowY) strip.style.overflowY = overflowY;
+
+    // And take the strip itself out of sight. Losing the bar is not enough: the strip is still a
+    // mounted element the host may have styled — a themed `borderLeft` is the obvious case — so it
+    // goes on drawing a hairline down the full height of a list that cannot scroll. `visibility`
+    // rather than `display` so it keeps reporting the widths syncGutter measures.
+    const visibility = canScroll ? '' : 'hidden';
+    if (strip.style.visibility !== visibility) strip.style.visibility = visibility;
+
+    this.syncGutter(strip);
+  }
+
+  private syncGutter(strip: HTMLElement, fallbackWidth?: number): void {
+    const host = strip.parentElement;
+    if (!host) return;
+
+    // offsetWidth = content + padding + border + scrollbar, so the borders have to come off or a
+    // strip with a 1px `borderLeft` looks like it is reserving a bar when it is not.
+    const style = getComputedStyle(strip);
+    const borders = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0);
+    const barWidth = strip.offsetWidth - strip.clientWidth - borders;
+    if (barWidth > 0) {
+      NativeScrollbar.reserveGutter(
+        host,
+        this._gutterSide,
+        strip.offsetWidth || fallbackWidth || NativeScrollbar.DEFAULT_SCROLLBAR_WIDTH
+      );
+    } else {
+      NativeScrollbar.releaseGutter(host);
+    }
   }
 
   /**
@@ -718,10 +822,7 @@ export class NativeScrollbar {
     const container = scrollbarContainer || this._scrollbarContainer;
     if (!container) return;
 
-    const scrollableContent = container.querySelector('[data-cerious-scrollbar="content"]') as HTMLElement;
-    if (scrollableContent) {
-      scrollableContent.style.height = this.computeSurfaceHeight(container) + 'px';
-    }
+    this.refreshSurface(container);
   }
 
   /**
@@ -1035,6 +1136,13 @@ export class NativeScrollbar {
     renderedWidth: number
   ): void {
     if (!(renderedWidth > 0)) return;
+
+    // Publish the width for anything laying out INSIDE the host. Padding cannot reach an
+    // absolutely positioned viewport (its containing block is the padding box), so the rows read
+    // this instead — see AbsolutePlacement. Set before the early return below, because a host that
+    // already reserves its own padding still has rows that need to know.
+    container.style.setProperty(NativeScrollbar.GUTTER_VAR, `${renderedWidth}px`);
+
     const computed = getComputedStyle(container);
     const current = (side === 'left'
       ? parseFloat(computed.paddingLeft)
@@ -1059,6 +1167,8 @@ export class NativeScrollbar {
    */
   private static releaseGutter(container: HTMLElement | null): void {
     if (!container) return;
+    container.style.removeProperty(NativeScrollbar.GUTTER_VAR);
+
     const record = container.getAttribute(NativeScrollbar.RESERVED_ATTR);
     if (!record) return;
     container.removeAttribute(NativeScrollbar.RESERVED_ATTR);

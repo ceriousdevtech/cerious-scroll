@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cerious-Scroll · Native Table — Prepend &amp; Scroll Anchoring</title>
+    <title>Cerious-Scroll · Native Table: Prepend &amp; Scroll Anchoring</title>
     <meta name="description" content="Inject variable-height rows at the TOP of a native-table data stream (live telemetry / chat-history backfill) and watch the scroll position stay cleanly anchored.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <style>
         /* ---- Prepend / scroll-anchoring stress test ----
          * New, variable-height rows are injected at the TOP of the stream
@@ -13,7 +13,7 @@
          * the data is index-addressed, prepending K rows shifts every existing
          * row's index by +K. To keep the viewport from jumping we re-anchor the
          * engine to the SAME logical row (currentElement += K) and re-sync the
-         * scrollbar — so the row you were reading stays exactly where it was. */
+         * scrollbar, so the row you were reading stays exactly where it was. */
         .cs-table {
             border-collapse: separate;   /* borders travel with the transformed tbody */
             border-spacing: 0;
@@ -52,7 +52,7 @@
         .cs-table tbody tr:hover { background: rgba(31, 111, 235, 0.06); }
 
         /* Freshly injected rows get a persistent accent bar + NEW flag until the
-         * next batch arrives — makes "what just came in at the top" obvious so you
+         * next batch arrives: makes "what just came in at the top" obvious so you
          * can SEE that your viewport did NOT follow them (when anchoring). */
         .cs-table tbody tr.is-new td:first-child { box-shadow: inset 3px 0 0 var(--accent, #1f6feb); }
         .cs-table tbody tr.is-new { background: rgba(31, 111, 235, 0.07); }
@@ -90,10 +90,10 @@
         .ev-list { margin: 4px 0 0; padding-left: 18px; }
         .ev-list li { line-height: 1.5; margin: 2px 0; color: #c9d1d9; }
 
-        /* "N new above" pill — appears when anchored and rows arrived off-screen
+        /* "N new above" pill: appears when anchored and rows arrived off-screen
          * above you (classic chat/feed affordance). Click jumps to the top. */
         /* Must carry the flex-height chain through to .demo-scroll (flex:1), or the
-         * scroll host collapses to 0px and renders nothing — the full-height gotcha. */
+         * scroll host collapses to 0px and renders nothing: the full-height gotcha. */
         .scroll-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
         .new-above {
             position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
@@ -111,7 +111,9 @@
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
         .anchor-readout { font-variant-numeric: tabular-nums; }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -119,10 +121,10 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>📡 Native &lt;table&gt; · prepend &amp; scroll anchoring</h1>
+                <h1><span data-demo-icon="tablePrepend"></span>Native &lt;table&gt; · prepend &amp; scroll anchoring</h1>
                 <p>
                     New, <strong>variable-height</strong> rows are injected at the <strong>top</strong> of the
-                    stream — like a live telemetry feed or a chat-history backfill. Scroll down a bit, then
+                    stream, like a live telemetry feed or a chat-history backfill. Scroll down a bit, then
                     inject: with <em>anchoring</em> on, the row you're reading stays put while new rows pile up
                     above; with <em>Follow newest</em> on, the view rides the top instead.
                 </p>
@@ -153,8 +155,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -168,7 +170,7 @@
             // prepend. index i  ->  seq = topSeq - i  (index 0 = newest = topSeq).
             //
             // The dataset GROWS as events arrive (total += k), but in place via
-            // demo.updateTotal — NOT setTotal, which recreates the whole scroller.
+            // demo.updateTotal, NOT setTotal, which recreates the whole scroller.
             // Recreating mid-drag would destroy the scrollbar the user is dragging
             // (the drag froze the moment a live row arrived). Growing in place
             // keeps the drag alive AND keeps the oldest event pinned at the bottom
@@ -312,7 +314,7 @@
                 total += k;
                 freshMinSeq = topSeq - k + 1;              // mark just-arrived batch as NEW
 
-                // Grow the dataset IN PLACE — no teardown, so a native-scrollbar
+                // Grow the dataset IN PLACE, no teardown, so a native-scrollbar
                 // drag in progress is not destroyed. Every existing event's index
                 // shifted by +k (k newer events took indices 0..k-1), so the
                 // index-keyed height cache is stale and must be cleared.
@@ -376,6 +378,28 @@
                 demo.scroller.jumpToElement(40); demo.render(); refreshStat();
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Prepending rows with the scroll position anchored",
+        "intro": "Adding rows to the <em>top</em> of a stream (a live telemetry feed, chat history backfilled as you scroll up) moves everything below them down. Handled naively the reader is thrown somewhere else mid-sentence. Because the camera is an <code>(element, offset)</code> pair rather than a pixel offset, anchoring is close to free: inserting before the camera's element only changes that element's index, so the engine re-bases the index and the reader stays on exactly the row they were reading, whatever the new rows' heights turn out to be.",
+        "code": "\n    // Rows arrive at the FRONT of the array.\n    function prepend(newRows) {\n      rows.unshift.apply(rows, newRows);\n\n      // Tell the engine the dataset grew at the START. It re-bases the camera's\n      // element index by the number of rows inserted, so the row under the\n      // reader stays under the reader.\n      scroller.prependElements(newRows.length);\n    }\n\n    // A live feed can do this on a timer or a socket without the view jumping.\n    setInterval(function () { prepend(fetchLatest()); }, 2000);\n  ",
+        "notes": [
+                "The inserted rows may be any height; nothing has to be known in advance for the anchoring to hold.",
+                "Anchoring is about the element under the camera, so it survives even when the prepended block is taller than the viewport.",
+                "Appending to the end is the ordinary <code>updateTotalElements</code> path: only the start needs re-basing.",
+                "If you prepend while the reader is at the very top, the new rows are what they now see, which is usually what a feed should do."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

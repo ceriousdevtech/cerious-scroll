@@ -10,6 +10,12 @@
 2. [Installation](#installation)
 3. [Basic Setup](#basic-setup)
 4. [Configuration Options](#configuration-options)
+    - [Pinned section headers (`sticky`)](#pinned-section-headers-sticky)
+    - [Row snapping (`snap`)](#row-snapping-snap)
+    - [Edge-triggered loading (`infinite`)](#edge-triggered-loading-infinite)
+    - [Screen-reader semantics (`aria`)](#screen-reader-semantics-aria)
+    - [Right-to-left (`direction`)](#right-to-left-direction)
+    - [SSR and hydration (`ssr`)](#ssr-and-hydration-ssr)
 5. [Rendering Patterns](#rendering-patterns)
 6. [Navigation Methods](#navigation-methods)
 7. [Event Handling](#event-handling)
@@ -212,6 +218,178 @@ the vertical part of a diagonal swipe still reaches the surface.
 
 `wheel.smooth`, `wheel.smoothFactor` and `wheel.notchThresholdPx` are deprecated
 no-ops. They tuned a JavaScript easing curve that no longer runs.
+
+### Pinned section headers (`sticky`)
+
+`sticky.resolve` is handed the first visible row and returns the dataset index
+that should be pinned above it, or `null`. The pinned element is rendered
+through your normal row renderer but mounted **outside** the recycler, so it
+survives the moment its own row scrolls out of the mounted window.
+
+```js
+const sections = [0, 40, 95, 160];   // ascending header indices
+
+new CeriousScroll(host, total, {
+  sticky: {
+    resolve: (firstVisible) => {
+      for (let i = sections.length - 1; i >= 0; i--) {
+        if (sections[i] <= firstVisible) return sections[i];
+      }
+      return null;
+    },
+    className: 'is-pinned'
+  }
+});
+```
+
+`resolve` runs on every window move, so keep it cheap: a scan over a few hundred
+section markers is fine, a scan over the whole dataset is not. Because the
+pinned row is drawn in two places at once, your renderer must be idempotent.
+Cost is exactly one extra element, whatever the dataset size.
+
+---
+
+### Row snapping (`snap`)
+
+Settles the camera on a row boundary once scrolling stops. This is cheap here in
+a way it is not for a pixel-based scroller: the camera is already
+`(element, offset)`, so snapping is driving `offset` to zero.
+
+```js
+new CeriousScroll(host, total, {
+  snap: {
+    enabled: true,
+    align: 'nearest',   // or 'start' to always settle to the top of the row
+    tolerance: 2        // px of slack; skips the nudge when already landed
+  }
+});
+```
+
+CSS scroll-snap cannot do this job. The surface the browser actually scrolls is
+a featureless spacer with no snap targets on it, so the engine settles the
+camera itself after the native `scrollend` signal — which also means snapping
+never fights an in-flight gesture or its momentum.
+
+---
+
+### Edge-triggered loading (`infinite`)
+
+Thin sugar over `updateTotalElements()`, which already does the hard part of
+growing the dataset in place and re-anchoring both native surfaces so the camera
+does not move. This option only decides *when* to ask.
+
+```js
+new CeriousScroll(host, rows.length, {
+  infinite: {
+    threshold: 20,     // rows from the edge that trigger a load
+    edges: 'end',      // or 'both' to backfill upwards as well
+    onLoadMore: (ctx) => {
+      // ctx = { direction, first, last, total }
+      return fetch('/api/rows?after=' + cursor)
+        .then((r) => r.json())
+        .then((page) => {
+          rows.push(...page.items);
+          scroller.updateTotalElements(rows.length);
+        });
+    }
+  }
+});
+```
+
+**Return the promise.** The callback fires once per approach and re-arms when the
+window moves back out of the threshold; while a returned promise is still
+pending, no further call is made. A callback that fires and forgets is re-armed
+as soon as it returns, and a slow endpoint gets asked again on the next frame.
+
+Growing the dataset does not grow the DOM. Measured on the infinite demo: the
+dataset went from 40 rows to 520 while the mounted window stayed between 9 and
+13 rows.
+
+---
+
+### Screen-reader semantics (`aria`)
+
+Virtualization is invisible to a screen reader in the worst way: it reads the
+DOM, the DOM holds twenty rows, so it announces "item 3 of 20" for a dataset of
+a million. `aria-setsize` and `aria-posinset` are the standard repair — they
+state the real size and position independently of what is mounted — and the
+engine already knows both numbers.
+
+```js
+new CeriousScroll(host, 500_000, {
+  aria: {
+    enabled: true,
+    role: 'list',          // default for absolute and masonry layouts
+    itemRole: 'listitem',  // default for absolute and masonry layouts
+    label: 'Search results'
+    // labelledBy: 'results-heading'   // prefer this when a heading exists
+  }
+});
+```
+
+It is opt-in because the correct markup depends on what the rows *mean*. For
+`layout: 'table'` neither role is set by default and you should not add them:
+`<tr>` and `<td>` already carry real semantics, and a role replaces those rather
+than adding to them.
+
+ARIA describes the list; it does not make it focusable. Keyboard navigation is
+the separate `keyboard` option.
+
+---
+
+### Right-to-left (`direction`)
+
+RTL is not a mirrored stylesheet. The scrollbar moves to the leading edge, the
+browser's own `scrollLeft` origin changes meaning, and any inset expressed as
+`left` or `right` ends up on the wrong side.
+
+```js
+new CeriousScroll(host, total, {
+  direction: 'auto'   // 'ltr' | 'rtl' | 'auto' (read the host's own direction)
+});
+```
+
+The engine handles the scroll math and positions rows with **logical** insets
+(`inset-inline-start` / `inset-inline-end`), so the gutter it reserves for the
+scrollbar lands on whichever side the scrollbar is actually on. Masonry fills
+columns from the trailing edge; column 0 is still the first column the packer
+fills, it is simply drawn from the other edge.
+
+Write your own row CSS with logical properties — `padding-inline-start`,
+`border-inline-end`, `text-align: start` — and it follows the direction for
+free. `direction: 'auto'` is read once at mount, so flipping the host's `dir`
+at runtime means re-creating the instance.
+
+---
+
+### SSR and hydration (`ssr`)
+
+The package is import-safe without a DOM already: nothing touches `document` or
+`window` at module scope, so a server bundle can include it. `ssr.hydrate` adds
+the second half — adopting markup that is already there instead of clearing it
+on the first render.
+
+```html
+<!-- rendered on the server -->
+<div id="feed" data-cerious-scroll-content>
+  <div data-element-index="0">…</div>
+  <div data-element-index="1">…</div>
+</div>
+```
+
+```js
+new CeriousScroll(host, total, { ssr: { hydrate: true } });
+```
+
+`data-element-index` is the contract: rows are matched by it, so server output
+and client render agree on identity. A row without it cannot be matched and is
+replaced. Your client renderer must produce the same markup the server did for a
+given index, or the first paint after adoption will shift. Render enough rows to
+cover the first viewport and no more; extras are adopted and then immediately
+recycled.
+
+Without `hydrate`, the first frame clears the container, which throws away the
+server-rendered content and flashes.
 
 ---
 

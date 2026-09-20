@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessibility · Cerious-Scroll</title>
+    <meta name="description" content="Virtual scrolling breaks screen readers by default. aria-setsize and aria-posinset state the real size and position independently of what is mounted.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
+    <style>
+        .a11y-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 16px; height: 52px;
+            border-bottom: 1px solid var(--line);
+        }
+        .a11y-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .a11y-idx {
+            font-variant-numeric: tabular-nums; color: var(--muted);
+            font-size: 0.75rem; min-width: 74px;
+        }
+        .a11y-title { font-weight: 600; font-size: 0.88rem; }
+        .a11y-tag {
+            margin-left: auto; font-size: 0.7rem; padding: 2px 8px; border-radius: 999px;
+            background: rgba(255,255,255,.07); color: var(--muted);
+        }
+
+
+        /* Info strip. Sits between the toolbar and the scroll surface so the
+         * reading order is controls -> what they did -> the list, matching the
+         * other demos rather than burying the point below the fold. */
+        .sr-panel {
+            display: flex; flex-wrap: wrap; gap: 8px 28px;
+            padding: 10px 20px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            flex-shrink: 0;
+        }
+        .sr-cell { min-width: 0; }
+        .sr-cell h3 {
+            margin: 0 0 3px; font-size: 0.68rem; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted); font-weight: 700;
+        }
+        /* What a reader would say, built from the attributes the engine
+         * actually wrote, not a separate simulation. */
+        .sr-say {
+            font-size: 0.82rem;
+            font-family: ui-monospace, Menlo, monospace;
+        }
+        .sr-good { color: var(--accent); }
+        .sr-bad  { color: #ff8b8b; }
+        .sr-attrs { font-size: 0.74rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+    </style>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1><span data-demo-icon="accessibility"></span>Accessibility</h1>
+                <p>A reader counting the DOM says “1 of 14” for half a million rows. ARIA states the real numbers.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label><input type="checkbox" id="ariaOn" checked> aria.enabled</label>
+
+                <label for="layout">Layout</label>
+                <select id="layout">
+                    <option value="absolute">absolute (list)</option>
+                    <option value="table">table</option>
+                </select>
+
+                <span style="display: inline-flex; gap: 6px">
+                    <input id="jump" type="number" placeholder="row #" value="250000" style="width: 110px">
+                    <button id="goBtn" type="button">Go</button>
+                </span>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">–</span>
+            </div>
+
+            <div class="sr-panel">
+                <div class="sr-cell">
+                    <h3>What a screen reader announces</h3>
+                    <div class="sr-say" id="say">–</div>
+                </div>
+                <div class="sr-cell">
+                    <h3>On the first row</h3>
+                    <div class="sr-attrs" id="attrs">–</div>
+                </div>
+                <div class="sr-cell">
+                    <h3>On the container</h3>
+                    <div class="sr-attrs" id="container">–</div>
+                </div>
+            </div>
+
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Records: <strong id="totalLabel">500,000</strong></span>
+                <span>DOM rows: <strong id="domLabel">–</strong></span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
+    <script>
+        (function () {
+            const host = document.getElementById('scroll');
+            const TOTAL = 500000;
+            const KINDS = ['Invoice', 'Receipt', 'Credit note', 'Statement', 'Reminder'];
+            const STATES = ['paid', 'due', 'overdue', 'draft'];
+
+            function hash(n, salt) {
+                const x = Math.sin(n * 91.7 + salt * 57.3) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            function renderRow(index, container) {
+                const kind = KINDS[Math.floor(hash(index, 2) * KINDS.length)];
+                const state = STATES[Math.floor(hash(index, 5) * STATES.length)];
+                const el = document.createElement('div');
+                el.className = 'a11y-row';
+                el.innerHTML =
+                    '<span class="a11y-idx">#' + (index + 1).toLocaleString() + '</span>' +
+                    '<span class="a11y-title">' + kind + ' ' +
+                        String(100000 + Math.floor(hash(index, 9) * 899999)) + '</span>' +
+                    '<span class="a11y-tag">' + state + '</span>';
+                container.appendChild(el);
+            }
+
+            let demo = null;
+
+            function build() {
+                if (demo) demo.scroller.dispose();
+                host.textContent = '';
+                host.removeAttribute('role');
+                host.removeAttribute('aria-label');
+                host.removeAttribute('aria-rowcount');
+
+                demo = window.mountDemo({
+                    host: host,
+                    total: TOTAL,
+                    render: renderRow,
+                    options: {
+                        layout: document.getElementById('layout').value,
+                        aria: {
+                            enabled: document.getElementById('ariaOn').checked,
+                            label: 'Billing documents'
+                        }
+                    },
+                    onViewport: report
+                });
+                report();
+                window.__demo = demo;
+                // The first paint happens on a frame, after mountDemo returns,
+                // so the panel has to read the DOM once more to describe it.
+                requestAnimationFrame(report);
+            }
+
+            /**
+             * Build the announcement from the attributes ACTUALLY on the element,
+             * so the panel cannot claim something the DOM does not say.
+             */
+            function report() {
+                const first = host.querySelector('[data-element-index]');
+                const domCount = host.querySelectorAll('[data-element-index]').length;
+                document.getElementById('domLabel').textContent = String(domCount);
+
+                const say = document.getElementById('say');
+                const attrs = document.getElementById('attrs');
+                if (!first) { say.textContent = '–'; attrs.textContent = ''; return; }
+
+                const setsize = first.getAttribute('aria-setsize');
+                const posinset = first.getAttribute('aria-posinset');
+                const rowindex = first.getAttribute('aria-rowindex');
+                // Joined from the labelled parts rather than raw textContent:
+                // adjacent spans have no whitespace between them, and a reader
+                // does not run their contents together.
+                const name = ['.a11y-title', '.a11y-tag']
+                    .map((sel) => { const n = first.querySelector(sel); return n ? n.textContent.trim() : ''; })
+                    .filter(Boolean).join(', ');
+
+                if (setsize && posinset) {
+                    say.innerHTML = '<span class="sr-good">“' + name + ', ' +
+                        Number(posinset).toLocaleString() + ' of ' +
+                        Number(setsize).toLocaleString() + '”</span>';
+                } else if (rowindex) {
+                    say.innerHTML = '<span class="sr-good">“row ' +
+                        Number(rowindex).toLocaleString() + ', ' + name + '”</span>';
+                } else {
+                    // Nothing declared: the reader can only count what is mounted.
+                    const pos = [...host.querySelectorAll('[data-element-index]')].indexOf(first) + 1;
+                    say.innerHTML = '<span class="sr-bad">“' + name + ', ' + pos + ' of ' +
+                        domCount + '”</span> &larr; wrong: that is the window, not the list';
+                }
+
+                attrs.textContent = [...first.attributes]
+                    .filter(a => a.name.startsWith('aria-') || a.name === 'role')
+                    .map(a => a.name + '="' + a.value + '"').join('  ') || '(no ARIA attributes)';
+
+                document.getElementById('container').textContent = [...host.attributes]
+                    .filter(a => a.name.startsWith('aria-') || a.name === 'role')
+                    .map(a => a.name + '="' + a.value + '"').join('  ') || '(no ARIA attributes)';
+
+                const s = demo && demo.scroller;
+                document.getElementById('stat').textContent = s
+                    ? 'row ' + s.currentElement.toLocaleString() + ' · ' + s.scrollPercentage.toFixed(1) + '%'
+                    : '';
+            }
+
+            document.getElementById('ariaOn').addEventListener('change', build);
+            document.getElementById('layout').addEventListener('change', build);
+            document.getElementById('goBtn').addEventListener('click', () => {
+                const n = Math.max(0, Math.min(TOTAL - 1, parseInt(document.getElementById('jump').value, 10) || 0));
+                demo.scroller.jumpToElement(n);
+                demo.render();
+                report();
+            });
+
+            build();
+        })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "aria.enabled: telling a screen reader the size of a dataset it cannot see",
+        "intro": "Virtualization is invisible to a screen reader in the worst way: it reads the DOM, the DOM holds twenty rows, so it announces “item 3 of 20” for a dataset of a million. <code>aria-setsize</code> and <code>aria-posinset</code> are the standard repair (they state the real size and position independently of what is mounted) and the engine already knows both numbers. It is opt-in because the correct markup depends on what your rows <em>mean</em>: a list of cards wants <code>list</code>/<code>listitem</code>, while a real <code>&lt;table&gt;</code> already carries its semantics and must not have roles layered over it.",
+        "code": "\n    const scroller = new CeriousScroll(host, 1000000, {\n      aria: {\n        enabled: true,\n\n        // Defaults: 'list' / 'listitem' for absolute and masonry layouts.\n        // For layout: 'table' neither is set, <tr>/<td> already mean row\n        // and cell, and a role on top of them would override real semantics.\n        role: 'list',\n        itemRole: 'listitem',\n\n        // Name the container, by text or by an existing visible heading.\n        label: 'Search results'\n        // labelledBy: 'results-heading'\n      }\n    });\n  ",
+        "notes": [
+                "Each mounted row gets <code>aria-setsize</code> (the real total) and <code>aria-posinset</code> (its true 1-based index), not its position in the DOM.",
+                "Do not set <code>role</code> for <code>layout: 'table'</code>. Real table elements already announce correctly, and a role replaces that rather than adding to it.",
+                "Keyboard navigation is a separate option (<code>keyboard</code>); ARIA describes the list, it does not make it focusable.",
+                "Prefer <code>labelledBy</code> when a visible heading already names the region. It keeps one source of truth."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
+    </script>
+</body>
+</html>

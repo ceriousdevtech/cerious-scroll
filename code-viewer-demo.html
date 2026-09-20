@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Code Viewer · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,7 +12,7 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>👨‍💻 Code Viewer</h1>
+                <h1><span data-demo-icon="code"></span>Code Viewer</h1>
                 <p>100,000 syntax-highlighted lines with line numbers and find.</p>
             </div>
 
@@ -27,8 +27,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const CODE_TOTAL = 100000;
@@ -138,6 +140,28 @@
             });
             document.getElementById('topBtn').addEventListener('click', () => demo.scrollToPercentage(0));
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Fixed-height lines and jump-to-line",
+        "intro": "Source code is the friendly case: every line is the same height, so the layout is entirely predictable and jumping to a line is exact. It is also the case where recycling discipline matters most, because each line is cheap and the renderer runs constantly: building a DOM tree per line will show up long before the scrolling does. Syntax highlighting is markup your renderer produces; the scroller neither knows nor cares.",
+        "code": "\n    const scroller = new CeriousScroll(host, lines.length, {\n      render: function (index, container) {\n        // Reuse the same two nodes rather than rebuilding them per line.\n        let gutter = container.firstElementChild;\n        let code = gutter && gutter.nextElementSibling;\n        if (!gutter) {\n          gutter = document.createElement('span');\n          gutter.className = 'ln';\n          code = document.createElement('code');\n          container.append(gutter, code);\n        }\n        gutter.textContent = index + 1;\n        code.innerHTML = highlight(lines[index]);\n      }\n    });\n\n    scroller.jumpToElement(lineNumber - 1);   // exact, and O(1)\n  ",
+        "notes": [
+                "Reusing child nodes instead of clearing and rebuilding is the single biggest win in a renderer this hot.",
+                "Highlight once into a cache if it is expensive; the renderer may be called many times for the same line.",
+                "Uniform line height means the engine can skip per-row measurement: keep it uniform and do not let wrapping in.",
+                "<code>white-space: pre</code> plus a horizontal scroller beats wrapping, which would make every line a different height."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

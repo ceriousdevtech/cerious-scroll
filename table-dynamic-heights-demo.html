@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cerious-Scroll · Native Table — Wild Dynamic Heights</title>
-    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows whose heights vary wildly per row — layout:'table' mode stress test for variable-height measurement.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <title>Cerious-Scroll · Native Table: Wild Dynamic Heights</title>
+    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows whose heights vary wildly per row, layout:'table' mode stress test for variable-height measurement.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <style>
         /* ---- Native table mode with WILDLY variable row heights ----
          * Every <tr> is a real table row, but each one carries different content:
@@ -29,7 +29,7 @@
             color: var(--text, #e6edf3);
             font-variant-numeric: tabular-nums;
         }
-        /* Vertical-only demo — no horizontal scrollbar gutter. */
+        /* Vertical-only demo, no horizontal scrollbar gutter. */
         #scroll [data-cerious-scroll-content] { overflow-x: hidden; }
 
         .cs-table thead th {
@@ -53,7 +53,7 @@
         }
 
         /* vertical-align:top so short cells (ID / kind / meta) sit at the TOP of a
-         * tall row instead of floating in the vertical center — makes the wild
+         * tall row instead of floating in the vertical center: makes the wild
          * height differences obvious and easy to eyeball-verify. */
         .cs-table tbody td {
             padding: 10px 14px;
@@ -143,7 +143,9 @@
         .meta-v { color: #adbac7; }
         .meta-row { display: block; margin: 1px 0; font-size: 0.8rem; }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -151,10 +153,10 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🪜 Native &lt;table&gt; · wild dynamic heights</h1>
+                <h1><span data-demo-icon="tableHeights"></span>Native &lt;table&gt; · wild dynamic heights</h1>
                 <p>
                     Real &lt;tr&gt;/&lt;td&gt; rows via <code>layout: 'table'</code>, but every row has a
-                    <strong>different, unpredictable height</strong> — one-liners next to walls of text, long
+                    <strong>different, unpredictable height</strong>: one-liners next to walls of text, long
                     lists, code blocks, tall banners and wrapping tag clouds. Each row is <em>measured</em>,
                     so the single &lt;tbody&gt; transform stays pixel-correct regardless.
                 </p>
@@ -189,8 +191,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -198,7 +200,7 @@
             // `seed` lets "Reshuffle heights" re-roll every row's content/height
             // deterministically without changing the dataset size.
             let seed = 1;
-            // h(i, s) — stable per (row, salt, seed); same inputs => same output,
+            // h(i, s): stable per (row, salt, seed); same inputs => same output,
             // so the engine re-measures to identical heights across re-renders.
             function h(i, s) { return hash(i, s * 97 + seed * 31 + 7); }
             function pick(arr, i, s) { return arr[Math.floor(h(i, s) * arr.length)]; }
@@ -236,7 +238,7 @@
 
             // 7 content "kinds", each producing a very different height. The kind is
             // chosen per row from the hash, and the size *within* a kind also varies,
-            // so heights range from ~one line to many hundreds of px — unpredictably.
+            // so heights range from ~one line to many hundreds of px, unpredictably.
             const KINDS = [
                 { key: 'line',   label: 'one-line',  cls: 'kind-line' },
                 { key: 'para',   label: 'paragraph', cls: 'kind-para' },
@@ -315,7 +317,7 @@
                     '<tr>' + COLS.map(c => '<th class="' + c.cls + '">' + c.label + '</th>').join('') + '</tr>';
             }
 
-            // render(index, tr) — tr is a real <tr>; fill it with the four <td>s.
+            // render(index, tr): tr is a real <tr>; fill it with the four <td>s.
             // The CONTENT cell is what drives the wild, unpredictable height.
             function render(index, tr) {
                 const kind = kindFor(index);
@@ -357,7 +359,7 @@
                     'top row ' + s.currentElement.toLocaleString() + ' · ' + s.scrollPercentage.toFixed(1) + '%';
                 const trs = document.querySelectorAll('#scroll tbody tr');
                 document.getElementById('domLabel').innerHTML = 'DOM &lt;tr&gt;: <strong>' + trs.length + '</strong>';
-                // Live min/max measured height of the currently-rendered rows — proves
+                // Live min/max measured height of the currently-rendered rows: proves
                 // the window really does hold rows of wildly different heights.
                 let min = Infinity, max = 0;
                 trs.forEach(tr => {
@@ -390,6 +392,28 @@
                 refreshStat();
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "layout: 'table' under wildly variable row heights",
+        "intro": "A stress test for the claim that heights are measured rather than estimated. Every <code>&lt;tr&gt;</code> here is a different height (one-liners, walls of text, long lists, code blocks, tall banners) and none of them is declared anywhere. The engine measures each row as it mounts and keeps the scroll math honest against those measurements, so the scrollbar does not drift and jumping to a row lands on that row. Estimating instead is what produces the classic virtual-scroll symptom: a thumb that changes size as you scroll and a position that slides.",
+        "code": "\n    const scroller = new CeriousScroll(host, rows.length, {\n      layout: 'table',\n\n      // Nothing here declares a height. Each <tr> is measured after render.\n      render: function (index, row) {\n        row.innerHTML = '';\n        const cell = document.createElement('td');\n        cell.colSpan = 3;\n        cell.appendChild(buildAnythingAtAll(rows[index]));  // any height\n        row.appendChild(cell);\n      }\n    });\n  ",
+        "notes": [
+                "The row must have its final height when your renderer returns: images and web fonts are the usual reasons it does not.",
+                "If a row changes height after the fact (an expand/collapse), re-render that index so it is measured again.",
+                "Measurement is cached per index, so scrolling back over a row does not re-measure it.",
+                "There is no <code>estimatedItemSize</code> option here by design; nothing in the engine wants one."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

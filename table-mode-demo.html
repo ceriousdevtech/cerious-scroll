@@ -4,29 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cerious-Scroll · Native Table (&lt;tr&gt;/&lt;td&gt;) Demo</title>
-    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows — layout:'table' mode in cerious-scroll.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <meta name="description" content="Virtual scrolling with real HTML <table>/<tr>/<td> rows, layout:'table' mode in cerious-scroll.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <style>
         /* ---- Native table mode styling ----
          * Rows are real <tr> in one shared <table>, so columns auto-align and
-         * the <thead> shares the body's column widths — like any normal table. */
+         * the <thead> shares the body's column widths, like any normal table. */
         .cs-table {
             /* separate (not collapse): collapsed borders are painted by the
              * untransformed <table>, so they would NOT move with the scrolling
              * <tbody>. Separate borders belong to the cells and travel with them. */
             border-collapse: separate;
             border-spacing: 0;
-            /* auto: columns size to their content natively — the <thead> lives in
+            /* auto: columns size to their content natively, the <thead> lives in
              * the SAME table as the body, so header and cells share one column
              * layout with no fixed widths. (Columns can shift slightly as wide
-             * content scrolls into the window — inherent to a virtualized table.) */
+             * content scrolls into the window: inherent to a virtualized table.) */
             table-layout: auto;
             width: 100%;
             font-size: 0.86rem;
             color: var(--text, #e6edf3);
             font-variant-numeric: tabular-nums;
         }
-        /* This demo is vertical-only — don't let the content element reserve a
+        /* This demo is vertical-only: don't let the content element reserve a
          * horizontal scrollbar gutter. */
         #scroll [data-cerious-scroll-content] { overflow-x: hidden; }
         .cs-table thead th {
@@ -34,7 +34,7 @@
             padding: 10px 14px;
             /* SOLID, opaque background (matching the grid demos' #11141d) so body
              * rows translating up underneath never show through. The shared
-             * --panel token is rgba(...,.07) — translucent — and must NOT be used
+             * --panel token is rgba(...,.07), translucent, and must NOT be used
              * for a header that overlaps scrolling content. */
             background: #11141d;
             border-bottom: 2px solid var(--accent, #1f6feb);
@@ -76,7 +76,9 @@
         .badge--offline  { background: rgba(207, 34, 46, 0.16);  color: #f85149; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -84,8 +86,8 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🧮 Native &lt;table&gt; mode</h1>
-                <p>Real &lt;tr&gt;/&lt;td&gt; rows via <code>layout: 'table'</code> — frozen header, auto-sized columns, single tbody transform.</p>
+                <h1><span data-demo-icon="table"></span>Native &lt;table&gt; mode</h1>
+                <p>Real &lt;tr&gt;/&lt;td&gt; rows via <code>layout: 'table'</code>: frozen header, auto-sized columns, single tbody transform.</p>
             </div>
 
             <div class="demo-toolbar">
@@ -117,8 +119,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -138,7 +140,7 @@
                 return { first, last, status, score };
             }
 
-            // Column labels only — no widths. table-layout:auto sizes columns to
+            // Column labels only, no widths. table-layout:auto sizes columns to
             // content, and the header (same table as the body) aligns natively.
             const COLS = [
                 { label: 'ID',     cls: '' },
@@ -154,7 +156,7 @@
                     '<tr>' + COLS.map(c => '<th class="' + c.cls + '">' + c.label + '</th>').join('') + '</tr>';
             }
 
-            // render(index, rowEl) — rowEl is a real <tr>; fill it with <td>s.
+            // render(index, rowEl): rowEl is a real <tr>; fill it with <td>s.
             function render(index, tr) {
                 const d = rowData(index);
                 tr.innerHTML =
@@ -174,7 +176,7 @@
                 options: {
                     layout: 'table',
                     // Single shared table: header in <thead>. autoSizeColumns measures
-                    // column widths from the first window once, then pins them — auto
+                    // column widths from the first window once, then pins them: auto
                     // sized but stable (no manual widths, no scroll jitter).
                     table: { tableClassName: 'cs-table', header: header, autoSizeColumns: true },
                 },
@@ -212,6 +214,28 @@
                 demo.scroller.handleScrollPercentage(100); demo.render(); refreshStat();
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "layout: 'table', real <table> semantics, virtualized",
+        "intro": "A virtualized table usually means divs pretending to be a table, which costs you column auto-sizing, real table semantics and anything a screen reader knows about <code>&lt;tr&gt;</code> and <code>&lt;td&gt;</code>. <code>layout: 'table'</code> renders actual table elements instead: your rows are <code>&lt;tr&gt;</code>, they live in a single <code>&lt;tbody&gt;</code>, and the engine moves that one element rather than positioning every row. The header is a real <code>&lt;thead&gt;</code> occupying real space, so the rows simply begin beneath it.",
+        "code": "\n    const scroller = new CeriousScroll(host, 1000000, {\n      layout: 'table',\n      table: {\n        // Written once into a real <thead>.\n        header: function (thead) {\n          thead.innerHTML = '<tr><th>Id</th><th>Name</th><th>Status</th></tr>';\n        }\n      },\n\n      // `row` is a real <tr>. Fill its cells.\n      render: function (index, row) {\n        row.innerHTML =\n          '<td>' + index + '</td>' +\n          '<td>' + data[index].name + '</td>' +\n          '<td>' + data[index].status + '</td>';\n      }\n    });\n  ",
+        "notes": [
+                "Give columns explicit widths (or <code>table-layout: fixed</code>). Auto layout measures only the mounted rows, so column widths would shift as you scroll.",
+                "Do not set ARIA roles here: real table elements already announce correctly, and a role overrides rather than augments them.",
+                "Row heights are still measured per row, so variable-height <code>&lt;tr&gt;</code>s are fine.",
+                "The whole <code>&lt;tbody&gt;</code> moves as one transform, which is why this stays cheap at a million rows."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

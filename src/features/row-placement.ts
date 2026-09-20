@@ -132,7 +132,18 @@ export class AbsolutePlacement implements RowPlacement {
   private readonly _style = {
     position: 'absolute',
     left: '0px',
-    right: '0px',
+    // Stop short of the scrollbar strip when one is showing.
+    //
+    // A row's containing block is the viewport's PADDING box, so the gutter the strip reserves as
+    // padding on the host is invisible to it and rows ran the full width underneath the bar —
+    // their bottom borders crossing it. NativeScrollbar publishes the width it is occupying as
+    // `--cerious-gutter`, which inherits down to here; with no strip the fallback is zero and
+    // nothing changes.
+    //
+    // Applied as LOGICAL insets, because the strip is not always on the right: an RTL host puts it
+    // on the left, where a physical `right` would reserve the gutter on the side that has no bar
+    // and run the rows under the side that does — the original bug, mirrored.
+    right: 'var(--cerious-gutter, 0px)',
     visible: 'visible',
     width: '100%'
   };
@@ -154,16 +165,19 @@ export class AbsolutePlacement implements RowPlacement {
 
   createRow(): HTMLElement {
     const el = document.createElement('div');
-    el.style.position = this._style.position;
-    el.style.left = this._style.left;
-    el.style.right = this._style.right;
+    this.applyInsets(el);
     return el;
   }
 
   initRow(el: HTMLElement): void {
+    this.applyInsets(el);
+  }
+
+  /** Edge-to-edge, less the scrollbar gutter, whichever side the strip is on. */
+  private applyInsets(el: HTMLElement): void {
     el.style.position = this._style.position;
-    el.style.left = this._style.left;
-    el.style.right = this._style.right;
+    el.style.insetInlineStart = this._style.left;
+    el.style.insetInlineEnd = this._style.right;
   }
 
   attach(container: HTMLElement, el: HTMLElement, _index: number, _region: PlacementRegion): void {

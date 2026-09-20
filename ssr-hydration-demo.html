@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSR &amp; Hydration · Cerious-Scroll</title>
+    <meta name="description" content="Rows rendered in the HTML before any JavaScript runs, then adopted by the engine instead of being thrown away.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
+    <style>
+        .ssr-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 16px; height: 54px;
+            border-bottom: 1px solid var(--line);
+        }
+        .ssr-rank {
+            font-variant-numeric: tabular-nums; color: var(--muted);
+            font-size: 0.74rem; min-width: 46px;
+        }
+        .ssr-name { font-weight: 600; font-size: 0.88rem; }
+        .ssr-sub { color: var(--muted); font-size: 0.76rem; }
+        .ssr-score { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+        /* Server-rendered rows are tinted so adoption is visible: if the engine
+         * threw them away and built its own, the tint would vanish. */
+        .ssr-row[data-from-server] { box-shadow: inset 3px 0 0 var(--accent-2); }
+
+        /* Un-hydrated: the server row and the engine's own copy occupy the same
+         * slot, which reads as garbled text rather than as the duplication it
+         * is. Marking the orphan makes the failure legible. It is the same DOM
+         * either way, just no longer illegible. */
+        .ssr-page--stranded .ssr-row[data-from-server] {
+            /* OPAQUE and offset, not merely tinted. Two rows sharing one slot
+             * render as text on top of text, which reads as a broken demo
+             * rather than as the duplication it is. Lifting the orphan onto its
+             * own solid card leaves the engine's copy legible underneath. */
+            background: #2b1b20;
+            box-shadow: inset 3px 0 0 #ff8b8b, 0 6px 18px rgba(0,0,0,.5);
+            outline: 1px dashed rgba(255,139,139,.75);
+            outline-offset: -1px;
+            border-bottom-color: transparent;
+            transform: translate(26px, 26px);
+            z-index: 5;
+        }
+        .ssr-page--stranded .ssr-row[data-from-server] .ssr-badge {
+            color: #ff8b8b; border-color: rgba(255,139,139,.5);
+        }
+        .ssr-page--stranded .ssr-row[data-from-server] .ssr-badge::after {
+            content: ' · orphaned';
+        }
+        .ssr-badge {
+            font-size: 0.62rem; letter-spacing: .06em; text-transform: uppercase;
+            color: var(--accent-2); border: 1px solid rgba(140,183,255,.4);
+            border-radius: 999px; padding: 1px 6px; margin-inline-start: 10px;
+        }
+
+        /* Info strip. Sits between the toolbar and the scroll surface so the
+         * reading order is controls -> what they did -> the list, matching the
+         * other demos rather than burying the point below the fold. */
+        .ssr-panel {
+            display: flex; flex-wrap: wrap; gap: 8px 28px;
+            padding: 10px 20px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            flex-shrink: 0;
+        }
+        .ssr-cell { min-width: 0; }
+        .ssr-cell h3 {
+            margin: 0 0 3px; font-size: 0.68rem; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted); font-weight: 700;
+        }
+        .ssr-cell p { margin: 0; font-size: 0.8rem; color: #c9d1d9; }
+        .ssr-good { color: var(--accent); font-weight: 700; }
+        .ssr-bad { color: #ff8b8b; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1><span data-demo-icon="ssr"></span>SSR &amp; hydration</h1>
+                <p>The first eight rows are in the HTML source: painted before any JavaScript ran.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label><input type="checkbox" id="hydrateOn" checked> ssr.hydrate</label>
+
+                <span style="display: inline-flex; gap: 6px">
+                    <button id="rebuildBtn" type="button">Re-mount engine</button>
+                </span>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">–</span>
+            </div>
+
+            <div class="ssr-panel">
+                <div class="ssr-cell">
+                    <h3>Server elements still in the tree</h3>
+                    <p id="adopted">–</p>
+                </div>
+                <div class="ssr-cell">
+                    <h3>Elements claiming row 0</h3>
+                    <p id="dupes">–</p>
+                </div>
+            </div>
+
+            <div class="demo-scroll" id="scroll"><div data-cerious-scroll-content style="position:relative;width:100%;height:100%;overflow-y:clip"><div data-element-index="0" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:0px"><span class="ssr-rank">#1</span><span><span class="ssr-name">Kettle &amp; Pine</span><br><span class="ssr-sub">Homeware · Utrecht</span></span><span class="ssr-badge">server</span><span class="ssr-score">98.4</span></div><div data-element-index="1" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:54px"><span class="ssr-rank">#2</span><span><span class="ssr-name">Northwind Coffee</span><br><span class="ssr-sub">Roastery · Bergen</span></span><span class="ssr-badge">server</span><span class="ssr-score">96.1</span></div><div data-element-index="2" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:108px"><span class="ssr-rank">#3</span><span><span class="ssr-name">Atlas Paper Co.</span><br><span class="ssr-sub">Stationery · Lisbon</span></span><span class="ssr-badge">server</span><span class="ssr-score">94.7</span></div><div data-element-index="3" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:162px"><span class="ssr-rank">#4</span><span><span class="ssr-name">Ferrous Bikes</span><br><span class="ssr-sub">Cycling · Ghent</span></span><span class="ssr-badge">server</span><span class="ssr-score">93.2</span></div><div data-element-index="4" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:216px"><span class="ssr-rank">#5</span><span><span class="ssr-name">Marlow Textiles</span><br><span class="ssr-sub">Fabric · Porto</span></span><span class="ssr-badge">server</span><span class="ssr-score">91.8</span></div><div data-element-index="5" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:270px"><span class="ssr-rank">#6</span><span><span class="ssr-name">Cedar &amp; Co.</span><br><span class="ssr-sub">Joinery · Tallinn</span></span><span class="ssr-badge">server</span><span class="ssr-score">90.5</span></div><div data-element-index="6" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:324px"><span class="ssr-rank">#7</span><span><span class="ssr-name">Harbour Optics</span><br><span class="ssr-sub">Eyewear · Cork</span></span><span class="ssr-badge">server</span><span class="ssr-score">89.9</span></div><div data-element-index="7" data-from-server class="ssr-row" style="position:absolute;left:0;right:0;top:378px"><span class="ssr-rank">#8</span><span><span class="ssr-name">Vellum Press</span><br><span class="ssr-sub">Printing · Leiden</span></span><span class="ssr-badge">server</span><span class="ssr-score">88.3</span></div></div></div>
+
+            <div class="demo-footer">
+                <span>Rows: <strong id="totalLabel">25,000</strong></span>
+                <span>Pre-rendered: <strong>8</strong></span>
+                <span>DOM rows: <strong id="domLabel">–</strong></span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
+    <script>
+        (function () {
+            const host = document.getElementById('scroll');
+            const TOTAL = 25000;
+
+            // Snapshot the server markup so "Re-mount engine" can restore the
+            // page to its pre-JavaScript state and the comparison stays honest.
+            const SERVER_HTML = host.innerHTML;
+
+            const NAMES = ['Kettle & Pine', 'Northwind Coffee', 'Atlas Paper Co.', 'Ferrous Bikes',
+                'Marlow Textiles', 'Cedar & Co.', 'Harbour Optics', 'Vellum Press',
+                'Bowline Marine', 'Quill & Lime', 'Ridge Provisions', 'Tessera Tiles'];
+            const CATS = ['Homeware', 'Roastery', 'Stationery', 'Cycling', 'Fabric', 'Joinery',
+                'Eyewear', 'Printing', 'Marine', 'Grocer'];
+            const CITIES = ['Utrecht', 'Bergen', 'Lisbon', 'Ghent', 'Porto', 'Tallinn', 'Cork',
+                'Leiden', 'Aarhus', 'Bilbao'];
+
+            function hash(n, salt) {
+                const x = Math.sin(n * 61.9 + salt * 97.1) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            function renderRow(index, el) {
+                el.className = 'ssr-row';
+                const fromServer = el.hasAttribute('data-from-server');
+                el.innerHTML =
+                    '<span class="ssr-rank">#' + (index + 1).toLocaleString() + '</span>' +
+                    '<span><span class="ssr-name">' +
+                        NAMES[Math.floor(hash(index, 3) * NAMES.length)] + '</span><br>' +
+                    '<span class="ssr-sub">' + CATS[Math.floor(hash(index, 7) * CATS.length)] +
+                        ' · ' + CITIES[Math.floor(hash(index, 11) * CITIES.length)] + '</span></span>' +
+                    (fromServer ? '<span class="ssr-badge">server</span>' : '') +
+                    '<span class="ssr-score">' + (100 - hash(index, 13) * 40).toFixed(1) + '</span>';
+            }
+
+            let scroller = null;
+
+            function build() {
+                if (scroller) scroller.dispose();
+                // Restore the exact markup a server would have sent.
+                host.innerHTML = SERVER_HTML;
+
+                const Ctor = window.CeriousScroll.CeriousScroll || window.CeriousScroll;
+                scroller = new Ctor(host, TOTAL, {
+                    ssr: { hydrate: document.getElementById('hydrateOn').checked },
+                    onScroll: draw
+                });
+                draw();
+                window.__demo = { scroller: scroller, render: draw };
+            }
+
+            function draw() {
+                if (!scroller) return;
+                const content = host.querySelector('[data-cerious-scroll-content]');
+                scroller.renderViewport(host.clientHeight, content || host, renderRow);
+                report();
+            }
+
+            function report() {
+                const server = host.querySelectorAll('[data-from-server]').length;
+                const zeros = host.querySelectorAll('[data-element-index="0"]').length;
+                const dom = host.querySelectorAll('[data-element-index]').length;
+
+                // More than one element per row means the server copies were
+                // never adopted. Offset and outline them so the overlap reads as
+                // two rows in one slot rather than as broken rendering.
+                document.querySelector('.demo-page')
+                    .classList.toggle('ssr-page--stranded', zeros > 1);
+
+                document.getElementById('adopted').innerHTML = zeros === 1
+                    ? '<span class="ssr-good">' + server + ' adopted</span>: the engine reused the ' +
+                      'elements the server sent, so nothing flashed or was rebuilt.'
+                    : '<span class="ssr-bad">' + server + ' orphaned</span>: outlined and nudged ' +
+                      'aside below, so you can see the engine\'s copy underneath each one.';
+
+                document.getElementById('dupes').innerHTML = zeros === 1
+                    ? '<span class="ssr-good">1</span>: one element per row, as it should be.'
+                    : '<span class="ssr-bad">' + zeros + '</span>. The engine had no record of the ' +
+                      'server row, so it built its own beside it.';
+
+                document.getElementById('domLabel').textContent = String(dom);
+                document.getElementById('stat').textContent = scroller
+                    ? 'row ' + scroller.currentElement.toLocaleString() : '';
+            }
+
+            document.getElementById('hydrateOn').addEventListener('change', build);
+            document.getElementById('rebuildBtn').addEventListener('click', build);
+            window.addEventListener('resize', draw);
+
+            build();
+        })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "ssr.hydrate: adopting server-rendered rows instead of discarding them",
+        "intro": "The package is import-safe without a DOM already: nothing touches <code>document</code> or <code>window</code> at module scope, so a server bundle can include it. <code>ssr.hydrate</code> adds the second half: on the first render the engine <em>adopts</em> the rows that are already in the container instead of clearing it. Rows are matched by <code>data-element-index</code>, so the server's output and the client's first render agree on identity. Turn it off and you can watch the alternative: the first frame throws away the server markup and renders its own, which is the duplicate-content flash this exists to prevent.",
+        "code": "\n    <!-- Rendered on the server. Note data-element-index on every row. -->\n    <div id=\"feed\" data-cerious-scroll-content>\n      <div data-element-index=\"0\">…</div>\n      <div data-element-index=\"1\">…</div>\n    </div>\n\n    <script>\n      const scroller = new CeriousScroll(host, total, {\n        ssr: { hydrate: true }\n      });\n    <\/script>\n  ",
+        "notes": [
+                "<code>data-element-index</code> is the contract. A row without it cannot be matched and will be replaced.",
+                "Your client renderer must produce the same markup the server did for a given index, or the first paint after adoption will shift.",
+                "Render enough rows server-side to cover the first viewport and no more: extras are adopted, then immediately recycled.",
+                "Nothing in the module touches the DOM at import time, so the import itself is safe in a Node or edge runtime."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
+    </script>
+</body>
+</html>

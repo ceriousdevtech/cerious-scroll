@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sticky Headers &amp; Snapping · Cerious-Scroll</title>
+    <meta name="description" content="Section headers that stay pinned while their rows scroll past, and a camera that settles on a row boundary when scrolling stops.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
+    <style>
+        /* ---- Sticky + snap ----
+         * The pinned header is NOT one of the recycled rows: the recycler's job
+         * is to unmount anything that leaves the window, which is exactly when a
+         * header is needed most. It is a separate long-lived element. */
+        .sg-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 16px; height: 56px;
+            border-bottom: 1px solid var(--line);
+        }
+        .sg-avatar {
+            width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+            display: grid; place-items: center;
+            font-weight: 700; font-size: 0.78rem; color: #061019;
+        }
+        .sg-name { font-weight: 600; font-size: 0.9rem; }
+        .sg-sub  { color: var(--muted); font-size: 0.78rem; }
+        .sg-meta { margin-left: auto; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+
+        /* The section header, used BOTH as an ordinary row and as the pinned
+         * copy: same renderer, so they cannot drift apart visually. */
+        .sg-head {
+            display: flex; align-items: center; gap: 10px;
+            padding: 0 16px; height: 38px;
+            background: #151a23;
+            border-bottom: 1px solid var(--line);
+            font-weight: 800; font-size: 0.8rem; letter-spacing: .06em;
+            color: var(--accent);
+        }
+        .sg-head__count { margin-left: auto; color: var(--muted); font-weight: 600; letter-spacing: 0; }
+        /* Applied by the engine to the pinned copy only. */
+        .is-pinned { box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+        .sg-flag { display: inline-block; min-width: 68px; }
+    </style>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1><span data-demo-icon="sticky"></span>Sticky headers &amp; snapping</h1>
+                <p>Section headers pinned outside the recycler, and a camera that settles on a whole row.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label><input type="checkbox" id="stickyOn" checked> Sticky headers</label>
+                <label><input type="checkbox" id="snapOn"> Snap to row</label>
+
+                <label for="align">Align</label>
+                <select id="align">
+                    <option value="nearest">nearest</option>
+                    <option value="start">start</option>
+                </select>
+
+                <span style="display: inline-flex; gap: 6px">
+                    <button id="topBtn" type="button">Top</button>
+                    <button id="midBtn" type="button">Middle</button>
+                </span>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">scroll to see the header hand over</span>
+            </div>
+
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Contacts: <strong id="totalLabel">0</strong></span>
+                <span>Sections: <strong>26</strong></span>
+                <span>Pinned: <strong id="pinLabel">–</strong></span>
+                <span>DOM rows: <strong id="domLabel">–</strong></span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
+    <script>
+        (function () {
+            const host = document.getElementById('scroll');
+
+            // ---- Data: contacts grouped A..Z, each group preceded by a header
+            // row. The header is a real dataset row, which is what lets the same
+            // renderer draw it in the list AND in the pinned slot.
+            const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+            const FIRST = ('Ada Bram Cleo Dara Eli Fern Gus Hana Iris Jun Kai Lena Milo Nora Omar ' +
+                'Pia Quinn Rex Sana Tomas Uma Vera Wes Xena Yara Zed').split(' ');
+            const LAST = ('Nakamura Oyelaran Vasquez Lindqvist Haddad Okonkwo Delacroix Sorensen ' +
+                'Bekele Marchetti Novak Ferreira Adeyemi Kowalski').split(' ');
+            const HUES = [188, 262, 152, 28, 350, 210];
+
+            // Deterministic pseudo-random so the page is identical on reload.
+            function hash(n, salt) {
+                let x = Math.sin(n * 127.1 + salt * 311.7) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            // Build the flat row list once: [header, ...rows, header, ...rows].
+            const ROWS = [];
+            const SECTION_OF = [];      // row index -> its header's row index
+            let sectionStarts = [];
+            LETTERS.forEach((letter, li) => {
+                const count = 6 + Math.floor(hash(li, 3) * 20);
+                const headerIndex = ROWS.length;
+                sectionStarts.push(headerIndex);
+                ROWS.push({ kind: 'head', letter, count });
+                SECTION_OF.push(headerIndex);
+                for (let k = 0; k < count; k++) {
+                    const n = ROWS.length;
+                    ROWS.push({
+                        kind: 'row',
+                        letter,
+                        first: FIRST[Math.floor(hash(n, 7) * FIRST.length)],
+                        last: LAST[Math.floor(hash(n, 11) * LAST.length)],
+                        hue: HUES[Math.floor(hash(n, 13) * HUES.length)],
+                        seen: Math.floor(hash(n, 17) * 59) + 1
+                    });
+                    SECTION_OF.push(headerIndex);
+                }
+            });
+
+            document.getElementById('totalLabel').textContent = ROWS.length.toLocaleString();
+
+            function renderRow(index, container) {
+                const item = ROWS[index];
+                if (!item) return;
+                if (item.kind === 'head') {
+                    const el = document.createElement('div');
+                    el.className = 'sg-head';
+                    el.innerHTML = '<span class="sg-flag">' + item.letter + '</span>' +
+                        '<span class="sg-head__count">' + item.count + ' contacts</span>';
+                    container.appendChild(el);
+                    return;
+                }
+                const el = document.createElement('div');
+                el.className = 'sg-row';
+                el.innerHTML =
+                    '<span class="sg-avatar" style="background:hsl(' + item.hue + ' 62% 62%)">' +
+                        item.first[0] + item.last[0] +
+                    '</span>' +
+                    '<span><span class="sg-name">' + item.first + ' ' + item.last + '</span><br>' +
+                    '<span class="sg-sub">' + item.first.toLowerCase() + '@example.com</span></span>' +
+                    '<span class="sg-meta">seen ' + item.seen + 'd ago</span>';
+                container.appendChild(el);
+            }
+
+            let demo = null;
+
+            function build() {
+                if (demo) demo.scroller.dispose();
+                host.textContent = '';
+                demo = window.mountDemo({
+                    host: host,
+                    total: ROWS.length,
+                    render: renderRow,
+                    options: {
+                        // The pinned header is resolved from the FIRST VISIBLE row:
+                        // "which section am I inside right now?"
+                        sticky: document.getElementById('stickyOn').checked
+                            ? { resolve: (index) => SECTION_OF[index] ?? null, className: 'is-pinned' }
+                            : undefined,
+                        snap: {
+                            enabled: document.getElementById('snapOn').checked,
+                            align: document.getElementById('align').value
+                        }
+                    },
+                    onViewport: report
+                });
+                report();
+                // Debug handle, mirroring the engine's own __ceriousScrollDebug.
+                window.__demo = demo;
+            }
+                requestAnimationFrame(report);
+
+            function report() {
+                const pinned = host.querySelector('[data-cerious-sticky]');
+                const idx = pinned ? Number(pinned.dataset.stickyIndex) : null;
+                document.getElementById('pinLabel').textContent =
+                    (idx === null || Number.isNaN(idx)) ? '–' : (ROWS[idx] ? ROWS[idx].letter : idx);
+                document.getElementById('domLabel').textContent =
+                    String(host.querySelectorAll('[data-element-index]').length);
+                const s = demo && demo.scroller;
+                document.getElementById('stat').textContent = s
+                    ? 'row ' + s.currentElement.toLocaleString() + ' · offset ' + Math.round(s.scrollOffset) + 'px'
+                    : '';
+            }
+
+            document.getElementById('stickyOn').addEventListener('change', build);
+            document.getElementById('snapOn').addEventListener('change', build);
+            document.getElementById('align').addEventListener('change', build);
+            document.getElementById('topBtn').addEventListener('click', () => {
+                demo.scroller.jumpToElement(0); demo.render(); report();
+            });
+            document.getElementById('midBtn').addEventListener('click', () => {
+                demo.scroller.jumpToElement(Math.floor(ROWS.length / 2)); demo.render(); report();
+            });
+
+            build();
+        })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "sticky.resolve + snap: pinned section headers and a camera that settles",
+        "intro": "Two independent options that happen to pair well. <code>sticky</code> pins one dataset row to the top of the viewport while you are inside its section: the pinned element is drawn <em>outside</em> the recycler, so it survives the moment its own row scrolls out of the mounted window. <code>snap</code> settles the camera on a row boundary after scrolling stops: nearly free here, because the camera is already <code>(element, offset)</code> and snapping is just driving <code>offset</code> to zero. CSS scroll-snap cannot do this job: the surface the browser actually scrolls is a featureless spacer with no snap targets on it.",
+        "code": "\n    // Section header indices, ascending.\n    const sections = [0, 40, 95, 160, ...];\n\n    const scroller = new CeriousScroll(host, total, {\n      sticky: {\n        // Given the first visible row, return the index to pin, or null.\n        // Called on every window move, so keep it cheap.\n        resolve: function (index) {\n          for (let i = sections.length - 1; i >= 0; i--) {\n            if (sections[i] <= index) return sections[i];\n          }\n          return null;\n        },\n        className: 'is-pinned'\n      },\n\n      snap: {\n        enabled: true,\n        align: 'nearest',   // or 'start' to always settle to the row's top\n        tolerance: 2        // px of slack; skips the nudge when already landed\n      }\n    });\n  ",
+        "notes": [
+                "<code>resolve</code> runs on every window move. A linear scan over a few hundred sections is fine; a scan over the whole dataset is not.",
+                "The pinned row is rendered through your normal row renderer, so it needs to be idempotent. It is drawn in two places at once.",
+                "Snapping fires after <code>scrollend</code>, so it never fights an in-flight gesture or momentum.",
+                "<code>tolerance</code> exists to stop a visible jump on a scroll that had effectively already landed on a boundary."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
+    </script>
+</body>
+</html>

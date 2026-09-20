@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cerious-Scroll · Masonry · Dynamic Heights</title>
-    <meta name="description" content="Masonry virtual scrolling where card heights are measured from the DOM — no getItemHeight, wildly unpredictable content.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <meta name="description" content="Masonry virtual scrolling where card heights are measured from the DOM, no getItemHeight, wildly unpredictable content.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <style>
         /* ---- Dynamic-height masonry ----
          * No getItemHeight is supplied, so every card's height comes from the
@@ -45,7 +45,9 @@
         }
         #scroll [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -53,9 +55,9 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🪜 Masonry · dynamic heights</h1>
+                <h1><span data-demo-icon="masonryDynamic"></span>Masonry · dynamic heights</h1>
                 <p>
-                    No <code>getItemHeight</code>. Every card's height is <strong>measured from the DOM</strong> —
+                    No <code>getItemHeight</code>. Every card's height is <strong>measured from the DOM</strong>: 
                     one-liners beside walls of text, lists, quotes and bands, all unpredictable.
                     Columns still balance and the gutter stays exact.
                 </p>
@@ -94,8 +96,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -113,7 +115,7 @@
                 return out.join(' ');
             };
 
-            // Seven content kinds, each producing a very different height — and
+            // Seven content kinds, each producing a very different height, and
             // none of them computable without laying the card out.
             function renderCard(i, el) {
                 const resized = resizedCards.has(i);
@@ -233,6 +235,28 @@
 
             build();
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Masonry with no height oracle: every card measured",
+        "intro": "The same <code>layout: 'masonry'</code> with <code>heightProvider</code> deliberately left out, which is the honest case: text of unknown length, lists, quotes and bands whose height nobody can predict. Every card is measured from the DOM as it mounts, and the column frontier is built from those measurements. The point of the demo is that the packing stays balanced and stable anyway: cards do not jump between columns when you scroll back over them, because the decision for a card is made once and then remembered.",
+        "code": "\n    const scroller = new CeriousScroll(host, 100000, {\n      layout: 'masonry',\n      masonry: { columns: 3, gutter: 16 },   // no heightProvider: measure it\n\n      render: function (index, container) {\n        container.textContent = '';\n        container.appendChild(buildCard(index));   // any height at all\n      }\n    });\n  ",
+        "notes": [
+                "Measurement happens after your renderer returns, so the element must have its final height by then, no post-render growth.",
+                "Web fonts are the classic trap: a card measured before the font swaps will be measured wrong. Load fonts before mounting, or use <code>font-display: optional</code>.",
+                "If a card's content genuinely changes height later, re-render that index and let it be measured again.",
+                "Scrolling up re-packs upwards from a snapshot rather than re-flowing from the top, so the gutter stays uniform across the seam."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/MASONRY.md"
+    }));
     </script>
 </body>
 </html>

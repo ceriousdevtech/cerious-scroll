@@ -182,6 +182,137 @@ export interface WheelNavigationOptions {
 /**
  * Configuration options for CeriousScroll
  */
+/**
+ * Screen-reader semantics for a virtualized list.
+ *
+ * Virtual scrolling breaks assistive technology by default: only the rendered
+ * window exists in the DOM, so a screen reader announces "item 3 of 12" for a
+ * dataset of a million. `aria-setsize` and `aria-posinset` are the standard
+ * repair — they state the real size and position independently of what is
+ * mounted — and the engine already knows both numbers.
+ *
+ * Opt-in, because the correct markup depends on what the rows MEAN. A list of
+ * cards wants `list`/`listitem`; a table already carries implicit semantics
+ * from real `<tr>`/`<td>` and must not have roles layered over them.
+ */
+export interface AriaOptions {
+  /** Apply semantics automatically (default: false). */
+  enabled?: boolean;
+  /**
+   * Container role. Defaults to `list` for `absolute` and `masonry` layouts,
+   * and is NOT set for `table` — the element is already a real table.
+   */
+  role?: string;
+  /**
+   * Row role. Defaults to `listitem` for `absolute` and `masonry`, and is not
+   * set for `table`, where `<tr>` already means row.
+   */
+  itemRole?: string;
+  /** `aria-label` for the container. */
+  label?: string;
+  /** `aria-labelledby` for the container, if a visible heading exists. */
+  labelledBy?: string;
+}
+
+/** Context handed to {@link InfiniteOptions.onLoadMore}. */
+export interface InfiniteLoadContext {
+  /** Which end the viewer approached. */
+  direction: 'start' | 'end';
+  /** First and last dataset index currently rendered. */
+  first: number;
+  last: number;
+  /** Dataset length at the moment the threshold was crossed. */
+  total: number;
+}
+
+/**
+ * Load more rows as the viewer nears an edge.
+ *
+ * Thin sugar over `updateTotalElements()`, which already does the hard part —
+ * growing the dataset in place and re-anchoring both native surfaces so the
+ * camera does not move. This only decides WHEN to ask.
+ */
+export interface InfiniteOptions {
+  /**
+   * Called once per approach. Re-arm happens when the window moves back out of
+   * the threshold, so a callback that loads nothing cannot spin. If it returns
+   * a promise, no further call is made until that promise settles.
+   */
+  onLoadMore: (context: InfiniteLoadContext) => void | Promise<unknown>;
+  /** Rows from the edge that trigger a load (default: 20). */
+  threshold?: number;
+  /** Which edges to watch (default: `'end'`). */
+  edges?: 'end' | 'both';
+}
+
+/**
+ * Settle the camera on a row boundary when scrolling stops.
+ *
+ * Cheap here in a way it is not for a pixel-based scroller: the camera is
+ * already `(element, offset)`, so snapping is `offset -> 0`. CSS scroll-snap
+ * cannot do this job — the native surface the browser scrolls is a featureless
+ * spacer with no snap targets — so the engine settles it after `scrollend`.
+ */
+export interface SnapOptions {
+  /** Snap after scrolling stops (default: false). */
+  enabled?: boolean;
+  /**
+   * `'nearest'` (default) rounds to whichever boundary is closer; `'start'`
+   * always settles to the top of the row the camera is in.
+   */
+  align?: 'nearest' | 'start';
+  /**
+   * Skip the snap when the camera is already within this many pixels of a
+   * boundary (default: 2). Prevents a visible nudge for a scroll that had
+   * effectively landed.
+   */
+  tolerance?: number;
+}
+
+/**
+ * A row pinned to the top of the viewport until the next one displaces it.
+ *
+ * The engine already reserves a top inset for `layout: 'table'` headers and
+ * keeps the scroll math honest about it; this reuses that idea for a row drawn
+ * from the dataset, so a grouped list can keep its section header visible.
+ */
+export interface StickyOptions {
+  /**
+   * The dataset index that should be pinned while `index` is at the top of the
+   * viewport, or `null` for none. Called with the first visible row.
+   *
+   * @example
+   * // section headers at known indices
+   * resolve: (index) => sections.findLast(s => s <= index) ?? null
+   */
+  resolve: (index: number) => number | null;
+  /** Optional class applied to the pinned element. */
+  className?: string;
+}
+
+/** Writing direction. `'auto'` reads the computed `direction` of the host. */
+export type ScrollDirection = 'ltr' | 'rtl' | 'auto';
+
+/**
+ * Server-side rendering and hydration.
+ *
+ * The package is import-safe without a DOM already — nothing touches
+ * `document` or `window` at module scope — so a server bundle can include it.
+ * What this adds is the second half: adopting markup that is already there
+ * instead of clearing it on the first render.
+ */
+export interface SsrOptions {
+  /**
+   * Adopt pre-rendered rows on the first render instead of discarding them.
+   *
+   * Rows are matched by `data-element-index`, so server output and client
+   * render agree on identity. Without this the first frame clears the
+   * container, which throws away server-rendered content and flashes.
+   */
+  hydrate?: boolean;
+}
+
+
 export interface CeriousScrollOptions {
   /** Keyboard navigation configuration */
   keyboard?: KeyboardNavigationOptions;
@@ -189,6 +320,37 @@ export interface CeriousScrollOptions {
   touch?: TouchNavigationOptions;
   /** Wheel navigation configuration */
   wheel?: WheelNavigationOptions;
+  /**
+   * Screen-reader semantics applied automatically. Off by default.
+   * @see AriaOptions
+   */
+  aria?: AriaOptions;
+  /**
+   * Load more rows as an edge approaches. Sugar over `updateTotalElements()`.
+   * @see InfiniteOptions
+   */
+  infinite?: InfiniteOptions;
+  /**
+   * Settle on a row boundary when scrolling stops. Off by default.
+   * @see SnapOptions
+   */
+  snap?: SnapOptions;
+  /**
+   * Pin a row to the top of the viewport while its section is in view.
+   * @see StickyOptions
+   */
+  sticky?: StickyOptions;
+  /**
+   * Writing direction (default: `'auto'`, which reads the host's computed
+   * `direction`). Affects which side the scrollbar strip sits on, the sign of
+   * horizontal deltas, and Masonry column order.
+   */
+  direction?: ScrollDirection;
+  /**
+   * Server rendering and hydration.
+   * @see SsrOptions
+   */
+  ssr?: SsrOptions;
   /** Enable/disable automatic native scrollbar attachment (default: true) */
   attachScrollbar?: boolean;
   /** Enable/disable automatic resize handling (default: true) */

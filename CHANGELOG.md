@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-17
+
+### Added
+
+- **`sticky` — a section header pinned outside the recycler.** `sticky.resolve`
+  is handed the first visible row and returns the dataset index to pin, or
+  `null`. The pinned element is rendered through your own row renderer but
+  mounted outside the recycler, so it survives the moment its own row scrolls
+  out of the mounted window.
+
+  The incoming section's header **pushes the pinned one out** rather than sliding
+  under it: while the next header is inside the pinned header's band, the pinned
+  header is lifted by exactly the overlap, so its bottom edge lands on the
+  incoming header's top edge and the two never overlap. The displacement is
+  computed from the heights the renderer just reported and the camera's own
+  offset, not from the DOM, because this runs on every frame of a scroll and a
+  geometry read there would force a synchronous layout over everything just
+  mounted. Costs one extra element, whatever the dataset size.
+
+- **`snap` — the camera settles on a row boundary when scrolling stops.** Nearly
+  free here, because the camera is already `(element, offset)` and snapping is
+  driving `offset` to zero. `align: 'nearest' | 'start'` and a `tolerance` that
+  skips the nudge when the scroll had effectively already landed. CSS
+  scroll-snap cannot do this job — the surface the browser scrolls is a
+  featureless spacer with no snap targets — so it is applied on the native
+  `scrollend` signal, which also means it never fights an in-flight gesture.
+
+- **`infinite` — edge-triggered loading.** `onLoadMore` fires once per approach
+  and re-arms only when the window moves back out of the threshold; returning a
+  promise suppresses further calls until it settles, so a slow endpoint is not
+  asked again on the next frame. Thin sugar over `updateTotalElements()`, which
+  already grows the dataset in place without moving the camera. `threshold` and
+  `edges: 'end' | 'both'`. Verified: a dataset grown from 40 rows to 520 left the
+  mounted window between 9 and 13 rows.
+
+- **`aria` — screen-reader semantics that describe the dataset, not the window.**
+  Virtualization is invisible to a reader in the worst way: it reads the DOM, the
+  DOM holds twenty rows, so it announces "item 3 of 20" for a dataset of a
+  million. `aria-setsize` and `aria-posinset` state the real size and position
+  independently of what is mounted, and the engine already knows both numbers.
+  Opt-in, because correct markup depends on what the rows mean: `list`/`listitem`
+  by default for `absolute` and `masonry`, and neither for `layout: 'table'`,
+  where `<tr>` and `<td>` already carry real semantics that a role would replace
+  rather than add to.
+
+- **`direction` — right-to-left, read from the host.** `'ltr'`, `'rtl'`, or
+  `'auto'` to take the host's own computed direction. The scrollbar strip moves
+  to the leading edge, rows are positioned with logical insets so the gutter is
+  reserved on whichever side the strip is actually on, and Masonry draws its
+  columns from the trailing edge. The mirroring happens at the point of writing
+  rather than in the layout, so the packing stays one algorithm: column 0 is
+  still the first column the packer fills, it is simply drawn from the other
+  edge.
+
+- **`ssr.hydrate` — adopt server-rendered rows instead of discarding them.** The
+  package was already import-safe without a DOM, since nothing touches
+  `document` or `window` at module scope. This adds the second half: on the first
+  render, rows already in the container are adopted rather than cleared. Matched
+  by `data-element-index`, so server output and client render agree on identity.
+  Without it the first frame throws away the server markup and flashes.
+
+- **`--cerious-gutter`**, a custom property carrying the scrollbar strip's width
+  to anything laid out inside the host. Padding cannot reach an absolutely
+  positioned row — its containing block is the padding box — so rows read this
+  instead.
+
+### Fixed
+
+- **`refreshVisible` forced a synchronous layout per mounted row.** It read
+  `element.offsetHeight` immediately after running the renderer, which is a
+  write-then-read: one forced layout per row, to re-measure rows whose height the
+  uniform-height cache already knew. It now takes the same hint the first render
+  uses. Measured at 8.28ms to 0.40ms for that call on a viewport of 24 rows.
+
+- **The scrollbar gutter was reserved on the wrong side in RTL.** Rows applied it
+  as a physical `right` inset, so an RTL host — where the strip sits on the left
+  — reserved space on the side with no bar and ran rows under the side that had
+  one. Now applied as logical insets, which follow the strip automatically.
+
+- **The gutter is now reserved from the strip's own painted width.** It used to
+  come from a cached OS scrollbar measurement, which could not notice a platform
+  drawing overlay scrollbars, nor a reader changing that setting mid-session. The
+  strip is measured directly instead, so a bar that paints nothing reserves
+  nothing.
+
+- **The virtual scrollbar strip could exceed the browser's maximum element
+  height.** Its cap was 30,000,000px against a real ceiling of about 16,777,214px
+  in Chrome, so a large enough dataset produced a strip the browser silently
+  truncated and a thumb that could not reach the end. Capped at 15,000,000px, and
+  the cap now applies on both paths rather than only one.
+
+
 ## [1.1.5] - 2026-09-16
 
 ### Changed
@@ -515,4 +607,5 @@ Copyright © 2024-2026 Cerious DevTech LLC. All rights reserved.
 [1.1.3]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.2...v1.1.3
 [1.1.4]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.3...v1.1.4
 [1.1.5]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.4...v1.1.5
-[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.5...HEAD
+[1.2.0]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.1.5...v1.2.0
+[Unreleased]: https://github.com/ceriousdevtech/cerious-scroll/compare/v1.2.0...HEAD

@@ -30,7 +30,6 @@ export class ViewportRenderer {
   private _renderedRowsArray: Array<{ index: number; height: number }> = [];
   private _bottomElementsToRenderArray: number[] = [];
   private _bufferHeightArray: number[] = [];
-  private _defensiveRemoveArray: number[] = [];
   private bottomMeasurementVersion = 0;
   private trueBottomCache: {
     viewportHeight: number;
@@ -117,10 +116,17 @@ export class ViewportRenderer {
    */
   refreshVisible(renderElement: ElementRenderer): void {
     if (this.currentlyRendered.size === 0) return;
+
+    // Same uniform-height shortcut the first render takes. Reading offsetHeight
+    // right after running the renderer is a write-then-read, so it forces a
+    // synchronous layout — once PER ROW, over everything mounted. On a grid
+    // panning sideways that was ~24 forced layouts per column step and the
+    // dominant cost of the frame, all to re-measure rows whose height is fixed
+    // and already known.
+    const hint = this.getUniformHeightHint?.();
     for (const [index, element] of this.currentlyRendered) {
       renderElement(index, element);
-      const height = element.offsetHeight;
-      this.setMeasuredHeight(index, height);
+      this.setMeasuredHeight(index, hint !== undefined ? hint : element.offsetHeight);
     }
     this.invalidateTrueBottomCache();
   }
@@ -143,6 +149,53 @@ export class ViewportRenderer {
     this.setMeasuredHeight(index, height);
     return height;
   }
+
+  /**
+   * Take ownership of rows that are already in the DOM (hydration).
+   *
+   * Runs once, before the first frame decides anything. Server-rendered markup
+   * is otherwise discarded on that frame — the renderer has no record of those
+   * elements, so it builds its own and the server's work flashes away — and the
+   * recycler cannot adopt what it does not know about. Matching on
+   * `data-element-index` is what makes the two halves agree on identity, which
+   * is why the attribute is written for every row rather than only in debug.
+   *
+   * Heights are NOT taken on trust here: they are measured from the adopted
+   * elements on this same frame, exactly as a freshly rendered row would be.
+   */
+  private adoptExistingRows(container: HTMLElement): void {
+    if (!this.hydrate || this.hydrated) return;
+    this.hydrated = true;
+
+    const existing = container.querySelectorAll<HTMLElement>('[data-element-index]');
+    for (let i = 0; i < existing.length; i++) {
+      const el = existing[i];
+      const index = Number(el.dataset.elementIndex);
+      if (!Number.isInteger(index) || index < 0 || index >= this.totalElements) continue;
+      if (this.currentlyRendered.has(index)) continue;
+      this.placement.initRow(el);
+      this.currentlyRendered.set(index, el);
+    }
+  }
+
+  /** Adopt pre-rendered rows on the first frame instead of replacing them. */
+  hydrate = false;
+  private hydrated = false;
+
+  /**
+   * Bind an element to a dataset index.
+   *
+   * Every path that puts a row on screen goes through here, which is what lets
+   * anything index-derived — the debug attribute, ARIA position — be written in
+   * exactly one place instead of at each of the four render paths.
+   */
+  private bindRow(el: HTMLElement, index: number): void {
+    el.dataset.elementIndex = String(index);
+    this.decorateRow?.(el, index);
+  }
+
+  /** Optional per-row decoration, installed by the host (see `aria` options). */
+  decorateRow?: (el: HTMLElement, index: number) => void;
 
   private acquireRow(): HTMLElement {
     const pooled = this.recycledElements.pop();
@@ -232,6 +285,8 @@ export class ViewportRenderer {
 
     this._shouldBeVisibleSet.clear();
 
+    this.adoptExistingRows(container);
+
     if (Math.abs(startElement - this.lastStartElement) > 100) {
       // Pool the live window before clear(). Skipping this used to leak the
       // whole window on every far jump; clear() only detaches, so the
@@ -262,7 +317,7 @@ export class ViewportRenderer {
         measuredHeight = this.measureReused(i, elementToRender);
       } else {
         elementToRender = this.acquireRow();
-        elementToRender.dataset.elementIndex = String(i);
+        this.bindRow(elementToRender, i);
 
         // Position after all buffer heights are known.
         this.placement.attach(container, elementToRender, i, 'window');
@@ -302,7 +357,7 @@ export class ViewportRenderer {
         measuredHeight = this.measureReused(elementIndex, elementToRender);
       } else {
         elementToRender = this.acquireRow();
-        elementToRender.dataset.elementIndex = String(elementIndex);
+        this.bindRow(elementToRender, elementIndex);
 
         this.placement.attach(container, elementToRender, elementIndex, 'window');
         this.placement.position(elementToRender, cumulativeTop, 'window');
@@ -337,7 +392,7 @@ export class ViewportRenderer {
         measuredHeight = this.measureReused(i, elementToRender);
       } else {
         elementToRender = this.acquireRow();
-        elementToRender.dataset.elementIndex = String(i);
+        this.bindRow(elementToRender, i);
 
         this.placement.attach(container, elementToRender, i, 'window');
         this.placement.position(elementToRender, cumulativeTop, 'window');
@@ -410,7 +465,7 @@ export class ViewportRenderer {
           bottomHeight = this.measureReused(elemIndex, bottomElement);
         } else {
           bottomElement = this.acquireRow();
-          bottomElement.dataset.elementIndex = String(elemIndex);
+          this.bindRow(bottomElement, elemIndex);
 
           this.placement.attach(container, bottomElement, elemIndex, 'bottom');
           this.placement.position(bottomElement, cumulativeTop, 'bottom');

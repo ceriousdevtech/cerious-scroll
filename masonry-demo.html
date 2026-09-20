@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cerious-Scroll · Masonry Demo</title>
-    <meta name="description" content="Virtual scrolling masonry — cards flow into the shortest column with computed heights, layout:'masonry' mode in cerious-scroll.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <meta name="description" content="Virtual scrolling masonry, cards flow into the shortest column with computed heights, layout:'masonry' mode in cerious-scroll.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <style>
         /* ---- Masonry card styling ----
          * The engine positions cards with a transform and writes their width and
          * height; everything below is presentation only. Heights come from
-         * getItemHeight(), never from measuring these elements — so nothing here
+         * getItemHeight(), never from measuring these elements, so nothing here
          * may change a card's box size. */
         .cs-card {
             border-radius: 10px;
@@ -31,7 +31,7 @@
             color: #fff;
             text-shadow: 0 1px 3px rgba(0,0,0,.75);
         }
-        /* Rows can be full-bleed; cards cannot — flush against the container edge
+        /* Rows can be full-bleed; cards cannot: flush against the container edge
            they read as clipped. The renderer honours padding on its own content
            box, so a gutter is just CSS. */
         #scroll [data-cerious-masonry="content"] {
@@ -39,7 +39,9 @@
             padding: 14px 14px 0;
         }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -47,8 +49,8 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🧱 Masonry mode</h1>
-                <p>Cards flow into the shortest column via <code>layout: 'masonry'</code> — computed heights, no seam, responsive columns.</p>
+                <h1><span data-demo-icon="masonry"></span>Masonry mode</h1>
+                <p>Cards flow into the shortest column via <code>layout: 'masonry'</code>: computed heights, no seam, responsive columns.</p>
             </div>
 
             <div class="demo-toolbar">
@@ -90,8 +92,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -185,6 +187,28 @@
 
             build();
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "layout: 'masonry': cards flowed into the shortest column",
+        "intro": "Masonry places each card into whichever column is currently shortest, which is a running decision rather than a layout the browser can be asked for. The engine keeps a frontier of column heights and extends it as you scroll, so the packing is computed once per card and never re-run. That is what stops the columns from re-ordering under you mid-scroll. Scrolling back up packs <em>upwards</em> from a saved snapshot, so the seam where the two directions meet has no gutter slack in it.",
+        "code": "\n    const scroller = new CeriousScroll(host, 200000, {\n      layout: 'masonry',\n      masonry: {\n        columns: 3,\n        gutter: 16,\n        // Optional: if you know a card's height, the engine will take it and\n        // skip the measure. Omit it and every card is measured from the DOM.\n        heightProvider: function (index) { return CARDS[index].height; }\n      },\n      render: function (index, container) {\n        container.textContent = '';\n        container.appendChild(buildCard(CARDS[index]));\n      }\n    });\n  ",
+        "notes": [
+                "Reserve space for media before it loads (an aspect-ratio box). A card that grows after measurement drags the column frontier with it.",
+                "Column count is yours to drive: recreate or reconfigure on a breakpoint change.",
+                "A <code>heightProvider</code> is an optimisation, not a requirement; it must be exact, because it replaces measurement rather than seeding it.",
+                "Packing is deterministic: the same dataset and column count always produce the same layout, whichever direction you arrived from."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/MASONRY.md"
+    }));
     </script>
 </body>
 </html>

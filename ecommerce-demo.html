@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Product Catalog · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,7 +12,7 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🛍️ Product Catalog</h1>
+                <h1><span data-demo-icon="ecommerce"></span>Product Catalog</h1>
                 <p>50,000 products with ratings and add-to-cart.</p>
             </div>
 
@@ -31,8 +31,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const SHOP_TOTAL = 50000;
@@ -129,6 +131,28 @@
                 cart.clear(); updateCart(); demo.refresh();
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Product cards with state that survives recycling",
+        "intro": "A catalogue row carries state the DOM cannot be trusted to keep: quantity in the cart, whether something is favourited, which variant is selected. The container your renderer receives is recycled, so anything written onto the node belongs to whichever product held it last. The rule is that your data is the source of truth and the DOM is a projection of it. Every render writes the full state, and every interaction writes back to the data before asking for a repaint.",
+        "code": "\n    const cart = new Map();   // id -> quantity. The truth lives here.\n\n    const scroller = new CeriousScroll(host, products.length, {\n      render: function (index, container) {\n        const p = products[index];\n        container.textContent = '';\n        const card = buildCard(p);\n        // Write the CURRENT state every time: never assume what was there.\n        card.querySelector('.qty').textContent = cart.get(p.id) || 0;\n        card.dataset.productId = p.id;\n        container.appendChild(card);\n      }\n    });\n\n    // Delegated: the listener outlives any card it fires for.\n    host.addEventListener('click', function (e) {\n      const card = e.target.closest('[data-product-id]');\n      if (!e.target.matches('.add') || !card) return;\n      const id = card.dataset.productId;\n      cart.set(id, (cart.get(id) || 0) + 1);\n      scroller.refresh();\n    });\n  ",
+        "notes": [
+                "Never store state only on the DOM node: recycling will hand it to a different product.",
+                "Delegate events to the host and identify the row by a data attribute rewritten on every render.",
+                "Reserve image space with <code>aspect-ratio</code> so a late-loading photo does not change the card's measured height.",
+                "<code>refresh()</code> repaints the mounted rows; it does not re-create anything, so it is cheap enough for a click handler."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

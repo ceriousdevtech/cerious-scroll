@@ -213,6 +213,44 @@ describe('NativeScrollbar gutter reservation', () => {
     );
   }
 
+  /**
+   * Run `body` with the strip reporting a real, painted classic scrollbar.
+   *
+   * `syncGutter` decides whether to reserve a gutter by MEASURING the strip's
+   * own painted bar (`offsetWidth - clientWidth - borders`), not by consulting
+   * a cached OS width — which is what lets it release the gutter by itself on a
+   * platform with overlay scrollbars, and keep working if that setting changes
+   * mid-session. jsdom performs no layout, so both values are 0 and every strip
+   * looks like an overlay one. These tests are about the classic case, so the
+   * geometry has to be backed by hand, exactly as the scroll geometry is in
+   * `setup()` above.
+   */
+  function withPaintedBar<T>(barPx: number, body: () => T): T {
+    const proto = HTMLElement.prototype as any;
+    const prevOffset = Object.getOwnPropertyDescriptor(proto, 'offsetWidth');
+    const prevClient = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+    const isStrip = (el: HTMLElement) =>
+      el.getAttribute?.('data-cerious-scrollbar') === 'container';
+
+    Object.defineProperty(proto, 'offsetWidth', {
+      configurable: true,
+      get(this: HTMLElement) { return isStrip(this) ? barPx : 0; }
+    });
+    Object.defineProperty(proto, 'clientWidth', {
+      configurable: true,
+      get() { return 0; }
+    });
+
+    try {
+      return body();
+    } finally {
+      if (prevOffset) Object.defineProperty(proto, 'offsetWidth', prevOffset);
+      else delete proto.offsetWidth;
+      if (prevClient) Object.defineProperty(proto, 'clientWidth', prevClient);
+      else delete proto.clientWidth;
+    }
+  }
+
   it('does NOT reserve a gutter with overlay scrollbars (no dead gap)', () => {
     // jsdom does no layout, so the probe measures 0 => overlay scrollbars.
     const sb = makeScrollbar();
@@ -224,43 +262,47 @@ describe('NativeScrollbar gutter reservation', () => {
 
   it('reserves a gutter exactly as wide as the strip', () => {
     const sb = makeScrollbar();
-    // Force the measured-metrics cache to a classic 17px scrollbar.
     (sb as any)._cachedScrollbarWidth = 17;
-    (sb as any)._cachedOverlayScrollbars = false;
     const container = document.createElement('div');
     document.body.appendChild(container);
-    sb.createNativeScrollbar(container);
+
+    withPaintedBar(17, () => sb.createNativeScrollbar(container));
+
     // Previously 19px — the strip width plus an unexplained 2. That surplus is a
     // dead sliver between the content edge and the strip, which any layout that
     // measures its own usable width has to compensate for.
     expect(container.style.paddingRight).toBe('17px');
+    // Rows are absolutely positioned, so padding on the host cannot reach them;
+    // they read the published width instead.
+    expect(container.style.getPropertyValue('--cerious-gutter')).toBe('17px');
   });
 
   it('gives back exactly what it reserved on detach', () => {
     const sb = makeScrollbar();
     (sb as any)._cachedScrollbarWidth = 17;
-    (sb as any)._cachedOverlayScrollbars = false;
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    sb.createNativeScrollbar(container);
+    withPaintedBar(17, () => sb.createNativeScrollbar(container));
     expect(container.style.paddingRight).toBe('17px');
 
     // Detach used to subtract a hard-coded 19 regardless of what was added, so
     // any strip that was not 17px wide left the host 2px narrower each cycle.
     sb.detachScrollbar(container);
     expect(parseFloat(container.style.paddingRight) || 0).toBe(0);
+    expect(container.style.getPropertyValue('--cerious-gutter')).toBe('');
   });
 
   it('survives repeated attach/detach without eroding the host', () => {
     const sb = makeScrollbar();
     (sb as any)._cachedScrollbarWidth = 17;
-    (sb as any)._cachedOverlayScrollbars = false;
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     for (let i = 0; i < 5; i++) {
-      sb.createNativeScrollbar(container);
+      withPaintedBar(17, () => sb.createNativeScrollbar(container));
+      // Each cycle really does reserve, so the release below is load-bearing.
+      expect(container.style.paddingRight).toBe('17px');
       sb.detachScrollbar(container);
     }
     expect(parseFloat(container.style.paddingRight) || 0).toBe(0);
@@ -269,12 +311,11 @@ describe('NativeScrollbar gutter reservation', () => {
   it("leaves the host's own padding alone when it already clears the strip", () => {
     const sb = makeScrollbar();
     (sb as any)._cachedScrollbarWidth = 17;
-    (sb as any)._cachedOverlayScrollbars = false;
     const container = document.createElement('div');
     container.style.paddingRight = '40px';
     document.body.appendChild(container);
 
-    sb.createNativeScrollbar(container);
+    withPaintedBar(17, () => sb.createNativeScrollbar(container));
     expect(container.style.paddingRight).toBe('40px'); // nothing to add
 
     // ...and detach must not claw back padding it never contributed.

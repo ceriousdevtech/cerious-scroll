@@ -67,8 +67,6 @@ export class MasonryLayout {
   private colH: number[];
   /** Separate frontier for {@link chainAhead}, which runs between renders. */
   private chainColH: number[];
-  /** Return buffer for {@link segmentOrigin}-style lookups. */
-  private frontierOut: number[];
 
   /**
    * Real column frontier at each segment boundary, `columns` floats per entry.
@@ -109,7 +107,6 @@ export class MasonryLayout {
     };
     this.colH = new Array(this.opts.columns).fill(0);
     this.chainColH = new Array(this.opts.columns).fill(0);
-    this.frontierOut = new Array(this.opts.columns).fill(0);
   }
 
   get columns(): number { return this.opts.columns; }
@@ -310,7 +307,6 @@ export class MasonryLayout {
     if (!sameCols) {
       this.colH = new Array(columns).fill(0);
       this.chainColH = new Array(columns).fill(0);
-      this.frontierOut = new Array(columns).fill(0);
     }
     this.invalidate();
     return true;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SQL Results · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,8 +12,8 @@
     <main class="content">
         <div class="demo-page sql-page">
             <div class="demo-page__header">
-                <h1>🗄️ SQL Results</h1>
-                <p>200,000 rows returned — click a row to select it.</p>
+                <h1><span data-demo-icon="sql"></span>SQL Results</h1>
+                <p>200,000 rows returned: click a row to select it.</p>
             </div>
 
 <pre class="sql-editor"><span class="kw">SELECT</span> id, customer, product, amount, status, created_at
@@ -24,7 +24,7 @@
             <div class="demo-toolbar">
                 <span class="stat">✓ <strong>200,000</strong> rows · 0.024s</span>
                 <span class="spacer"></span>
-                <span class="stat">Selected row: <strong id="selectedLabel">—</strong></span>
+                <span class="stat">Selected row: <strong id="selectedLabel">none</strong></span>
             </div>
 
             <div class="demo-scroll sql-scroll" id="scroll">
@@ -43,8 +43,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const SQL_TOTAL = 200000;
@@ -109,6 +111,28 @@
                 demo.refresh();
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Result sets with selection and stable identity",
+        "intro": "A result grid is a plain vertical scroller over an array of rows, with one subtlety worth stating: selection must be keyed on something stable. Re-run the query, sort a column, or filter, and index 40 is a different row than it was, so a selection stored as a set of indices silently selects the wrong things. Store row identity instead and the selection survives anything you do to the view.",
+        "code": "\n    const selected = new Set();   // row IDS, never row indices\n\n    const scroller = new CeriousScroll(host, result.rows.length, {\n      render: function (index, container) {\n        const row = result.rows[index];\n        container.textContent = '';\n        const el = buildResultRow(row, result.columns);\n        el.dataset.rowId = row.id;\n        el.classList.toggle('is-selected', selected.has(row.id));\n        container.appendChild(el);\n      }\n    });\n\n    host.addEventListener('click', function (e) {\n      const el = e.target.closest('[data-row-id]');\n      if (!el) return;\n      const id = el.dataset.rowId;\n      selected.has(id) ? selected.delete(id) : selected.add(id);\n      scroller.refresh();\n    });\n  ",
+        "notes": [
+                "Key selection on row identity. Indices are a property of the current view, not of the data.",
+                "A new result set means a new length and a full repaint: <code>updateTotalElements()</code> then <code>refresh()</code>.",
+                "Column widths should be fixed once per result set, not measured from the mounted rows.",
+                "For very wide result sets, render only the columns you want visible and let the user choose the rest; the engine virtualizes rows, not columns."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

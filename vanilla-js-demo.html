@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Basic Virtual Scroll · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,8 +12,8 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🧱 Basic virtual scroll</h1>
-                <p>Lazy data source — no array is allocated, so a million rows costs nothing.</p>
+                <h1><span data-demo-icon="basic"></span>Basic virtual scroll</h1>
+                <p>Lazy data source, no array is allocated, so a million rows costs nothing.</p>
             </div>
 
             <div class="demo-toolbar">
@@ -53,8 +53,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const PALETTE = ['#1f6feb', '#238636', '#a371f7', '#db6d28', '#cf222e', '#0969da'];
@@ -110,6 +112,28 @@
             document.getElementById('topBtn').addEventListener('click', () => demo.scrollToPercentage(0));
             document.getElementById('endBtn').addEventListener('click', () => demo.scrollToPercentage(100));
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "The base case: host, total, render",
+        "intro": "Everything else on this site is a variation on these three arguments. You give the engine a host element, how many items exist, and a function that fills one element for a given index. It mounts only what is visible and recycles elements as the window moves, so the DOM node count is a function of your viewport, never of your dataset. Heights are <em>measured</em>, never estimated, which is why a million rows of unpredictable height behaves the same as a million uniform ones.",
+        "code": "\n    const scroller = new CeriousScroll(host, 1000000, {\n      // Called with a RECYCLED container. Fill it in; do not append blindly,\n      // or the row will accumulate the content of every index it has held.\n      render: function (index, container) {\n        container.textContent = '';\n        const row = document.createElement('div');\n        row.className = 'row';\n        row.textContent = 'Row #' + index;\n        container.appendChild(row);\n      }\n    });\n\n    scroller.jumpToElement(750000);   // O(1), no matter the dataset size\n    scroller.updateTotalElements(2000000);\n  ",
+        "notes": [
+                "The renderer is called for a recycled element. Clearing it first is the simplest correct thing; reusing child nodes is the fastest.",
+                "Row heights are measured from the DOM. You do not need to declare them, and they may differ per row.",
+                "<code>jumpToElement</code> is constant-time. The camera is an <code>(element, offset)</code> pair, so there is no pixel total to compute.",
+                "<code>updateTotalElements</code> grows or shrinks the dataset in place without moving the camera."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

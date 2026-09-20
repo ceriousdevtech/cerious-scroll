@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Log Viewer · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,8 +12,8 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>📜 Log Viewer</h1>
-                <p id="subtitle">200,000 of 200,000 lines — filter by level, search the stream.</p>
+                <h1><span data-demo-icon="logs"></span>Log Viewer</h1>
+                <p id="subtitle">200,000 of 200,000 lines: filter by level, search the stream.</p>
             </div>
 
             <div class="demo-toolbar" id="toolbar">
@@ -29,8 +29,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const LOG_TOTAL = 200000;
@@ -102,7 +104,7 @@
 
             function updateSubtitle() {
                 document.getElementById('subtitle').textContent =
-                    order.length.toLocaleString() + ' of ' + LOG_TOTAL.toLocaleString() + ' lines — filter by level, search the stream.';
+                    order.length.toLocaleString() + ' of ' + LOG_TOTAL.toLocaleString() + ' lines, filter by level, search the stream.';
                 document.getElementById('countLabel').textContent = order.length.toLocaleString();
             }
 
@@ -136,6 +138,28 @@
                 debounce = setTimeout(() => { query = v; rebuild(); }, 250);
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Filtering and searching a virtualized stream",
+        "intro": "Filtering a virtual list is a question about your data, not about the scroller. The engine renders indices into whatever array you hand it, so a filter is: build the filtered view, tell the engine its new length, and repaint. The important detail is that an index means a position in the <em>current view</em>, so when the filter changes, every index changes meaning and <code>refresh()</code> is required even if the length happens to be the same.",
+        "code": "\n    let view = lines;\n\n    const scroller = new CeriousScroll(host, view.length, {\n      render: function (index, container) {\n        container.textContent = '';\n        container.appendChild(renderLine(view[index]));\n      }\n    });\n\n    function applyFilter(level, query) {\n      view = lines.filter(function (l) {\n        return (level === 'all' || l.level === level) &&\n               (!query || l.text.includes(query));\n      });\n      scroller.updateTotalElements(view.length);\n      scroller.refresh();   // indices now mean something different\n    }\n  ",
+        "notes": [
+                "<code>refresh()</code> after a filter change is not optional; the recycler will not re-run your renderer for an index it already holds.",
+                "For a live tail, append and follow only when the reader is already at the end.",
+                "Highlighting a match is just markup in your renderer. There is nothing scroller-specific about it.",
+                "Keep the filtered array around; the renderer is called often and should not be re-filtering per row."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

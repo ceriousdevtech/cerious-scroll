@@ -9,7 +9,8 @@ import {
   MeasuredViewportRange, 
   CeriousScrollOptions,
   TouchNavigationOptions,
-  WheelNavigationOptions
+  WheelNavigationOptions,
+  ScrollDirection
 } from './types/index.js';
 import { PerformanceCache } from './core/performance-cache.js';
 import { NativeScrollbar } from './features/native-scrollbar.js';
@@ -57,7 +58,6 @@ export class CeriousScroll {
   private static readonly DEFAULT_ELEMENT_HEIGHT = 40;
   private static readonly VIEWPORT_BUFFER_SIZE = 50;
   private static readonly NEAR_END_THRESHOLD = 100;
-  private static readonly OVERSCAN_BUFFER_SIZE = 5;
 
   /**
    * Measure the usable vertical rendering area inside `container`.
@@ -71,6 +71,31 @@ export class CeriousScroll {
    * the engine renders the right number of rows and the last row stays
    * clear of the scrollbar.
    */
+  /**
+   * Settle on a writing direction.
+   *
+   * `'auto'` asks the DOM rather than the option, because direction is almost
+   * always inherited — from `<html dir>`, a locale wrapper, a CSS rule — and a
+   * host that has to restate it in JavaScript will eventually disagree with the
+   * page around it.
+   */
+  private static resolveDirection(
+    container: HTMLElement,
+    requested?: ScrollDirection
+  ): 'ltr' | 'rtl' {
+    if (requested === 'ltr' || requested === 'rtl') return requested;
+    try {
+      return getComputedStyle(container).direction === 'rtl' ? 'rtl' : 'ltr';
+    } catch {
+      return 'ltr'; // no computed styles (SSR, bare jsdom)
+    }
+  }
+
+  /** Writing direction the engine resolved for this host. */
+  get direction(): 'ltr' | 'rtl' {
+    return this.resolvedDirection;
+  }
+
   private static measureViewportHeight(container: HTMLElement): number {
     const inner = container.querySelector<HTMLElement>('[data-cerious-scroll-content]');
     if (inner) {
@@ -114,6 +139,19 @@ export class CeriousScroll {
    */
   private ownedContent: HTMLElement | null = null;
   private ownedContentHost: HTMLElement | null = null;
+  /** The host this engine is attached to, once it is known. */
+  private attachedContainer: HTMLElement | null = null;
+  private serverRowsRelocated = false;
+  /** Writing direction in force, resolved once the host is known. */
+  private resolvedDirection: 'ltr' | 'rtl' = 'ltr';
+  /** The pinned header element and the index it is currently showing. */
+  private stickyElement: HTMLElement | null = null;
+  private stickyIndex: number | null = null;
+  /** Pinned header height, measured once per hand-off rather than per frame. */
+  private stickyHeight = 0;
+  /** Edge already asked about, cleared when the window moves away from it. */
+  private infiniteArmed: 'start' | 'end' | null = null;
+  private infiniteBusy = false;
   /** Card count in masonry mode; `totalElements` holds the SEGMENT count. */
   private totalItems = 0;
   private performanceCache: PerformanceCache;
@@ -266,6 +304,7 @@ export class CeriousScroll {
       () => this.performanceCache.getUniformHeightHint(),
       this.placement
     );
+    this.viewportRenderer.hydrate = this.options.ssr?.hydrate === true;
 
     this.navigationEngine = new NavigationEngine({
       totalElements: this.totalElements,
@@ -334,7 +373,8 @@ export class CeriousScroll {
       scroll: (deltaY: number, viewportHeight: number) => this.scroll(deltaY, viewportHeight),
       calculateScrollPercentage: () => this.calculateScrollPercentage(),
       getCurrentElement: () => this.currentElement,
-      getScrollOffset: () => this.scrollOffset
+      getScrollOffset: () => this.scrollOffset,
+      onSettle: () => this.snapToBoundary()
     });
 
     this.contentObserverManager = new ContentObserverManager({
@@ -398,8 +438,18 @@ export class CeriousScroll {
       // SSR / tests have no location
     }
 
+    this.attachedContainer = container;
+    this.resolvedDirection = CeriousScroll.resolveDirection(container, this.options.direction);
+    if (this.masonry) this.masonry.rtl = this.resolvedDirection === 'rtl';
+    this.installAria(container);
+
     if (this.options.attachScrollbar !== false) {
-      this.nativeScrollbar.attachNativeScrollbar(container);
+      // A right-to-left reader expects the bar on the left, the same way the
+      // browser moves its own.
+      this.nativeScrollbar.attachNativeScrollbar(
+        container,
+        this.resolvedDirection === 'rtl' ? 'left' : 'right'
+      );
     }
 
     if (this.options.keyboard?.enabled !== false) {
@@ -709,6 +759,12 @@ export class CeriousScroll {
     if (next === this.totalElements) return;
 
     this.totalElements = next;
+    // New rows arrived, so "I already asked about this edge" is stale. Without
+    // this a viewer parked at the very bottom is stuck after one page: the
+    // window never leaves the threshold, so the re-arm never fires and they
+    // would have to scroll away and back to get the next one.
+    this.infiniteArmed = null;
+    this.syncAriaTotals();
     this.performanceCache.setTotalElements(next);
     this.navigationEngine.updateConfig(next, this.viewportHeight);
     this.viewportRenderer.updateTotalElements(next);
@@ -770,8 +826,11 @@ export class CeriousScroll {
     this.placement.invalidateTopInset?.();
     const insetBefore = this.placement.getTopInset ? this.placement.getTopInset() : 0;
     const effectiveWindowHeight = Math.max(1, windowHeight - insetBefore);
+    let target = this.renderTarget(container);
+    const rowRenderer = renderElement;
+    this.relocateServerRows(container, target);
     const range = this.viewportRenderer.renderViewport(
-      effectiveWindowHeight, this.renderTarget(container), renderElement
+      effectiveWindowHeight, target, rowRenderer
     );
 
     // Re-sync the engine's viewport height to the area rows actually fill
@@ -783,6 +842,15 @@ export class CeriousScroll {
     // never quite renders.
     this.syncViewportHeight(windowHeight);
     this.updateDisplay();
+
+    // Rows have just been measured, so this is the first moment the strip can know whether the
+    // dataset actually overflows. The strip is built before any render, when no tail height is
+    // known, and must assume it does — leaving a short list with a bar it never needed until some
+    // later resize happened to correct it.
+    this.nativeScrollbar.refreshScrollRange();
+
+    this.syncSticky(this.renderTarget(container), range, renderElement);
+    this.checkInfinite(range);
     return range;
   }
 
@@ -890,6 +958,276 @@ export class CeriousScroll {
    * indices, matching the engine's element space; card-level detail belongs to
    * the caller's own render callback.
    */
+  /**
+   * Move server-rendered rows into whatever the renderer actually fills.
+   *
+   * A server cannot know about the content element the engine builds for
+   * itself — that element does not exist until the client runs — so its rows
+   * land in the host. Left there they would be neither adopted nor recycled,
+   * and the client would render a second copy of every one of them beside the
+   * originals. Runs once, before the first frame.
+   */
+  private relocateServerRows(container: HTMLElement, target: HTMLElement): void {
+    if (this.options.ssr?.hydrate !== true) return;
+    if (this.serverRowsRelocated) return;
+    this.serverRowsRelocated = true;
+    if (target === container) return;
+
+    const stray = container.querySelectorAll<HTMLElement>(':scope > [data-element-index]');
+    for (let i = 0; i < stray.length; i++) target.appendChild(stray[i]);
+  }
+
+  /**
+   * Keep a section header pinned above the recycled window.
+   *
+   * Mounted OUTSIDE the recycler on purpose. A pinned row has to stay on screen
+   * while the rows it heads scroll past, and the recycler's whole job is to
+   * unmount anything that leaves the window — so a sticky row drawn as a normal
+   * row is guaranteed to vanish at exactly the wrong moment. It is a separate,
+   * long-lived element that the engine re-renders only when the resolved index
+   * changes.
+   *
+   * @param container Host rows were rendered into.
+   * @param range What the frame actually drew.
+   * @param renderElement The caller's row renderer, reused so a header looks
+   *   like the row it is.
+   */
+  private syncSticky(
+    container: HTMLElement,
+    range: MeasuredViewportRange,
+    renderElement: ElementRenderer
+  ): void {
+    const sticky = this.options.sticky;
+    if (!sticky || typeof sticky.resolve !== 'function') return;
+
+    const index = sticky.resolve(range.startElement);
+    if (index === null || index === undefined || !Number.isFinite(index) ||
+        index < 0 || index >= this.totalElements) {
+      this.stickyElement?.remove();
+      this.stickyElement = null;
+      this.stickyIndex = null;
+      this.stickyHeight = 0;
+      return;
+    }
+
+    if (!this.stickyElement) {
+      const el = document.createElement('div');
+      el.setAttribute('data-cerious-sticky', '');
+      // Above the rows, inert to the pointer so the row underneath stays
+      // clickable at the edges, and out of the recycler's reach.
+      // Logical inset, so the gutter the strip reserves is subtracted from
+      // whichever side the strip is actually on.
+      el.style.cssText =
+        'position:absolute;top:0;inset-inline-start:0;' +
+        'inset-inline-end:var(--cerious-gutter, 0px);z-index:2;';
+      if (sticky.className) el.className = sticky.className;
+      container.appendChild(el);
+      this.stickyElement = el;
+      this.stickyIndex = null;
+    } else if (this.stickyElement.parentElement !== container) {
+      container.appendChild(this.stickyElement);
+    }
+
+    if (this.stickyIndex !== index) {
+      this.stickyElement.textContent = '';
+      renderElement(index, this.stickyElement);
+      // Deliberately NOT `data-element-index`: the pinned header is a copy of a
+      // row, not a member of the rendered window, and answering row queries
+      // would make it look like one to the recycler, to consumers, and to any
+      // test counting what is on screen.
+      this.stickyElement.dataset.stickyIndex = String(index);
+      this.stickyIndex = index;
+      // Read once per HAND-OFF, not per frame. This is a write-then-read and so
+      // forces a synchronous layout, which is only acceptable because a section
+      // change is rare; doing it every frame is the mistake that cost the grid
+      // its frame budget.
+      this.stickyHeight = this.stickyElement.offsetHeight;
+    }
+
+    // The next section's header pushes this one out rather than sliding under
+    // it. Without this the pinned header sits at `top: 0` with a higher
+    // z-index, so the incoming header disappears behind it and the content
+    // swaps abruptly the instant `resolve` flips.
+    const push = this.stickyPush(range, sticky.resolve, index);
+    this.stickyElement.style.transform = push ? `translateY(${push}px)` : '';
+  }
+
+  /**
+   * How far to lift the pinned header so the incoming one displaces it.
+   *
+   * Returns a negative pixel offset while the next section's header is inside
+   * the pinned header's band, and 0 otherwise. At the extreme the pinned
+   * header's bottom edge lands exactly on the incoming header's top edge, so
+   * the two never overlap and the hand-off reads as a push rather than a swap.
+   *
+   * Computed from the heights the renderer just reported and the camera's own
+   * offset, NOT from the DOM: this runs on every frame of a scroll, and a
+   * geometry read here would force a synchronous layout over everything just
+   * mounted.
+   */
+  private stickyPush(
+    range: MeasuredViewportRange,
+    resolve: (index: number) => number | null,
+    current: number
+  ): number {
+    const height = this.stickyHeight;
+    if (height <= 0) return 0;
+
+    const rows = range.renderedElements;
+    // `renderedElements` is ascending and begins at the first visible row, so
+    // the running total is that row's top edge once the camera offset is taken
+    // off it.
+    let top = -this.scrollOffset;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row.index > range.startElement) {
+        // Past the band: no boundary close enough to push anything.
+        if (top >= height) return 0;
+        // A row belonging to a different section is that section's header.
+        if (resolve(row.index) !== current) return top - height;
+      }
+      top += row.height;
+    }
+    return 0;
+  }
+
+  /**
+   * Settle the camera onto a row boundary once scrolling has stopped.
+   *
+   * Nearly free in this engine: the camera is already `(element, offset)`, so a
+   * snap is `offset -> 0` on one row or the next. CSS `scroll-snap-type` cannot
+   * do this job — the surface the browser scrolls is a featureless spacer with
+   * no snap targets — so it is applied here, on the settle signal the native
+   * surface provides.
+   *
+   * A no-op unless `snap.enabled`, and skipped when the camera is already
+   * within `tolerance` of a boundary, which keeps a scroll that had effectively
+   * landed from visibly nudging itself afterwards.
+   */
+  private snapToBoundary(): void {
+    const snap = this.options.snap;
+    if (!snap?.enabled) return;
+    if (this.masonry) return; // a card grid has no single row boundary to land on
+
+    const offset = this.scrollOffset;
+    const tolerance = Math.max(0, snap.tolerance ?? 2);
+    if (offset <= tolerance) return;
+
+    const element = this.currentElement;
+    const height = this.getElementHeight(element);
+    if (!Number.isFinite(height) || height <= 0) return;
+    if (offset >= height - tolerance) {
+      // Already all but past this row: forward is the near boundary.
+      this.jumpToElement(Math.min(element + 1, this.totalElements - 1));
+      this.options.onScroll?.();
+      return;
+    }
+
+    const forward = snap.align === 'start' ? false : offset > height / 2;
+    const target = forward ? Math.min(element + 1, this.totalElements - 1) : element;
+    this.jumpToElement(target);
+    this.options.onScroll?.();
+  }
+
+  /**
+   * Apply screen-reader semantics, if asked.
+   *
+   * The numbers are the point. A virtualized list mounts a window, so a reader
+   * left to count the DOM says "3 of 12" for a dataset of a million;
+   * `aria-setsize` and `aria-posinset` state the truth independently of what
+   * happens to be rendered, and the engine is the only thing that knows both.
+   *
+   * Roles are layout-dependent and deliberately conservative: `table` layout
+   * emits real `<tr>`/`<td>`, which already mean row and cell, so the engine
+   * adds only the virtualization numbers and leaves the semantics alone.
+   */
+  private installAria(container: HTMLElement): void {
+    const aria = this.options.aria;
+    if (!aria?.enabled) return;
+
+    const isTable = this.options.layout === 'table';
+
+    if (aria.label) container.setAttribute('aria-label', aria.label);
+    if (aria.labelledBy) container.setAttribute('aria-labelledby', aria.labelledBy);
+
+    const containerRole = aria.role ?? (isTable ? undefined : 'list');
+    if (containerRole) container.setAttribute('role', containerRole);
+
+    if (isTable) {
+      // The correct ARIA for a virtualized table: the real row count, so the
+      // reader does not infer it from the mounted window.
+      container.setAttribute('aria-rowcount', String(this.totalElements));
+    }
+
+    const itemRole = aria.itemRole ?? (isTable ? undefined : 'listitem');
+
+    this.viewportRenderer.decorateRow = (el: HTMLElement, index: number) => {
+      if (itemRole) el.setAttribute('role', itemRole);
+      if (isTable) {
+        // 1-based, and counting the header row, as a real table does.
+        el.setAttribute('aria-rowindex', String(index + 2));
+      } else {
+        el.setAttribute('aria-setsize', String(this.totalElements));
+        el.setAttribute('aria-posinset', String(index + 1));
+      }
+    };
+  }
+
+  /** Keep `aria-rowcount` truthful when the dataset grows or shrinks. */
+  private syncAriaTotals(): void {
+    if (!this.options.aria?.enabled) return;
+    if (this.options.layout !== 'table') return;
+    this.attachedContainer?.setAttribute('aria-rowcount', String(this.totalElements));
+  }
+
+  /**
+   * Ask for more rows when the rendered window nears an edge.
+   *
+   * Re-arms only when the window leaves the threshold, so a load that appends
+   * nothing cannot spin; an in-flight promise also holds the gate, because the
+   * common shape is an async fetch and the next frame would otherwise fire
+   * again before the first returned.
+   */
+  private checkInfinite(range: MeasuredViewportRange): void {
+    const infinite = this.options.infinite;
+    if (!infinite || typeof infinite.onLoadMore !== 'function') return;
+    if (this.infiniteBusy) return;
+
+    const threshold = Math.max(0, infinite.threshold ?? 20);
+    const total = this.totalElements;
+
+    let direction: 'start' | 'end' | null = null;
+    if (range.endElement >= total - 1 - threshold) direction = 'end';
+    else if (infinite.edges === 'both' && range.startElement <= threshold) direction = 'start';
+
+    if (direction === null) {
+      // Out of range again: the next approach is a new one.
+      this.infiniteArmed = null;
+      return;
+    }
+    if (this.infiniteArmed === direction) return;
+
+    this.infiniteArmed = direction;
+    this.infiniteBusy = true;
+    const release = () => { this.infiniteBusy = false; };
+    try {
+      const result = infinite.onLoadMore({
+        direction,
+        first: range.startElement,
+        last: range.endElement,
+        total
+      });
+      if (result && typeof (result as Promise<unknown>).then === 'function') {
+        (result as Promise<unknown>).then(release, release);
+      } else {
+        release();
+      }
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
   /**
    * Where rows actually go.
    *
@@ -1134,6 +1472,11 @@ export class CeriousScroll {
 
     // After the controllers have detached — the surface puts the content element
     // back where it found it, and only then is this safe to remove.
+    this.stickyElement?.remove();
+    this.stickyElement = null;
+    this.stickyIndex = null;
+    this.stickyHeight = 0;
+
     if (this.ownedContent?.parentNode) this.ownedContent.parentNode.removeChild(this.ownedContent);
     this.ownedContent = null;
     this.ownedContentHost = null;

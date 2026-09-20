@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Loading · Cerious-Scroll</title>
+    <meta name="description" content="Load more rows as the end approaches, growing the dataset in place so the scroll position never moves.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
+    <style>
+        .feed-item {
+            display: flex; gap: 12px; padding: 12px 16px;
+            border-bottom: 1px solid var(--line);
+        }
+        .feed-dot {
+            width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; flex-shrink: 0;
+        }
+        .feed-body { min-width: 0; flex: 1; }
+        .feed-head { display: flex; align-items: baseline; gap: 8px; }
+        .feed-who { font-weight: 600; font-size: 0.86rem; }
+        .feed-when { color: var(--muted); font-size: 0.72rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+        .feed-text { font-size: 0.82rem; color: #c9d1d9; line-height: 1.5; margin: 4px 0 0; }
+        .feed-batch {
+            font-size: 0.68rem; color: var(--muted);
+            border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px;
+        }
+
+        /* The loading row is a real dataset row at the tail, so it is recycled
+         * and positioned like everything else, no floating overlay to keep in
+         * sync with the scroll position. */
+        .feed-loading {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            height: 64px; color: var(--muted); font-size: 0.82rem;
+        }
+        .feed-spinner {
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,.18); border-top-color: var(--accent);
+            animation: feed-spin .7s linear infinite;
+        }
+        @keyframes feed-spin { to { transform: rotate(360deg); } }
+        /* Request log, above the list: the point of the demo is WHEN the
+         * engine asks, so it reads before the rows rather than after them. */
+        .feed-panel {
+            padding: 10px 20px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--line);
+            flex-shrink: 0;
+        }
+        .feed-panel h3 {
+            margin: 0 0 3px; font-size: 0.68rem; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--muted); font-weight: 700;
+        }
+        .feed-log {
+            font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem;
+            color: var(--muted);
+            height: 46px; overflow: auto;
+        }
+        .feed-log div { padding: 1px 0; }
+    </style>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1><span data-demo-icon="infinite"></span>Infinite loading</h1>
+                <p>Asks for the next page as the end comes into range, growing the dataset in place.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label for="threshold">Threshold</label>
+                <select id="threshold">
+                    <option value="5">5 rows</option>
+                    <option value="15" selected>15 rows</option>
+                    <option value="40">40 rows</option>
+                </select>
+
+                <label for="latency">Latency</label>
+                <select id="latency">
+                    <option value="0">instant</option>
+                    <option value="350" selected>350ms</option>
+                    <option value="1200">1.2s</option>
+                </select>
+
+                <label><input type="checkbox" id="endOfFeed"> Stop after 400</label>
+
+                <span style="display: inline-flex; gap: 6px">
+                    <button id="resetBtn" type="button">Reset</button>
+                </span>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">scroll to the end</span>
+            </div>
+
+            <div class="feed-panel">
+                <h3>Requests</h3>
+                <div class="feed-log" id="log"></div>
+            </div>
+
+            <div class="demo-scroll" id="scroll"></div>
+
+            <div class="demo-footer">
+                <span>Loaded: <strong id="loadedLabel">0</strong></span>
+                <span>Requests: <strong id="reqLabel">0</strong></span>
+                <span>DOM rows: <strong id="domLabel">–</strong></span>
+                <span>State: <strong id="stateLabel">Idle</strong></span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
+    <script>
+        (function () {
+            const host = document.getElementById('scroll');
+            const PAGE = 40;
+            const HARD_STOP = 400;
+
+            const WHO = ['deploy-bot', 'alina.k', 'ops', 'rayan', 'checkout-svc', 'mira', 'billing'];
+            const TEXT = [
+                'Rolled out build 4f2c1 to canary: error rate flat.',
+                'Retried the webhook batch; 3 dead letters moved to the DLQ.',
+                'Latency p99 on /search is back under 180ms after the index rebuild.',
+                'Approved the migration plan. Starting with the read replicas.',
+                'Cache warm-up finished, hit ratio 0.94.',
+                'Reverted the feature flag for EU traffic pending the audit.',
+                'Nightly reconciliation matched every ledger entry.'
+            ];
+            const HUES = [152, 188, 28, 350, 262];
+
+            let items = [];
+            let loading = false;
+            let exhausted = false;
+            let requests = 0;
+            let demo = null;
+
+            function hash(n, salt) {
+                const x = Math.sin(n * 71.3 + salt * 129.1) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            function makePage(startIndex, batch) {
+                const out = [];
+                for (let i = 0; i < PAGE; i++) {
+                    const n = startIndex + i;
+                    out.push({
+                        who: WHO[Math.floor(hash(n, 3) * WHO.length)],
+                        text: TEXT[Math.floor(hash(n, 7) * TEXT.length)],
+                        hue: HUES[Math.floor(hash(n, 11) * HUES.length)],
+                        mins: Math.floor(hash(n, 13) * 900) + 1,
+                        batch: batch
+                    });
+                }
+                return out;
+            }
+
+            function log(line) {
+                const el = document.getElementById('log');
+                const row = document.createElement('div');
+                row.textContent = new Date().toLocaleTimeString() + '  ' + line;
+                el.appendChild(row);
+                el.scrollTop = el.scrollHeight;
+            }
+
+            /** Total the engine is told about: the loaded rows plus a tail row
+             *  while a fetch is in flight, so "loading" has somewhere to live. */
+            function engineTotal() {
+                return items.length + (loading ? 1 : 0);
+            }
+
+            function renderRow(index, container) {
+                const item = items[index];
+                if (!item) {
+                    const el = document.createElement('div');
+                    el.className = 'feed-loading';
+                    el.innerHTML = exhausted
+                        ? '<span>You have reached the end of the feed.</span>'
+                        : '<span class="feed-spinner"></span><span>Loading more…</span>';
+                    container.appendChild(el);
+                    return;
+                }
+                const el = document.createElement('div');
+                el.className = 'feed-item';
+                el.innerHTML =
+                    '<span class="feed-dot" style="background:hsl(' + item.hue + ' 65% 58%)"></span>' +
+                    '<div class="feed-body">' +
+                        '<div class="feed-head">' +
+                            '<span class="feed-who">' + item.who + '</span>' +
+                            '<span class="feed-batch">page ' + item.batch + '</span>' +
+                            '<span class="feed-when">' + item.mins + 'm ago</span>' +
+                        '</div>' +
+                        '<p class="feed-text">' + item.text + '</p>' +
+                    '</div>';
+                container.appendChild(el);
+            }
+
+            function loadMore(context) {
+                if (exhausted) return;
+                const stopAt = document.getElementById('endOfFeed').checked ? HARD_STOP : Infinity;
+                if (items.length >= stopAt) {
+                    exhausted = true;
+                    log('reached the end of the feed at ' + items.length + ' rows');
+                    document.getElementById('stateLabel').textContent = 'End of feed';
+                    demo.updateTotal(items.length);
+                    demo.render();
+                    return;
+                }
+
+                requests++;
+                loading = true;
+                document.getElementById('reqLabel').textContent = String(requests);
+                document.getElementById('stateLabel').textContent = 'Loading…';
+                log('approaching ' + context.direction + ' at row ' + context.last +
+                    ' of ' + context.total + ' → requesting page ' + (requests + 1));
+
+                // Show the tail row immediately.
+                demo.updateTotal(engineTotal());
+                demo.render();
+                report();
+
+                const latency = parseInt(document.getElementById('latency').value, 10) || 0;
+                // Returning the promise is what holds the gate: the engine will
+                // not ask again until it settles, however many frames go by.
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        items = items.concat(makePage(items.length, requests + 1));
+                        loading = false;
+                        document.getElementById('loadedLabel').textContent = items.length.toLocaleString();
+                        document.getElementById('stateLabel').textContent = 'Idle';
+                        log('page ' + (requests + 1) + ' resolved → ' + items.length + ' rows');
+                        // In place: no teardown, so the camera and any active
+                        // scrollbar drag survive the growth.
+                        demo.updateTotal(engineTotal());
+                        // refresh(), not render(): the tail row that said
+                        // "Loading more…" is ALREADY mounted at this index, and
+                        // the recycler will not re-run the renderer for an index
+                        // it already holds. Without this the spinner stays on
+                        // screen over real data: visible whenever the reader is
+                        // slow enough to still be looking at it when the page
+                        // lands.
+                        demo.refresh();
+                        // refresh() re-runs the renderer but does not move the
+                        // camera, so no scroll event fires and the readouts
+                        // would keep reporting the pre-load dataset.
+                        report();
+                        resolve();
+                    }, latency);
+                });
+            }
+
+            function build() {
+                if (demo) demo.scroller.dispose();
+                host.textContent = '';
+                document.getElementById('log').textContent = '';
+                items = makePage(0, 1);
+                loading = false; exhausted = false; requests = 0;
+                document.getElementById('loadedLabel').textContent = items.length.toLocaleString();
+                document.getElementById('reqLabel').textContent = '0';
+                document.getElementById('stateLabel').textContent = 'Idle';
+
+                demo = window.mountDemo({
+                    host: host,
+                    total: engineTotal(),
+                    render: renderRow,
+                    options: {
+                        infinite: {
+                            onLoadMore: loadMore,
+                            threshold: parseInt(document.getElementById('threshold').value, 10)
+                        }
+                    },
+                    onViewport: report
+                });
+                log('feed opened with ' + items.length + ' rows');
+                report();
+                window.__demo = demo;
+                requestAnimationFrame(report);
+            }
+
+            function report() {
+                document.getElementById('domLabel').textContent =
+                    String(host.querySelectorAll('[data-element-index]').length);
+                const s = demo && demo.scroller;
+                document.getElementById('stat').textContent = s
+                    ? 'row ' + s.currentElement.toLocaleString() + ' of ' + s.totalElements.toLocaleString()
+                    : '';
+            }
+
+            document.getElementById('threshold').addEventListener('change', build);
+            document.getElementById('resetBtn').addEventListener('click', build);
+            document.getElementById('endOfFeed').addEventListener('change', () => { exhausted = false; });
+
+            build();
+        })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "infinite.onLoadMore: grow the dataset without moving the camera",
+        "intro": "Thin sugar over <code>updateTotalElements()</code>, which already does the hard part: growing the dataset in place and re-anchoring both native surfaces so the camera does not move. This option only decides <em>when</em> to ask. It fires once per approach and re-arms only when the window moves back out of the threshold, so a callback that loads nothing cannot spin. Return a promise and no further call is made until it settles, which is what keeps a slow fetch from being requested five times on the way down.",
+        "code": "\n    let total = 200;\n    let cursor = total;\n\n    const scroller = new CeriousScroll(host, total, {\n      infinite: {\n        threshold: 20,      // rows from the edge that trigger a load\n        edges: 'end',       // or 'both' to backfill upwards too\n\n        onLoadMore: function (ctx) {\n          // ctx = { direction, first, last, total }\n          // Returning the promise is what suppresses repeat calls while the\n          // request is still open.\n          return fetch('/api/rows?after=' + cursor)\n            .then(function (r) { return r.json(); })\n            .then(function (page) {\n              rows.push.apply(rows, page.items);\n              cursor += page.items.length;\n              // The camera stays exactly where it is.\n              scroller.updateTotalElements(rows.length);\n            });\n        }\n      }\n    });\n  ",
+        "notes": [
+                "Return the promise. A callback that fires and forgets is re-armed as soon as it returns, and a slow endpoint will be asked again on the next frame.",
+                "<code>updateTotalElements</code> is the real API here, <code>infinite</code> is only the trigger. You can call it yourself from a socket or a poll.",
+                "The recycler will not re-run your renderer for an index it already holds, so if a placeholder row is replaced by real data at the SAME index, call <code>refresh()</code>.",
+                "With <code>edges: 'both'</code>, prepending needs the row heights to stay honest: see the prepend &amp; anchoring demo for the scroll-anchoring half."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
+    </script>
+</body>
+</html>

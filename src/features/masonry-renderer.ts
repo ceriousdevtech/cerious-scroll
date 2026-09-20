@@ -103,6 +103,8 @@ export class MasonryRenderer {
   /** Offscreen element used to measure a card without disturbing the view. */
   private probe: HTMLElement | null = null;
   private readonly dynamic: boolean;
+  /** Draw columns from the right. Set by the engine from the resolved direction. */
+  rtl = false;
   private readonly estimatedHeight: number;
   private readonly maxChainSegments: number;
 
@@ -117,7 +119,7 @@ export class MasonryRenderer {
    */
   constructor(
     private readonly host: HTMLElement,
-    private readonly totalItems: number,
+    totalItems: number,
     private readonly options: MasonryOptions
   ) {
     this.gap = options.gap ?? 16;
@@ -609,12 +611,28 @@ export class MasonryRenderer {
     host.updateDisplay();
   }
 
+  /**
+   * Column order for the current writing direction.
+   *
+   * Mirrored at the point of WRITING rather than in the layout, so the packing
+   * stays one algorithm: column 0 is still the first column the engine fills,
+   * it is simply drawn from the other edge. Anything that reasons about column
+   * indices — the frontier, determinism, the tests — is untouched.
+   */
+  private mirrorX(x: number, width: number): number {
+    if (!this.rtl) return x;
+    const span = this.layout.columns * this.layout.columnWidth
+      + this.gap * (this.layout.columns - 1);
+    return span - x - width;
+  }
+
   private write(el: HTMLElement, it: PlacedItem, screenY: number): void {
     // The height this card was laid out against. handleCardResizes compares
     // observations to THIS rather than to the bounded height cache, so an
     // eviction can never masquerade as a card that grew.
     if (this.dynamic) setPlacedHeight(el, it.height);
-    const transform = `translate(${it.x + this.pad.left + this.centerOffset}px, ${screenY}px)`;
+    const x = this.mirrorX(it.x, it.width) + this.pad.left + this.centerOffset;
+    const transform = `translate(${x}px, ${screenY}px)`;
     if (el.style.transform !== transform) el.style.transform = transform;
     // In dynamic mode the wrapper must remain intrinsically sized. A fixed
     // height would hide later changes (image loads, expanded content, web-font

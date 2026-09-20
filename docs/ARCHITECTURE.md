@@ -12,6 +12,8 @@
 6. [Input Handling](#input-handling)
 7. [API Reference](#api-reference)
 8. [Advanced Features](#advanced-features)
+9. [Feature cost model](#feature-cost-model)
+10. [Performance Benchmarks](#performance-benchmarks)
 
 ---
 
@@ -24,8 +26,8 @@ CeriousScroll is a high-performance virtual scrolling library that enables smoot
 - **Element + Offset Positioning**: Instead of pixel-based scrolling, uses element index + pixel offset within that element
 - **True O(1) Memory**: Maintains constant memory regardless of dataset size through sliding window caches
 - **Variable Height Support**: No pre-calculation required; heights are measured on-demand
-- **Incremental DOM Updates**: Only creates/removes elements at viewport edges, never repositions existing elements
-- **No GPU Translations**: Achieves 60fps performance without CSS transforms (`translate3d`, `translateY`) or GPU acceleration - uses pure DOM insertion/removal at natural document positions
+- **Incremental DOM Updates**: Only creates/removes elements at viewport edges. In `absolute` a placed row is never repositioned; `masonry` repositions a bounded, viewport-sized set of cards at their packed positions
+- **Transform count bounded by the viewport, not the dataset**: `absolute` uses pure DOM insertion at natural positions and no transforms at all; `table` moves a single element; `masonry` keeps one per mounted card (see [Positioning per layout](#1-positioning-per-layout))
 - **Native Scrollbar Integration**: Bidirectional sync with native scrollbars for familiar UX
 
 ### Performance Characteristics
@@ -733,36 +735,36 @@ jumpToPercentage(50)
 
 ## Performance Optimizations
 
-### 1. No GPU Translations (Pure DOM Approach)
+### 1. Positioning per layout
 
-**CeriousScroll achieves 60fps scrolling without CSS transforms or GPU acceleration.**
+The thing CeriousScroll avoids is a **transform per row**, which is what most
+virtual scrollers do:
 
-Traditional virtual scrollers use:
 ```css
-/* Traditional approach */
-.virtual-item {
-  transform: translate3d(0, 1234px, 0);  /* GPU-accelerated */
-}
+/* Traditional approach: one transform per item, recomputed as you scroll */
+.virtual-item { transform: translate3d(0, 1234px, 0); }
 ```
 
-CeriousScroll uses:
-```javascript
-// Pure DOM insertion at natural positions
-container.appendChild(element);  // No transforms needed
-```
+What replaces it differs by layout, and it is worth being precise because only
+one of the four is genuinely transform-free:
+
+| Layout | How the visible window is positioned | Transforms |
+|---|---|---|
+| `absolute` | DOM insertion/removal at edges; each row sits at its own `top` | none |
+| `table` | one `translateY()` on the single `<tbody>` | 1 |
+| `masonry` | one `translate()` per mounted card, at its packed position | 1 per card |
 
 **Why this matters:**
-- **No transform overhead**: Eliminates GPU layer management and composite operations
-- **Natural document flow**: Elements exist at their natural positions in the DOM
-- **Simpler rendering**: Browser's native layout engine handles positioning
-- **Lower GPU memory**: No texture uploads or layer allocations
-- **CPU-only approach**: Scales better on devices with limited GPU resources
+- **Bounded transform count**: `table` moves one element no matter how many
+  rows are on screen, rather than one per row per frame.
+- **Natural document flow** in `absolute`: elements exist at their natural
+  positions and are never repositioned once placed.
+- **Incremental DOM updates**: add/remove at the edges only.
+- **O(1) operations** regardless of row count.
 
-**How it achieves performance:**
-- Only renders visible elements + small buffer (~20 elements total)
-- Incremental DOM updates (add/remove at edges only)
-- Never repositions existing elements - they stay at natural positions
-- O(1) operations regardless of dataset size
+`masonry` is the exception that keeps a transform per mounted card, because a
+packed card's position is genuinely independent of its neighbours. The count is
+still bounded by the viewport, not by the dataset.
 
 ### 2. Object Pooling
 
@@ -1462,6 +1464,29 @@ console.log(`Render took ${end - start}ms`);
 
 ---
 
+## Feature cost model
+
+The bounded-DOM and O(1)-memory properties are the library's central claims, so
+each optional feature is worth stating in those terms. Every one below holds
+state that is constant in the dataset size.
+
+| Option | Retained state | DOM cost | Notes |
+|---|---|---|---|
+| `sticky` | one element reference, one index | **+1 element** | The pinned row is mounted outside the recycler so it survives its own row leaving the window. `resolve` runs per window move and is the caller's cost, not the engine's. |
+| `snap` | none | none | Runs on the native `scrollend` signal and drives the camera's `offset` to zero. |
+| `infinite` | one `'start' \| 'end' \| null` flag | none | Decides *when* to call `onLoadMore`; growth itself goes through `updateTotalElements()`. A pending returned promise suppresses re-arming. |
+| `aria` | none | none | Writes `aria-setsize` / `aria-posinset` as attributes on rows already mounted. |
+| `direction` | one resolved direction | none | Resolved once at mount; positioning uses logical insets. |
+| `ssr` | one boolean | none | Affects only the first render, which adopts matching `data-element-index` rows instead of clearing. |
+
+Measured, on the infinite-loading demo driving the dataset from 40 rows to 520:
+the mounted window stayed between 9 and 13 rows throughout. On the accessibility
+demo with 500,000 rows and 15 mounted, `aria-setsize` reads `500000` and
+`aria-posinset` carries the row's true dataset index — the attributes describe
+the dataset, not the window, which is the entire point of setting them.
+
+---
+
 ## Performance Benchmarks
 
 ### Memory Usage
@@ -1766,11 +1791,14 @@ componentWillUnmount() {
 
 Potential areas for future development:
 
-1. **Horizontal Virtual Scrolling**: Support for horizontal lists
-2. **Grid Layout**: 2D virtual scrolling for grids
-3. **Sticky Headers**: Section headers that stick during scroll
-4. **Variable Width**: Support for horizontal variable widths
-5. **Collaborative Scrolling**: Sync scroll position across clients
+1. **Horizontal Virtual Scrolling**: Support for horizontal lists. A previous
+   implementation was removed because its column axis cost one number per
+   column, so heap use grew with the column count rather than staying flat the
+   way the row axis does. Any future attempt needs a column API shaped like the
+   row one — a count plus a width rule, not an array of descriptors.
+2. **Grid Layout**: 2D virtual scrolling for grids, on the same condition
+3. **Variable Width**: Support for horizontal variable widths
+4. **Collaborative Scrolling**: Sync scroll position across clients
 6. **Persistence**: Save/restore scroll position across sessions
 7. **Animation Hooks**: Callbacks for custom scroll animations
 8. **Smart Prefetching**: Predict scroll direction and preload

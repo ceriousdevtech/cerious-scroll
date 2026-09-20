@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cerious-Scroll · Masonry · Real Content</title>
-    <meta name="description" content="Virtualized Masonry with real images, Tailwind-styled component cards, and image carousels — the patterns that make third-party UI work inside recycled cards.">
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <meta name="description" content="Virtualized Masonry with real images, Tailwind-styled component cards, and image carousels. The patterns that make third-party UI work inside recycled cards.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
     <!-- Get DNS and TLS out of the critical path. The first image otherwise pays
          for connection setup before a byte of it is requested. -->
     <link rel="preconnect" href="https://picsum.photos" crossorigin>
@@ -14,7 +14,7 @@
     <script>
       // Disable Preflight. Tailwind's reset zeroes `html, body { height: 100% }`
       // from shared-styles.css, which collapses the flex chain and leaves the
-      // scroll host at zero height — the engine then refuses to render. Any
+      // scroll host at zero height: the engine then refuses to render. Any
       // integration that layers Tailwind onto existing CSS wants this off.
       tailwind.config = { corePlugins: { preflight: false } };
     </script>
@@ -62,7 +62,9 @@
         }
         #gallery [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
     </style>
-    <script src="demo-bootstrap.js?v=20260916e" defer></script>
+    <script src="demo-icons.js?v=20260922" defer></script>
+    <script src="demo-docs.js?v=20260922" defer></script>
+    <script src="demo-bootstrap.js?v=20260922" defer></script>
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -70,9 +72,9 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🖼️ Masonry · real content</h1>
+                <h1><span data-demo-icon="masonryGallery"></span>Masonry · real content</h1>
                 <p>
-                    Network images, Tailwind-styled component cards, and interactive carousels —
+                    Network images, Tailwind-styled component cards, and interactive carousels, 
                     virtualized. Demonstrates the three things recycled cards demand:
                     <strong>reserved media space</strong>, <strong>idempotent rendering</strong>,
                     and <strong>delegated events</strong>.
@@ -110,8 +112,8 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const { hash } = window.demoUtils;
@@ -120,7 +122,7 @@
             // A card is exactly image + chrome. Rather than hoping the rendered
             // chrome matches this number, the number is ENFORCED: the chrome box is
             // given this exact height and clips. Measuring instead is unreliable
-            // here — runtime CSS tools like the Tailwind CDN generate styles
+            // here: runtime CSS tools like the Tailwind CDN generate styles
             // asynchronously, so an early probe measures an unstyled card.
             const CHROME_H = 136;
             const RATIOS = [3/4, 4/3, 1, 9/16, 16/9, 2/3];
@@ -134,12 +136,12 @@
             // NOTE ON loading="lazy": do not use it here. Native lazy loading defers
             // until the browser considers an image near the viewport, and its
             // heuristics do not fire reliably for elements inside a clipped,
-            // transformed container — measured: zero requests issued after four
+            // transformed container, measured: zero requests issued after four
             // seconds, cards visible and empty. Virtualization is already the lazy
             // loader; a card only exists when it is nearly on screen, so its image
             // should be fetched immediately.
 
-            // Per-card UI state lives in the MODEL, keyed by card index — never on the
+            // Per-card UI state lives in the MODEL, keyed by card index: never on the
             // element. Elements are pooled and reused for other cards, so anything
             // stored on them belongs to whichever card had it last.
             const carouselAt = new Map();
@@ -178,7 +180,7 @@
             }
 
             // Virtualization mounts a card only once it is nearly on screen, which
-            // is exactly when its image is needed — so the fetch starts too late to
+            // is exactly when its image is needed, so the fetch starts too late to
             // hide any latency. Warming a window beyond the mounted range decouples
             // fetching from mounting: by the time a card exists, its bytes are in
             // the HTTP cache.
@@ -251,7 +253,7 @@
                                          text-[10px] uppercase tracking-wide text-slate-300">${c.tag}</span>
                         </div>
                         <p class="card-title mt-2 text-sm leading-snug text-slate-100">
-                            Frame ${i.toLocaleString()} — ${c.tag} study, ${c.frames > 1 ? c.frames + ' shots' : 'single shot'}
+                            Frame ${i.toLocaleString()}: ${c.tag} study, ${c.frames > 1 ? c.frames + ' shots' : 'single shot'}
                         </p>
                         <div class="mt-2 flex items-center gap-3 text-xs text-slate-400">
                             <button data-like class="inline-flex items-center gap-1 rounded px-1
@@ -425,6 +427,28 @@
 
             build();
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Masonry carrying network images and interactive cards",
+        "intro": "Recycled cards make three demands that a static grid never does, and this demo is built around all three. Media needs its space <em>reserved</em> before it loads, or the column frontier is measured against a card that has not finished growing. Rendering must be idempotent, because a container arrives holding whatever the last index put in it. And event handlers belong on the container, delegated: a listener attached to a recycled card will fire for the wrong item a few hundred rows later.",
+        "code": "\n    const scroller = new CeriousScroll(host, CARDS.length, {\n      layout: 'masonry',\n      masonry: { columns: 3, gutter: 16 },\n\n      render: function (index, container) {\n        // 1. Idempotent: the container may hold any previous card.\n        container.textContent = '';\n\n        const card = buildCard(CARDS[index]);\n\n        // 2. Reserve the media box so the height is final before measuring.\n        const frame = card.querySelector('.thumb');\n        frame.style.aspectRatio = CARDS[index].w + ' / ' + CARDS[index].h;\n\n        container.appendChild(card);\n      }\n    });\n\n    // 3. Delegate. Never attach a listener to a card you are going to recycle.\n    host.addEventListener('click', function (e) {\n      const card = e.target.closest('[data-card-id]');\n      if (card) open(card.dataset.cardId);\n    });\n  ",
+        "notes": [
+                "<code>aspect-ratio</code> (or a padding box) gives the card its final height before the image arrives, no reflow, no frontier drift.",
+                "Set <code>loading=\"lazy\"</code> and <code>decoding=\"async\"</code>; the engine mounts only what is visible, but the browser still fetches what you hand it.",
+                "State that must survive recycling (expanded, selected, carousel position) belongs in your data, not on the DOM node.",
+                "Delegated handlers read identity from a data attribute, which is re-written on every render and therefore always current."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/MASONRY.md"
+    }));
     </script>
 </body>
 </html>

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Commit History · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,16 +12,18 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>🌿 Commit History</h1>
-                <p>100,000 commits — click any commit to expand its changed files.</p>
+                <h1><span data-demo-icon="git"></span>Commit History</h1>
+                <p>100,000 commits: click any commit to expand its changed files.</p>
             </div>
 
             <div class="demo-scroll git-scroll" id="scroll"></div>
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const GIT_TOTAL = 100000;
@@ -138,6 +140,28 @@
                 render: render,
             });
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Rows that change height when you expand them",
+        "intro": "A commit row is one line until you click it, and then it is however tall its file list makes it. This is the case that breaks scrollers built on estimated heights, and it is straightforward here: expansion is state in your data, the renderer draws the row at its current state, and the engine measures whatever comes out. The only requirement is to tell the engine that the row it already has mounted needs drawing again.",
+        "code": "\n    const expanded = new Set();\n\n    const scroller = new CeriousScroll(host, commits.length, {\n      render: function (index, container) {\n        container.textContent = '';\n        const c = commits[index];\n        const row = buildCommit(c);\n        // The row is short or tall depending on state: either is fine, the\n        // engine measures the result rather than assuming it.\n        if (expanded.has(c.sha)) row.appendChild(buildFileList(c));\n        container.appendChild(row);\n      }\n    });\n\n    host.addEventListener('click', function (e) {\n      const row = e.target.closest('[data-sha]');\n      if (!row) return;\n      const sha = row.dataset.sha;\n      expanded.has(sha) ? expanded.delete(sha) : expanded.add(sha);\n      scroller.refresh();   // re-render + re-measure the mounted rows\n    });\n  ",
+        "notes": [
+                "<code>refresh()</code> is what re-measures. The recycler will not re-run the renderer for a mounted index on its own.",
+                "Expansion state must live outside the DOM, or it will be recycled onto the wrong commit.",
+                "Rows below the expanded one move down; the camera stays on the row the reader is on.",
+                "Animating the expansion is fine, but the row must be at its final height when the renderer returns: animate after, or measure the end state."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

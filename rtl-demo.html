@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTL · Cerious-Scroll</title>
+    <meta name="description" content="Right-to-left support: the scrollbar strip moves to the left edge, rows inset from the correct side, and Masonry fills columns from the right.">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
+    <style>
+        .rtl-row {
+            display: flex; align-items: center; gap: 12px;
+            padding: 0 16px; height: 86px;
+            border-bottom: 1px solid var(--line);
+        }
+        .rtl-titleline { display: flex; align-items: center; gap: 8px; }
+        .rtl-pill {
+            font-size: 0.66rem; padding: 1px 7px; border-radius: 999px;
+            border: 1px solid var(--line); color: var(--muted);
+        }
+        .rtl-pill--ok   { color: var(--accent); border-color: rgba(120,243,210,.35); }
+        .rtl-pill--wait { color: #e3b341; border-color: rgba(227,179,65,.35); }
+        .rtl-pill--bad  { color: #ff8b8b; border-color: rgba(255,139,139,.35); }
+        .rtl-meta { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+        .rtl-ref { font-family: ui-monospace, Menlo, monospace; font-size: 0.7rem; }
+        .rtl-money {
+            margin-inline-start: auto; text-align: end; display: flex;
+            flex-direction: column; gap: 2px; flex-shrink: 0;
+        }
+        .rtl-balance { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+        .rtl-avatar {
+            width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+            display: grid; place-items: center; font-size: 0.9rem;
+        }
+        .rtl-main { min-width: 0; }
+        .rtl-title { font-weight: 600; font-size: 0.9rem; }
+        .rtl-sub { color: var(--muted); font-size: 0.78rem; }
+        /* `margin-inline-start: auto` pushes to the trailing edge in BOTH
+         * directions: the same reason the engine uses logical insets. */
+        .rtl-amount {
+            font-variant-numeric: tabular-nums;
+            font-weight: 700; font-size: 0.86rem;
+        }
+        .rtl-neg { color: #ff8b8b; }
+        .rtl-pos { color: var(--accent); }
+
+        .rtl-card {
+            border: 1px solid var(--line); border-radius: 10px;
+            padding: 12px 14px; background: rgba(255,255,255,.04);
+        }
+        .rtl-card h4 { margin: 0 0 6px; font-size: 0.86rem; }
+        .rtl-card p { margin: 0; font-size: 0.8rem; color: #c9d1d9; line-height: 1.6; }
+        #scroll [data-cerious-masonry="content"] { overflow: hidden; padding: 14px 14px 0; }
+        .rtl-note {
+            padding: 9px 20px; background: var(--panel);
+            border-bottom: 1px solid var(--line); flex-shrink: 0;
+            font-size: 0.78rem; color: var(--muted);
+        }
+        .rtl-note code { color: var(--accent-2); }
+    </style>
+</head>
+<body>
+    <header class="topbar" data-auto-topbar></header>
+
+    <main class="content">
+        <div class="demo-page">
+            <div class="demo-page__header">
+                <h1><span data-demo-icon="rtl"></span>Right-to-left</h1>
+                <p>Direction is read from the host, because it is nearly always inherited from the page.</p>
+            </div>
+
+            <div class="demo-toolbar">
+                <label for="dir">Direction</label>
+                <select id="dir">
+                    <option value="rtl">rtl</option>
+                    <option value="ltr">ltr</option>
+                </select>
+
+                <label for="layout">Layout</label>
+                <select id="layout">
+                    <option value="absolute">list</option>
+                    <option value="masonry">masonry</option>
+                </select>
+
+                <label><input type="checkbox" id="auto" checked> Read from host</label>
+
+                <span class="spacer"></span>
+                <span class="stat" id="stat">–</span>
+            </div>
+
+            <div class="rtl-note" id="note">–</div>
+
+            <div class="demo-scroll" id="scroll" dir="rtl"></div>
+
+            <div class="demo-footer">
+                <span>Rows: <strong id="totalLabel">40,000</strong></span>
+                <span>Resolved: <strong id="dirLabel">–</strong></span>
+                <span>Strip: <strong id="stripLabel">–</strong></span>
+                <span>DOM rows: <strong id="domLabel">–</strong></span>
+            </div>
+        </div>
+    </main>
+
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
+    <script>
+        (function () {
+            const host = document.getElementById('scroll');
+            const TOTAL = 40000;
+
+            // Arabic and Hebrew strings, so the demo exercises real bidi text
+            // rather than Latin text with the direction flipped.
+            const NAMES = ['نورا حدّاد', 'يوسف قاسم', 'ליאת ברקוביץ', 'سلمى عبد الله',
+                'אורי מזרחי', 'ريم الصايغ', 'דנה כהן', 'كريم فوزي'];
+            const MEMOS = ['فاتورة الاشتراك الشهري', 'תשלום עבור אחסון', 'رسوم التحويل الدولي',
+                'החזר הוצאות נסיעה', 'دفعة مقدمة للمورد', 'עמלת סליקה'];
+            const TITLES = ['ملاحظات الإصدار', 'סיכום פגישה', 'تقرير الأداء', 'הערות מוצר'];
+            const BODY = ['تم تحديث الفهرس وتحسن زمن الاستجابة بشكل ملحوظ خلال الساعة الماضية.',
+                'העומס התייצב לאחר שהוספנו שכבת מטמון נוספת לשירות החיפוש.',
+                'أعيد تشغيل الخدمة بنجاح ولم تُسجَّل أي أخطاء بعد النشر.',
+                'הדוח השבועי מראה ירידה בשיעור השגיאות ועלייה בזמינות.'];
+            const ICONS = ['📄', '💳', '🧾', '📦', '🏦'];
+
+            function hash(n, salt) {
+                const x = Math.sin(n * 83.7 + salt * 149.3) * 43758.5453;
+                return x - Math.floor(x);
+            }
+
+            const STATES = [
+                { ar: 'مكتملة', cls: 'ok' }, { ar: 'قيد المعالجة', cls: 'wait' },
+                { ar: 'مرفوضة', cls: 'bad' }, { ar: 'مسترجعة', cls: 'ok' }
+            ];
+            const METHODS = ['بطاقة ائتمان', 'כרטיס אשראי', 'تحويل بنكي', 'העברה בנקאית', 'محفظة رقمية'];
+
+            function renderRow(index, container) {
+                const el = document.createElement('div');
+                el.className = 'rtl-row';
+                const amount = (hash(index, 5) * 8000 - 3000);
+                const state = STATES[Math.floor(hash(index, 15) * STATES.length)];
+                const day = 1 + Math.floor(hash(index, 17) * 28);
+                const month = 1 + Math.floor(hash(index, 18) * 12);
+                el.innerHTML =
+                    '<span class="rtl-avatar" style="background:hsl(' +
+                        Math.floor(hash(index, 2) * 360) + ' 55% 26%)">' +
+                        ICONS[Math.floor(hash(index, 9) * ICONS.length)] + '</span>' +
+                    '<span class="rtl-main">' +
+                        '<span class="rtl-titleline">' +
+                            '<span class="rtl-title">' + NAMES[Math.floor(hash(index, 3) * NAMES.length)] + '</span>' +
+                            '<span class="rtl-pill rtl-pill--' + state.cls + '">' + state.ar + '</span>' +
+                        '</span>' +
+                        '<span class="rtl-sub">' + MEMOS[Math.floor(hash(index, 7) * MEMOS.length)] +
+                            ' · <span class="rtl-ref">REF-' + (100000 + index).toString(36).toUpperCase() + '</span>' +
+                        '</span>' +
+                        '<span class="rtl-meta">' +
+                            METHODS[Math.floor(hash(index, 19) * METHODS.length)] +
+                            ' · ' + day + '/' + month + '/2026' +
+                        '</span>' +
+                    '</span>' +
+                    '<span class="rtl-money">' +
+                        '<span class="rtl-amount ' + (amount < 0 ? 'rtl-neg' : 'rtl-pos') + '">' +
+                            (amount < 0 ? '−' : '+') + Math.abs(amount).toFixed(2) + ' ₪</span>' +
+                        '<span class="rtl-balance">الرصيد ' +
+                            (12000 + hash(index, 23) * 40000).toFixed(2) + ' ₪</span>' +
+                    '</span>';
+                container.appendChild(el);
+            }
+
+            function renderCard(index, el) {
+                el.className = 'rtl-card';
+                const lines = 1 + Math.floor(hash(index, 21) * 3);
+                let body = '';
+                for (let i = 0; i < lines; i++) body += BODY[Math.floor(hash(index + i, 23) * BODY.length)] + ' ';
+                el.innerHTML = '<h4>' + TITLES[Math.floor(hash(index, 19) * TITLES.length)] +
+                    ' #' + index.toLocaleString() + '</h4><p>' + body + '</p>';
+            }
+
+            let scroller = null;
+
+            function build() {
+                if (scroller) scroller.dispose();
+                host.textContent = '';
+
+                const useAuto = document.getElementById('auto').checked;
+                const dir = document.getElementById('dir').value;
+                const layout = document.getElementById('layout').value;
+
+                // `auto` means: put the direction on the DOM and let the engine
+                // read it: the way a real localized app works.
+                host.setAttribute('dir', dir);
+
+                const Ctor = window.CeriousScroll.CeriousScroll || window.CeriousScroll;
+                const options = {
+                    direction: useAuto ? 'auto' : dir,
+                    onScroll: () => draw()
+                };
+                if (layout === 'masonry') {
+                    options.layout = 'masonry';
+                    options.masonry = {
+                        renderItem: renderCard,
+                        gap: 14,
+                        targetColumnWidth: 260,
+                        estimatedItemHeight: 150
+                    };
+                } else {
+                    const content = document.createElement('div');
+                    content.setAttribute('data-cerious-scroll-content', '');
+                    content.style.cssText = 'position:relative;width:100%;height:100%;overflow-y:clip';
+                    host.appendChild(content);
+                }
+
+                scroller = new Ctor(host, TOTAL, options);
+                draw();
+                report();
+                window.__demo = { scroller: scroller, render: draw };
+            }
+
+            function draw() {
+                if (!scroller) return;
+                if (document.getElementById('layout').value === 'masonry') {
+                    scroller.renderViewport(host.clientHeight, host, function () {});
+                } else {
+                    const content = host.querySelector('[data-cerious-scroll-content]');
+                    scroller.renderViewport(host.clientHeight, content, (index, container) => {
+                        container.textContent = '';
+                        renderRow(index, container);
+                    });
+                }
+                report();
+            }
+
+            function report() {
+                if (!scroller) return;
+                const strip = host.querySelector('[data-cerious-scrollbar="container"]');
+                const side = strip
+                    ? (strip.style.left === '0px' ? 'left edge' : 'right edge')
+                    : '–';
+                document.getElementById('dirLabel').textContent = scroller.direction;
+                document.getElementById('stripLabel').textContent = side;
+                document.getElementById('domLabel').textContent =
+                    String(host.querySelectorAll('[data-element-index]').length);
+                document.getElementById('stat').textContent =
+                    'row ' + scroller.currentElement.toLocaleString();
+                document.getElementById('note').innerHTML = scroller.direction === 'rtl'
+                    ? 'The strip sits on the <code>left</code>, rows inset from the trailing edge via ' +
+                      '<code>--cerious-gutter</code>, and Masonry fills columns from the right: column 0 ' +
+                      'is still the first column the packer fills, it is simply drawn from the other edge.'
+                    : 'Left-to-right: the strip sits on the <code>right</code> and columns fill from the left.';
+            }
+
+            document.getElementById('dir').addEventListener('change', build);
+            document.getElementById('layout').addEventListener('change', build);
+            document.getElementById('auto').addEventListener('change', build);
+            window.addEventListener('resize', draw);
+
+            build();
+        })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "direction: 'auto': right-to-left, read from the host",
+        "intro": "RTL is not a mirrored stylesheet. The scrollbar moves to the left edge, the browser's own <code>scrollLeft</code> origin changes meaning, and any inset expressed as <code>left</code> or <code>right</code> ends up on the wrong side. The engine handles the scroll math and positions rows with <em>logical</em> insets (<code>inset-inline-start</code> / <code>inset-inline-end</code>) so the gutter it reserves for the scrollbar lands on whichever side the scrollbar is actually on. <code>direction: 'auto'</code> reads the computed direction off the host, so setting <code>dir</code> in your markup is enough.",
+        "code": "\n    <!-- The engine reads this. Nothing else needs to know. -->\n    <div id=\"feed\" dir=\"rtl\"></div>\n\n    <script>\n      const scroller = new CeriousScroll(host, total, {\n        // 'auto' reads the host's computed direction; 'ltr' / 'rtl' force it.\n        direction: 'auto',\n\n        // Works the same under masonry: columns fill from the trailing edge.\n        layout: 'masonry'\n      });\n    <\/script>\n  ",
+        "notes": [
+                "Write your own row CSS with logical properties, <code>padding-inline-start</code>, <code>border-inline-end</code>, <code>margin-inline</code>, and it follows the direction for free.",
+                "<code>text-align: start</code> rather than <code>left</code>; the whole point is that neither side is hard-coded.",
+                "Mixing scripts is normal. Wrap left-to-right runs (numbers, code, latin names) in their own element so the bidi algorithm does not reorder them oddly.",
+                "<code>direction: 'auto'</code> is read once at mount. Flipping <code>dir</code> at runtime means re-creating the instance."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
+    </script>
+</body>
+</html>

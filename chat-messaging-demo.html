@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Team Chat · Cerious-Scroll</title>
-    <link rel="stylesheet" href="shared-styles.css?v=20260916e">
+    <link rel="stylesheet" href="shared-styles.css?v=20260922">
 </head>
 <body>
     <header class="topbar" data-auto-topbar></header>
@@ -12,8 +12,8 @@
     <main class="content">
         <div class="demo-page">
             <div class="demo-page__header">
-                <h1>💬 Team Chat</h1>
-                <p id="subtitle">100,000 variable-height messages — send one and it auto-scrolls to the bottom.</p>
+                <h1><span data-demo-icon="chat"></span>Team Chat</h1>
+                <p id="subtitle">100,000 variable-height messages: send one and it auto-scrolls to the bottom.</p>
             </div>
 
             <div class="demo-scroll chat-scroll" id="scroll"></div>
@@ -25,8 +25,10 @@
         </div>
     </main>
 
-    <script src="dist/cerious-scroll.bundle.js?v=20260916e"></script>
-    <script src="demo-bootstrap.js?v=20260916e"></script>
+    <script src="dist/cerious-scroll.bundle.js?v=20260922"></script>
+    <script src="demo-icons.js?v=20260922"></script>
+    <script src="demo-docs.js?v=20260922"></script>
+    <script src="demo-bootstrap.js?v=20260922"></script>
     <script>
         (function () {
             const CHAT_BASE = 100000;
@@ -46,7 +48,7 @@
                 'I just finished {task}. Ready for review!',
                 'Can someone help me with {problem}?',
                 'Great job on {achievement}! 🎉',
-                'Quick question about {topic} — anyone available?',
+                'Quick question about {topic}, anyone available?',
                 'Thanks for the feedback on {task}!',
                 "I'll take care of {task} by EOD",
                 'Meeting in 10 about {topic}',
@@ -58,12 +60,12 @@
                 'Agreed!',
                 "Let's discuss in standup",
                 'Updated the docs for {topic}',
-                'This is looking great — keep it up!',
+                'This is looking great, keep it up!',
                 "I'm blocked on {task}, need a hand",
                 'Running tests now…',
                 'All green! ✅',
                 'Deployed to staging',
-                'Code review complete — looks good!',
+                'Code review complete, looks good!',
             ];
             const TOPICS = ['the new feature', 'authentication', 'DB optimization', 'the UI redesign', 'API endpoints', 'deployment'];
             const TASKS = ['the login flow', 'the dashboard', 'payment integration', 'email notifications', 'search', 'the admin panel'];
@@ -143,7 +145,7 @@
             function updateSubtitle() {
                 const t = CHAT_BASE + sent.length;
                 document.getElementById('subtitle').textContent =
-                    t.toLocaleString() + ' variable-height messages — send one and it auto-scrolls to the bottom.';
+                    t.toLocaleString() + ' variable-height messages, send one and it auto-scrolls to the bottom.';
             }
 
             function send() {
@@ -163,6 +165,28 @@
             });
             sendBtn.addEventListener('click', send);
         })();
+    </script>
+    <!-- "How to build this": the options this demo exists to show,
+         pulled out of the page source and put next to the demo. -->
+    <script>
+        // Deferred on some pages, inline on others: either way this runs
+        // before demo-docs.js has executed unless we wait for it.
+        (function (config) {
+            function mount() { window.demoDocs(config); }
+            if (window.demoDocs) mount();
+            else document.addEventListener('DOMContentLoaded', mount);
+        }({
+        "feature": "Variable-height bubbles with stick-to-bottom",
+        "intro": "A chat log is a virtual scroller with two extra habits: message heights are unknown until rendered, and the view should stay pinned to the newest message, but only when the reader was already at the bottom. Scrolling up to read history and then being yanked back down by an incoming message is the bug every chat UI has shipped at least once. The check is simply whether the camera is on the last element before you grow the dataset.",
+        "code": "\n    const scroller = new CeriousScroll(host, messages.length, {\n      render: function (index, container) {\n        container.textContent = '';\n        container.appendChild(buildBubble(messages[index]));\n      }\n    });\n\n    function onMessage(msg) {\n      // Decide BEFORE the dataset grows.\n      const wasAtBottom = scroller.currentElement >= messages.length - 2;\n\n      messages.push(msg);\n      scroller.updateTotalElements(messages.length);\n\n      // Only follow if they were already following.\n      if (wasAtBottom) scroller.jumpToElement(messages.length - 1);\n    }\n  ",
+        "notes": [
+                "Capture “was at bottom” before you change the length, not after: afterwards the answer is always no.",
+                "Bubbles are measured, so mixed text, images and attachments need no declared heights.",
+                "Reserve space for attachments before they load, or a late image will push the newest message off screen.",
+                "Backfilling older messages at the top is the prepend-and-anchor case; see that demo."
+        ],
+        "docs": "https://github.com/ceriousdevtech/cerious-scroll/blob/main/docs/IMPLEMENTATION_GUIDE.md"
+    }));
     </script>
 </body>
 </html>

@@ -20,6 +20,8 @@ once.
 - Three layout modes: absolute rows, native tables, and responsive Masonry grids.
 - Native scrollbar, wheel, touch, and keyboard navigation.
 - Responsive resize handling and stable content anchoring.
+- Pinned section headers, row snapping, edge-triggered loading, screen-reader
+  semantics, right-to-left layout, and SSR hydration.
 - Framework-agnostic TypeScript API, with React, Vue, and Angular wrappers.
 
 ## Installation
@@ -191,6 +193,34 @@ render();
 Use `border-collapse: separate` and give the generated `<thead>` an opaque
 background. `autoSizeColumns: true` measures the first window and pins its
 widths; `columnWidths` can provide explicit widths instead.
+
+## Capabilities
+
+These are independent options and can be combined with any layout unless noted.
+
+| Option | What it does |
+| --- | --- |
+| `sticky` | Pins one dataset row to the top while you are inside its section. The pinned element is drawn outside the recycler, so it survives its own row scrolling out of the mounted window. |
+| `snap` | Settles the camera on a row boundary after scrolling stops. The camera is already `(element, offset)`, so snapping is driving `offset` to zero. |
+| `infinite` | Calls `onLoadMore` as a threshold near an edge is crossed, once per approach. Sugar over `updateTotalElements()`, which grows the dataset without moving the camera. |
+| `aria` | Writes `aria-setsize` and `aria-posinset` from the real dataset, so a screen reader announces "item 40,112 of 500,000" rather than the size of the mounted window. Opt-in, because correct markup depends on what the rows mean. |
+| `direction` | `'ltr'`, `'rtl'`, or `'auto'` to read the host's own computed direction. Rows are positioned with logical insets, so the scrollbar gutter is reserved on whichever side the scrollbar is on. |
+| `ssr` | `hydrate: true` adopts pre-rendered rows on the first render instead of clearing them. Rows are matched by `data-element-index`. The module touches no DOM at import time, so it is safe to include in a server bundle. |
+
+```js
+const scroller = new CeriousScroll(container, total, {
+  sticky: { resolve: (first) => sectionStartAtOrBefore(first), className: 'is-pinned' },
+  snap: { enabled: true, align: 'nearest', tolerance: 2 },
+  infinite: { threshold: 20, edges: 'end', onLoadMore: (ctx) => loadPage(ctx) },
+  aria: { enabled: true, label: 'Search results' },
+  direction: 'auto',
+  ssr: { hydrate: true }
+});
+```
+
+`infinite.onLoadMore` should return its promise: the engine makes no further
+call until that promise settles, which is what stops a slow endpoint being asked
+again on the next frame.
 
 ## Documentation
 

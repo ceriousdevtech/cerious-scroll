@@ -165,12 +165,30 @@ describe('scrollbar strip sizing', () => {
     });
     expect(stripHeight(el)).toBe(total);
 
-    total = 900 * SEG_H;                 // relayout: same segments, taller content
+    total = 500 * SEG_H;                 // relayout: same segments, taller content
     s.updateTotalElements(400);          // count unchanged -> no-op
     expect(stripHeight(el)).toBe(400 * SEG_H);
 
     s.refreshScrollbarMetrics();
-    expect(stripHeight(el)).toBe(900 * SEG_H);
+    expect(stripHeight(el)).toBe(500 * SEG_H);
     s.dispose();
+  });
+
+  it('caps the strip at a height browsers actually honour', () => {
+    // Past a browser's own maximum the request is silently clamped — Chrome
+    // stops at 16,777,214px — so asking for more buys no resolution and leaves
+    // the engine reasoning about a number that does not exist. Capped on both
+    // the content-height and the element-count path.
+    const el = host();
+    const byContent = new CeriousScroll(el, 400, {
+      heightProvider: { ...provider, totalHeight: () => 900 * SEG_H }   // 22.5M
+    });
+    expect(stripHeight(el)).toBeLessThanOrEqual(15_000_000);
+    byContent.dispose();
+
+    const el2 = host();
+    const byCount = new CeriousScroll(el2, 10_000_000);   // count * 10 = 100M
+    expect(stripHeight(el2)).toBeLessThanOrEqual(15_000_000);
+    byCount.dispose();
   });
 });

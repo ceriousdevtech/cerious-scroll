@@ -16,6 +16,14 @@ interface NativeTouchControllerDeps {
   calculateScrollPercentage: () => number;
   getCurrentElement: () => number;
   getScrollOffset: () => number;
+  /**
+   * The gesture and any momentum behind it are over.
+   *
+   * The browser owns the scroll now, so this is the only moment the engine can
+   * know that motion has actually stopped — which is what snapping needs, and
+   * what a timer would only guess at.
+   */
+  onSettle?: () => void;
 }
 
 export class NativeTouchController {
@@ -244,6 +252,7 @@ export class NativeTouchController {
       this.driving = false;
       momentumActive = false;
       this.syncPosition();
+      this.deps.onSettle?.();
     };
 
     const scheduleIdle = (ms = NativeTouchController.IDLE_MS): void => {
